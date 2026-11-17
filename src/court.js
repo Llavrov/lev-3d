@@ -125,6 +125,7 @@ function lines() {
 // тёмный шнур с узлами в прозрачной текстуре; alphaToCoverage сглаживает шнур вдали, иначе сетка рябит и пропадает.
 function net() {
   const group = new THREE.Group(), POST = HALF_W + 0.914, H_POST = 1.07, H_MID = 0.914;
+  group.name = 'net'; // в тренировке «Стенка» сетку прячем
   const top = (x) => H_MID + (H_POST - H_MID) * (x / POST) ** 2;
   const geo = new THREE.PlaneGeometry(POST * 2, 1, 96, 8);
   const p = geo.attributes.position;

@@ -16,6 +16,7 @@ import { buildBall } from './ball.js';
 import { fitRacketModel, dressRacket } from './racket.js';
 import { Player, POWER, holdOf, powerOf } from './player.js';
 import { Game, AI } from './game.js';
+import { Practice } from './practice.js';
 import { STROKES, sample } from './swing.js';
 import { makeSound } from './sound.js';
 import { solveShot, step as ballStep } from './physics.js';
@@ -311,13 +312,14 @@ const log = (() => {
   return (type, data = {}) => { const e = { t: +(game?.now ?? 0).toFixed(3), type, ...data }; buf.push(e); window.__events?.push(e); };
 })();
 
-function hit(kind, drop = false, key = '') {
+// kind 'auto' — форхенд или бэкхенд по стороне, где будет мяч (укороченный, кручёный I, резаный U). spin — 'top' | 'cut'.
+function hit(kind, drop = false, key = '', spin = null) {
   if (!game || !started) return;
   sound.unlock();
   if (game.state === 'serve' && game.server === game.lev) return game.serve(game.lev, game.now);
   if (key === 'Space') return; // пробел только подаёт: раньше в розыгрыше он бил форхендом и перебивал нажатый бэкхенд
-  const lev = game.lev, cut = !drop && (sliceMode || held('AltLeft', 'AltRight')), top = !drop && !cut && (topMode || held('ShiftLeft', 'ShiftRight'));
-  if (drop) { // укороченный: форхенд или бэкхенд — по стороне, где будет мяч
+  const lev = game.lev, cut = !drop && (spin === 'cut' || sliceMode || held('AltLeft', 'AltRight')), top = !drop && !cut && (spin === 'top' || topMode || held('ShiftLeft', 'ShiftRight'));
+  if (kind === 'auto') {
     const pr = lev.predict(game.b, game.now);
     kind = pr && (pr.pos.x - lev.pos.x) * lev.side < -0.1 ? 'bh' : 'fh';
   }
@@ -336,7 +338,12 @@ addEventListener('keydown', (e) => {
   if (/^(Key[WASD]|Arrow)/.test(e.code)) { if (swinging()) aimOnly.add(e.code); log('key', { k: e.code, down: 1, aim: aimOnly.has(e.code) }); }
   if (e.code === 'KeyK') hit('fh', false, e.code);
   if (e.code === 'KeyJ') hit('bh', false, e.code);
-  if (e.code === 'KeyL') hit('fh', true, e.code);
+  if (e.code === 'KeyL') hit('auto', true, e.code);
+  // Кручёный и резаный — правой рукой (I, U), сторона сама: по журналу 17.11 Shift и Alt левой рукой, которая держит WASD,
+  // Лёва почти не нажимал (20 раз на 1400 ударов). Shift и Alt тоже работают.
+  if (e.code === 'KeyI') hit('auto', false, e.code, 'top');
+  if (e.code === 'KeyU') hit('auto', false, e.code, 'cut');
+  document.querySelectorAll(`#lesson kbd[data-k="${e.code}"]`).forEach((k) => { k.classList.add('on'); setTimeout(() => k.classList.remove('on'), 250); });
   if (e.code === 'Space') hit('fh', false, e.code);
 });
 // Отпустил клавишу удара (или тач-кнопку) — сила дальше не растёт.
@@ -365,21 +372,32 @@ canvas.addEventListener('pointerup', joyEnd); canvas.addEventListener('pointerca
 $('bfh').addEventListener('pointerdown', (e) => { e.preventDefault(); hit('fh'); });
 $('bbh').addEventListener('pointerdown', (e) => { e.preventDefault(); hit('bh'); });
 for (const id of ['bfh', 'bbh']) for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) $(id).addEventListener(ev, () => release('touch'));
-$('bdrop').addEventListener('pointerdown', (e) => { e.preventDefault(); hit('fh', true); });
+$('bdrop').addEventListener('pointerdown', (e) => { e.preventDefault(); hit('auto', true); });
 const toggle = (id, on) => { const b = $(id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); };
 $('btop').addEventListener('click', () => { topMode = !topMode; if (topMode) sliceMode = false; toggle('btop', topMode); toggle('bcut', sliceMode); });
 $('bcut').addEventListener('click', () => { sliceMode = !sliceMode; if (sliceMode) topMode = false; toggle('btop', topMode); toggle('bcut', sliceMode); });
 
-function start() {
+// mode: 'match' | 'lessons' | 'wall'. Тренировка — тот же корт и управление, но без соперника (practice.js).
+function start(mode = 'match') {
   if (!game || started) return;
   started = true;
   sound.unlock();
   $('start').classList.add('done');
   document.body.classList.remove('menu');
   court.getObjectByName('fence-near').visible = false; // в игре камера стоит за этой стенкой
-  game.resetPoint(game.now ?? 0);
+  log('mode', { mode });
+  if (mode === 'match') return game.resetPoint(game.now ?? 0);
+  document.body.classList.add('practice');
+  const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* без памяти — рекорд на эту игру */ } } };
+  const ui = { text: (h) => { $('ltext').innerHTML = h; }, dots: (n, need) => { $('ldots').innerHTML = need && need < 9 ? Array.from({ length: need }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('') : ''; }, flash: (h, good) => hud.flash(h.replace(/&nbsp;/g, '\u00a0'), good) };
+  game.drill = new Practice(game, mode, { scene, court, ui, store, touch: matchMedia('(pointer: coarse)').matches });
+  $('pnext').hidden = mode !== 'lessons';
 }
-$('play').addEventListener('click', start);
+$('play').addEventListener('click', () => start());
+$('pLessons').addEventListener('click', () => start('lessons'));
+$('pWall').addEventListener('click', () => start('wall'));
+$('pnext').addEventListener('click', () => game?.drill?.skip());
+$('pexit').addEventListener('click', () => location.reload()); // shortcut: выход — перезагрузка в меню; сцена после тренировки не чистится
 
 // ---------- Модели ----------
 const bar = document.querySelector('#loader b');
@@ -431,7 +449,7 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
   if (Q.has('auto')) { game.autoLev = new AI(lev, game); start(); }
   hud.score(game);
   $('loader').classList.add('done'); window.__ready = true; // заставка index.html больше не покажет «не запустилась»
-  $('play').disabled = false;
+  for (const id of ['play', 'pLessons', 'pWall']) $(id).disabled = false;
 }, (e) => { if (e.total) bar.style.width = `${(e.loaded / e.total) * 100}%`; }, (err) => {
   console.error('модель не загрузилась', err);
   $('loader').querySelector('p').textContent = 'Модель не загрузилась, обнови страницу';

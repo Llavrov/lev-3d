@@ -143,16 +143,20 @@ export class Game {
     if (p === this.lev) { this.ai.readDrop = !!st.drop && shot.lob == null; this.ai.levShort = false; } // укороченный видно по замаху: соперник срывается раньше
     else if (!served) this.ai.afterShot(st, shot, aim);
     this.log('shot', { who: this.who(p), stroke: st.type, kind: shot.kind, drop: !!st.drop && shot.lob == null, lob: shot.lob != null ? r2(shot.lob) : null, power: r2(power), serve: served, speed: r2(b.vel.length()), spin: r2(shot.spin), aim: [r2(aim.x), r2(aim.z)], target: [r2(target.x), r2(target.z)], opp: [r2(this.opp.pos.x), r2(this.opp.pos.z)], lev: [r2(this.lev.pos.x), r2(this.lev.pos.z)], net: this.ai.net });
-    // Где мяч соперника отскочит на половине Лёвы — для метки на корте.
+    if (p === this.lev) this.lastShot = { stroke: st.type, drop: !!st.drop && shot.lob == null, power, kind: shot.kind };
     this.landing = null;
-    if (p === this.opp) {
-      const c = copyBall(b);
-      for (let i = 0, t = 0; i < 500; i++) { const ev = step(c, 1 / 120); t += 1 / 120; if (ev?.type === 'net') break; if (ev?.type === 'bounce') { this.landing = { pos: ev.pos, t: this.now + t, t0: this.now }; break; } }
-    }
+    if (p === this.opp) this.markLanding();
     this.rally++;
     this.ballMesh.visible = true;
     this.sound.hit({ q, vol: p === this.lev ? 1 : 0.4, pan: this.pan(sweet.x), spin: shot.spin, power });
     this.onShot?.(p, power, sweet);
+  }
+
+  // Где мяч, летящий к Лёве, отскочит на его половине — для метки на корте.
+  markLanding() {
+    const c = copyBall(this.b);
+    this.landing = null;
+    for (let i = 0, t = 0; i < 500; i++) { const ev = step(c, 1 / 120); t += 1 / 120; if (ev?.type === 'net') break; if (ev?.type === 'bounce') { this.landing = { pos: ev.pos, t: this.now + t, t0: this.now }; break; } }
   }
 
   // Панорама звука: где на корте относительно камеры (она стоит за Лёвой и смещается на треть его хода).
@@ -168,6 +172,7 @@ export class Game {
     const side = pos.z > 0 ? 1 : -1;
     this.bounces++;
     this.b.bounces = this.bounces;
+    if (this.drill) return this.drill.bounce(pos, h, this.bounces); // тренировка: свои правила (practice.js)
     if (this.bounces === 1) {
       this.log('bounce', { by: this.who(h), at: [r2(pos.x), r2(pos.z)], in: side !== h.side && inSingles(pos) });
       if (h === this.lev) this.ai.levShort = Math.abs(pos.z) < 7.2 + 1.5 * this.ai.boss && side !== h.side; // короткий мяч Лёвы — соперник атакует; босс — и средний
@@ -178,6 +183,7 @@ export class Game {
 
   // h проиграл розыгрыш. Первая подача в аут или в сетку — ошибка и вторая подача; вторая — двойная.
   lose(h, why) {
+    if (this.drill) return this.drill.miss(why);
     if (this.rally === 1 && h === this.server && this.serveNo === 1) {
       this.state = 'fault'; this.nextAt = this.now + 1.1; this.serveNo = 2;
       this.log('fault', { who: this.who(h), why }); this.hud.flash('Вторая подача', false);
@@ -187,6 +193,7 @@ export class Game {
   }
 
   point(w, why) {
+    if (this.drill) return this.drill.miss(why);
     if (this.state === 'over') return;
     this.state = 'over';
     this.nextAt = this.now + 1.8;
@@ -238,6 +245,7 @@ export class Game {
     if (b.live) {
       for (let i = 0; i < 4; i++) {
         const ev = step(b, dt / 4);
+        this.drill?.afterStep(b);
         if (ev?.type === 'bounce') this.bounce(ev.pos);
         if (ev?.type === 'cord') this.sound.net({ pan: this.pan(b.pos.x) }); // задел трос и перевалился — играем дальше
         if (ev?.type === 'net') { this.sound.net({ pan: this.pan(b.pos.x) }); if (this.state === 'rally') this.lose(this.lastHitter ?? this.server, 'Сетка'); }
@@ -273,7 +281,8 @@ export class Game {
     this.hud.stamina?.(this);
     const levInput = this.autoLev ? this.autoLev.update(now) : levMove;
     this.lev.update(dt, now, levInput, b);
-    this.opp.update(dt, now, this.ai.update(now), b);
+    if (this.drill) this.drill.update(now); // тренировка: соперника нет, мячи подаёт мячемёт или отдаёт стенка
+    else this.opp.update(dt, now, this.ai.update(now), b);
     // Мяч задел тело, а не ракетку: очко тому, кто бил, как в теннисе. Мяч отскакивает от тела.
     if (b.live && this.state === 'rally' && this.lastHitter && !this.serving) {
       const p = this.other(this.lastHitter);

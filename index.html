@@ -53,6 +53,24 @@
   #play:disabled { opacity: .5; cursor: default; }
   #play:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
   body.menu #hud, body.menu #hint { opacity: 0; }
+  .modes { width: 100%; max-width: 360px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: -8px; }
+  .modes button, #pbar button { min-height: 46px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 12px; background: rgba(255, 255, 255, .08); color: #fff; font-weight: 600; cursor: pointer;
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  .modes button:disabled { opacity: .5; cursor: default; }
+  .modes button:active, #pbar button:active { background: rgba(255, 255, 255, .2); }
+  /* Тренировка: счёта нет, внизу строка урока с клавишами и точками прогресса, слева сверху «Выйти» и «Дальше» */
+  #lesson, #pbar { display: none; }
+  body.practice #hud { display: none; }
+  body.practice #lesson { display: grid; justify-items: center; gap: 8px; position: fixed; left: 16px; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); text-align: center; text-shadow: var(--shade); pointer-events: none; }
+  #lesson p { margin: 0; font-size: 17px; line-height: 1.45; max-width: 40em; }
+  #lesson kbd { vertical-align: 1px; transition: background .15s; }
+  #lesson kbd.on { background: var(--accent); }
+  #ldots { display: flex; gap: 6px; }
+  #ldots i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .8); }
+  #ldots i.on { background: var(--accent); border-color: var(--accent); }
+  body.practice #pbar { display: flex; gap: 8px; position: fixed; top: calc(10px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); }
+  #pbar button { padding: 0 16px; background: rgba(16, 24, 20, .55); border-color: rgba(255, 255, 255, .2); }
+  #pbar button[hidden] { display: none; }
   body.menu #pad, body.menu #joy { display: none !important; } /* кнопки ударов на телефоне — только в игре */
 
   #loader { position: fixed; inset: 0; z-index: 4; display: grid; place-items: center; background: #b8d0e3; text-shadow: 0 1px 8px rgba(0, 0, 0, .25); transition: opacity .5s; }
@@ -74,6 +92,7 @@
     #start .touch-only { display: block; }
     #start .keys-only { display: none; }
     #hint { bottom: calc(232px + env(safe-area-inset-bottom)); } /* выше кнопок ударов */
+    body.practice #lesson { bottom: auto; top: calc(66px + env(safe-area-inset-top)); } /* на телефоне внизу кнопки и сам Лёва: урок сверху */
   }
 </style>
 </head>
@@ -86,6 +105,8 @@
   <div class="side"><b id="po">0</b><i id="srv-o"></i><span class="nm"><small>Соперник</small><span class="st" id="st-o"><span></span></span></span></div>
 </div>
 <div id="msg"></div>
+<div id="lesson" aria-live="polite"><p id="ltext"></p><span id="ldots"></span></div>
+<div id="pbar"><button id="pexit">Выйти</button><button id="pnext">Дальше</button></div>
 <div id="hint"></div>
 
 <div id="pad">
@@ -110,12 +131,13 @@
       <span><kbd>K</kbd> форхенд</span>
       <span><kbd>J</kbd> бэкхенд</span>
       <span><kbd>L</kbd> укороченный</span>
-      <span><kbd>Shift</kbd> кручёный</span>
-      <span><kbd>Alt</kbd> резаный</span>
+      <span><kbd>I</kbd> кручёный</span>
+      <span><kbd>U</kbd> резаный</span>
       <span><kbd>Пробел</kbd> подача</span>
     </div>
     <p class="touch-only">Слева ведёшь пальцем&nbsp;— бег, справа&nbsp;— удары</p>
     <button id="play" disabled>Играть</button>
+    <div class="modes"><button id="pLessons" disabled>Уроки ударов</button><button id="pWall" disabled>Стенка</button></div>
   </div>
 </div>
 <div id="loader"><div><p>Лёва выходит на&nbsp;корт</p><i><b></b></i></div></div>
