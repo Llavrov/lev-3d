@@ -1,69 +1,15 @@
-// Окружение клуба в альпийской долине: небо, горы с лесом (env-mountains.js), ели и липы вокруг, шале клуба.
-// Небо от GPT лежит в art/, деревья — модели Ильдара из проекта Монтероза (см. README).
+// Окружение клуба в альпийской долине: небо и воздух (env-sky.js), горы с лесом (env-mountains.js), клуб вокруг корта
+// (env-club.js), ели и липы, шале с террасой. Деревья — модели Ильдара из проекта Монтероза (см. README).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { buildMountains } from './env-mountains.js';
+import { buildMountains, heightAt } from './env-mountains.js';
+import { buildSky, HAZE } from './env-sky.js';
+import { buildClub } from './env-club.js';
+export { SUN, HAZE, AIR_DENSITY, outdoorEnv } from './env-sky.js';
+export const HORIZON = HAZE; // старое имя цвета дымки
 
-const load = new THREE.TextureLoader();
 const rng = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-const tex = (url) => { const t = load.load(url); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; };
-export const HORIZON = '#b4b7ba'; // низ неба на фото: им же дымка, чтобы дальние горы уходили в цвет неба
-
-// Небо: фото (art/sky-alps.png) на куполе вокруг камеры, по кругу 4 раза с отражением — без стыков. Фото до 60° над
-// горизонтом, выше синий зенит. Рисуется первым и без глубины: горы до 18 км стоят дальше любого купола.
-// Производные u считаем сами: на шве atan прыгает, и мип-уровень давал бы полосу.
-export function buildSky() {
-  const map = tex('/tex/sky.webp'); map.wrapS = THREE.MirroredRepeatWrapping;
-  const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
-    uniforms: { map: { value: map }, zenith: { value: new THREE.Color('#1651a1') } },
-    vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * viewMatrix * vec4(position + cameraPosition, 1.0); }',
-    fragmentShader: `uniform sampler2D map; uniform vec3 zenith; varying vec3 vDir;
-      void main(){
-        vec3 d = normalize(vDir);
-        float el = asin(clamp(d.y, 0.0, 1.0)) / 1.0472, u = atan(d.x, -d.z) / 6.2832 * 4.0;
-        vec2 g = vec2(dFdx(u), dFdy(u)); if (abs(g.x) + abs(g.y) > 1.0) g = vec2(0.0);
-        vec3 c = textureGrad(map, vec2(u, clamp(el, 0.003, 0.997)), vec2(g.x, dFdx(el)), vec2(g.y, dFdy(el))).rgb;
-        gl_FragColor = vec4(mix(c, zenith, smoothstep(0.8, 1.5, el)), 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-      }`,
-  });
-  // Радиус 20 км, а не единичный шар: проход затенения рисует сцену своим материалом, и шар в 1 м вставал серым
-  // кругом посреди корта.
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(20000, 48, 24), mat);
-  sky.frustumCulled = false; sky.renderOrder = -10; sky.name = 'sky';
-  return sky;
-}
-
-// Окружение для рассеянного света и отражений: небо сверху, горы и лес по горизонту, грунт снизу. Раньше была
-// комната RoomEnvironment, и в стёклах, стойках и коже отражались лампы под потолком.
-export function outdoorEnv() {
-  const s = new THREE.Scene(), C = (c) => new THREE.Color(c);
-  s.add(new THREE.Mesh(new THREE.SphereGeometry(10, 48, 24), new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    uniforms: { zen: { value: C('#3f76c0') }, hor: { value: C(HORIZON) }, green: { value: C('#3a4d33') }, clay: { value: C('#8a6a4c') } },
-    vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform vec3 zen, hor, green, clay; varying vec3 vDir;
-      void main(){ float y = normalize(vDir).y;
-        vec3 c = y > 0.0 ? mix(green, mix(hor, zen, smoothstep(0.2, 0.9, y)), smoothstep(0.06, 0.25, y)) : clay * (0.75 + 0.25 * smoothstep(-0.3, 0.0, y));
-        gl_FragColor = vec4(c * 1.6, 1.0); }`,
-  })));
-  return s;
-}
-
-function canvasMap(w, h, draw) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
-  return t;
-}
-
-// Трава луга: травинки разного тона, плитка 2 м (в шейдере склона).
-const grassMap = () => canvasMap(256, 256, (g, n) => {
-  g.fillStyle = '#5f7f3e'; g.fillRect(0, 0, n, n);
-  for (let i = 0; i < 6000; i++) { const v = Math.random(); g.fillStyle = v < 0.5 ? `rgba(40,62,26,${0.3 + v})` : `rgba(150,172,86,${v - 0.35})`; g.fillRect(Math.random() * n, Math.random() * n, 1, 2 + Math.random() * 3); }
-});
 
 // ---------- Деревья ----------
 // Модели Ильдара (trees.glb из Монтерозы): ели tree_1..3 с ветками-карточками, липа broad_1, tree_4. Кусты shrub_*
@@ -120,7 +66,7 @@ function treeSpots() {
 }
 const vnoise2 = (x, z) => { const s = Math.sin(x * 1.7 + Math.sin(z * 1.3)) * Math.cos(z * 1.9 + Math.sin(x * 0.7)); return 0.5 + 0.5 * s; };
 
-function trees(group, onAtlas) {
+function trees(group, spots, onAtlas) {
   new GLTFLoader().load('/models/trees.glb', (gltf) => {
     const kinds = {};
     gltf.scene.traverse((o) => {
@@ -130,8 +76,8 @@ function trees(group, onAtlas) {
       if (o.material.alphaTest > 0 && !o.userData.done) { o.userData.done = true; if (name.startsWith('bb_')) onAtlas?.(o.material.map); }
     });
     const prepared = new Set();
-    const spots = treeSpots(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), r = rng(7);
-    const by = {}; for (const s of spots) (by[s[0] + (s[1] < -12 && Math.abs(s[2]) < 30 ? '+' : '')] ??= []).push(s);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), r = rng(7);
+    const by = {}; for (const s of spots) (by[s[0] + (s[1] < -12 && s[2] > -30 && s[2] < -2 ? '+' : '')] ??= []).push(s); // тень на корт — только от елей у дальней половины: ближняя половина Лёвы на солнце
     for (const [key, list] of Object.entries(by)) {
       const parts = kinds[key.replace('+', '')]; if (!parts) continue;
       for (const part of parts) {
@@ -141,7 +87,7 @@ function trees(group, onAtlas) {
           if (part.material.alphaTest > 0) { shellNormals(part.geometry); foliage(part.material); }
         }
         const im = new THREE.InstancedMesh(part.geometry, part.material, list.length);
-        list.forEach((s, i) => { const k = s[3]; im.setMatrixAt(i, m4.compose(new THREE.Vector3(s[1], -0.05, s[2]), q.setFromAxisAngle(up, r() * 6.28), new THREE.Vector3(k, k * (0.9 + r() * 0.2), k))); });
+        list.forEach((s, i) => { const k = s[3]; im.setMatrixAt(i, m4.compose(new THREE.Vector3(s[1], heightAt(s[1], s[2]) - 0.1, s[2]), q.setFromAxisAngle(up, r() * 6.28), new THREE.Vector3(k, k * (0.9 + r() * 0.2), k))); });
         im.castShadow = key.endsWith('+'); im.receiveShadow = true;
         group.add(im);
       }
@@ -190,8 +136,18 @@ function models(g) {
       }
     });
   }
-  // Настил террасы между кортом и шале: на нём бар, зонты и столики.
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(4.4, DECK, 16), new THREE.MeshStandardMaterial({ color: '#8a6446', roughness: 0.85 }));
+  // Настил террасы между кортом и шале: на нём бар, зонты и столики. Доски лиственницы по 14 см вдоль террасы,
+  // каждая своего тона, стыки вразбежку, между досками тёмная щель.
+  const planks = document.createElement('canvas'); planks.width = 256; planks.height = 512;
+  const pg = planks.getContext('2d'), pr = rng(41);
+  for (let i = 0; i < 10; i++) for (let y = -pr() * 512; y < 512; y += 180 + pr() * 300) {
+    const v = 0.8 + pr() * 0.35; pg.fillStyle = `rgb(${138 * v | 0},${100 * v | 0},${70 * v | 0})`; pg.fillRect(i * 25.6, y, 25.6, 512);
+    for (let k = 0; k < 14; k++) { pg.fillStyle = `rgba(60,40,25,${0.08 + pr() * 0.12})`; pg.fillRect(i * 25.6 + pr() * 24, y + pr() * 400, 1, 20 + pr() * 120); } // волокна
+    pg.fillStyle = 'rgba(30,20,12,0.8)'; pg.fillRect(i * 25.6, y, 25.6, 2);
+  }
+  pg.fillStyle = 'rgba(25,16,10,0.9)'; for (let i = 0; i <= 10; i++) pg.fillRect(i * 25.6 - 1, 0, 2.5, 512);
+  const pt = new THREE.CanvasTexture(planks); pt.colorSpace = THREE.SRGBColorSpace; pt.wrapS = pt.wrapT = THREE.RepeatWrapping; pt.repeat.set(4.4 / 1.4, 16 / 2.8); pt.anisotropy = 8;
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(4.4, DECK, 16), new THREE.MeshStandardMaterial({ map: pt, roughness: 0.85 }));
   deck.position.set(12.4, DECK / 2, -27); deck.receiveShadow = true; g.add(deck);
 }
 
@@ -226,9 +182,9 @@ function props() {
 }
 
 export function buildEnv() {
-  const g = new THREE.Group(), mountains = buildMountains(grassMap());
-  g.add(buildSky(), mountains, props());
+  const g = new THREE.Group(), spots = treeSpots(), club = buildClub(spots), mountains = buildMountains(club.uniforms);
+  g.add(buildSky(), mountains, club.group, props());
   models(g);
-  trees(g, (atlas) => mountains.userData.addForest(atlas)); // лес на склонах ждёт атлас из той же модели
+  trees(g, spots, (atlas) => mountains.userData.addForest(atlas)); // лес на склонах ждёт атлас из той же модели
   return g;
 }

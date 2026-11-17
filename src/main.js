@@ -11,7 +11,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildCourt, COURT, CourtMarks, ClayDust } from './court.js';
-import { HORIZON, outdoorEnv } from './env.js';
+import { HAZE, AIR_DENSITY, SUN, outdoorEnv } from './env.js';
 import { buildBall } from './ball.js';
 import { fitRacketModel, dressRacket } from './racket.js';
 import { Player, POWER, holdOf, powerOf } from './player.js';
@@ -31,17 +31,17 @@ renderer.toneMapping = THREE.NeutralToneMapping; // цвет как на фот�
 renderer.toneMappingExposure = 1.15;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(HORIZON, 0.00009); // воздушная перспектива: горы за 10 км наполовину в дымке, корт без неё
+scene.fog = new THREE.FogExp2(HAZE, AIR_DENSITY); // воздушная перспектива по высоте (env-sky.js): долина в дымке, вершины чище, корт без неё
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(outdoorEnv(), 0.04).texture;
 scene.environmentIntensity = 0.6; // небо и грунт темнее комнатных ламп RoomEnvironment: при 0.32 лицо в тени проваливалось
 scene.add(new THREE.HemisphereLight('#dce8ff', '#a65a35', 0.55)); // заполняющий свет слабее — тени глубже, картинка не плоская
-// Солнце ближе к вечеру: ниже и теплее, тени длинные, светотень на теле и рельефе грунта.
+// Солнце после обеда (SUN в env-sky.js): слева, 35° над горизонтом, тёплое; тени длинные, горы освещены сбоку.
 const sun = new THREE.DirectionalLight('#ffe2b8', 4.2);
-sun.position.set(-14, 12, 10);
+sun.position.copy(SUN).multiplyScalar(40);
 sun.castShadow = true;
 const SM = innerWidth < 768 ? 2048 : 4096;
 sun.shadow.mapSize.set(SM, SM);
-Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 24, bottom: -24, near: 1, far: 80 });
+Object.assign(sun.shadow.camera, { left: -31, right: 26, top: 30.5, bottom: -15.5, near: 1, far: 90 }); // корт, ели слева, шале, изгородь
 sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.03;
 sun.shadow.radius = 3;
 scene.add(sun, sun.target);
