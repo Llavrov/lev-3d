@@ -84,6 +84,7 @@ export class Game {
     let spin = (second ? 220 : top ? 260 : oh ? 30 : cut ? -260 : 50) * k; // вторая подача — крученая, надёжная; резаный плывёт и стелется
     if (st.drop) { speed = 12 + 2 * q; spin = -170; } // укороченный: медленно, с подрезкой, мяч зависает и гаснет, но добежать можно
     if (v) { speed = 19 * (0.8 + 0.2 * q) * k; spin = -60; if (p.human) target.z *= 0.75; } // с лёта: короткий толчок с лёгкой подрезкой, у Лёвы — коротко в угол
+    if (st.aiKind === 'feet') { speed *= 0.78; spin = 260; } // в ноги: медленнее и с кручением — ныряет за сеткой
     const kind = st.aiKind ?? (st.drop ? 'drop' : angle ? 'angle' : v ? 'volley' : oh ? 'smash' : power > 0.5 ? 'power' : 'base');
     return { target, speed, spin, lob: null, angle, kind };
   }
@@ -105,7 +106,9 @@ export class Game {
     // Выносливость: длинный выпад и защитный резаный, сильный удар (у соперника — атака с темпом) тратят силы, даже если мимо.
     if (!this.serving) p.stamina = Math.max(0, p.stamina - ((st.reach?.lunge ?? 0) > 0.3 || st.defend ? 0.025 : 0) - 0.03 * power - (st.aiPace ? 0.015 : 0));
     if (!this.serving) this.log('contact', { who: this.who(p), stroke: st.type, drop: !!st.drop, d: r2(d), hit: d <= HIT_R, lead: r2(lead), side: r2(off.dot(p.right)), high: r2(off.y), deep: r2(off.dot(p.fwd)), ballY: r2(b.pos.y), pos: [r2(p.pos.x), r2(p.pos.z)], speed: r2(run), turn: r2(st.reach?.ang ?? 0), radial: r2(st.reach?.radial ?? 0), lunge: r2(p.lunge.length()), power: r2(power) });
-    if (d > HIT_R) return; // не дотянулся: мяч пролетел мимо ракетки
+    // Не дотянулся: мяч пролетел мимо ракетки. Босс достаёт до +25% дальше.
+    // shortcut: босс промахивался (попадания 0,83–0,9) из-за предела поворота руки — честнее чинить выход к мячу в plan().
+    if (d > HIT_R * (p.human ? 1 : 1 + 0.25 * this.ai.boss)) return;
     const timing = p.human && !this.serving ? clamp(1 - Math.max(0, Math.abs(lead - 0.55) - 0.3) / 0.6, 0.4, 1) : 1;
     let q = 0.5 * Math.min(1, (1 - d / HIT_R) * 1.4) + 0.5 * timing;
     q *= 1 - clamp((run - 1.2) / 4, 0, 0.35); // на бегу удар слабее и кривее
@@ -119,7 +122,7 @@ export class Game {
       // Выше 1 (boss 0..1) — почти без невынужденных: разброс до 8 см, грубых ошибок нет, растянутым ошибается вдвое реже.
       err += (this.serving ? (this.serveNo === 2 ? 0 : 1.0 + 0.6 * (1 - s) - 0.3 * boss) : 0.2 + 1.2 * (1 - s) - 0.12 * boss + 0.5 * stretch + (Math.random() < 0.05 * (1.3 - s) * (1 - boss) ? 2.2 : 0) + 0.8 * down * stretch) * focus;
       if (st.aiPace) err *= 1 - 0.3 * up;
-      pace = Math.max(0.6, 0.97 + 0.04 * boss - ran * 0.06 - (1 - s) * 0.15);
+      pace = Math.max(0.6, 0.97 + 0.1 * boss - ran * 0.06 - (1 - s) * 0.15); // босс бьёт до 7% быстрее
       q = Math.min(q, 0.9);
       miss = !this.serving && Math.random() < ((0.005 + 0.045 * (1 - s)) * (1 - 0.8 * boss) + 0.06 * stretch + 0.04 * down * stretch) * focus;
     } else if (!this.serving) err += 0.5 * down * Math.max(clamp((run - 1) / 3, 0, 1), power); // низкий настрой: под давлением чаще мимо
@@ -167,7 +170,7 @@ export class Game {
     this.b.bounces = this.bounces;
     if (this.bounces === 1) {
       this.log('bounce', { by: this.who(h), at: [r2(pos.x), r2(pos.z)], in: side !== h.side && inSingles(pos) });
-      if (h === this.lev) this.ai.levShort = Math.abs(pos.z) < 7.2 && side !== h.side; // короткий мяч Лёвы — соперник атакует
+      if (h === this.lev) this.ai.levShort = Math.abs(pos.z) < 7.2 + 1.5 * this.ai.boss && side !== h.side; // короткий мяч Лёвы — соперник атакует; босс — и средний
       if (side === h.side) return this.lose(h, 'Не перелетел');
       if (!inSingles(pos)) return this.lose(h, 'Аут');
     } else return this.point(h, h === this.lev ? 'Виннер' : 'Не достал');
@@ -335,11 +338,14 @@ export class AI {
     if (st.type === 'oh') return pick(1.2, 3.0, 7, 10);
     if (st.type.startsWith('v')) return pick(2.2, 3.4, 5.5, 8.5);
     if (L.z * side < 6.5) { // Лёва у сетки
-      if (Math.random() < (0.12 + 0.33 * s) * clamp(this.slack / 0.3, 0.3, 1)) { st.aiLob = clamp(0.2 + 0.8 * s - 0.9 * stretch + rnd(-0.15, 0.15), 0, 1); return pick(0, 2, 10, 11, any()); }
+      // Свеча — когда есть время, босс чаще, если Лёва прилип к сетке.
+      if (Math.random() < (0.12 + 0.33 * s + (L.z * side < 4 ? 0.15 * boss : 0)) * clamp(this.slack / 0.3, 0.3, 1)) { st.aiLob = clamp(0.2 + 0.8 * s - 0.9 * stretch + rnd(-0.15, 0.15), 0, 1); return pick(0, 2, 10, 11, any()); }
+      // Босс — в ноги: кручёный ныряет в 1,2–1,8 м перед Лёвой, воллей снизу вверх.
+      if (Math.random() < 0.5 * boss) { st.aiKind = 'feet'; return new THREE.Vector3(L.x + rnd(-0.25, 0.25), 0, side * clamp(L.z * side - rnd(1.2, 1.8), 1.2, 5)); }
       st.aiKind = 'pass';
       return Math.random() < 0.7 ? pick(2.8, 3.6, 7.5, 10.5) : pick(2.6, 3.4, 8, 10.5, -away);
     }
-    if (L.z * side > 13.2 && stretch < 0.2 && Math.abs(p.pos.z) < 11.6 && Math.random() < 0.06 + 0.16 * s) { st.drop = true; return pick(0.3, 2.5, 2.5, 4); }
+    if (L.z * side > 13.2 - 0.8 * boss && stretch < 0.2 && Math.abs(p.pos.z) < 11.6 && Math.random() < 0.06 + 0.16 * s) { st.drop = true; return pick(0.3, 2.5, 2.5, 4); }
     if (this.levShort && stretch < 0.3) { st.aiPace = 1.06 + 0.06 * s; st.aiKind = 'attack'; return pick(2.2, 3.3, 8.8, 10.4); }
     const r = Math.random();
     if (r < 0.55 + 0.2 * s) return pick(1.2, 3.0, 8 + s, 10.3);
