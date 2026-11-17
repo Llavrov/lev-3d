@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Кадры окружения: меню, игровая камера и несколько ракурсов на корт, сетку, забор, дальний план. Нужен dev-сервер на 3952.
-//   node tools/envshot.mjs --out test-out/env-before          кадры 1440×900 и 375×812
+//   node tools/envshot.mjs --out test-out/env-before          кадры 1440×900 и 390×844
 //   node tools/envshot.mjs --out test-out/env --only game     только часть кадров (через запятую)
 //   node tools/envshot.mjs --perf --gpu                       ещё и время кадра игровой камеры на видеокарте
 //   --dist <папка> — снимать собранную версию (vite build) вместо dev-сервера: так сравниваем с резервной копией
@@ -42,7 +42,7 @@ const VIEWS = {
 const browser = await chromium.launch({ headless: true, args: GPU ? ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const want = (n) => !ONLY.length || ONLY.includes(n);
 
-for (const [w, h, tag] of [[1440, 900, 'd'], ...(argv.includes('--desk') ? [] : [[375, 812, 'm']])]) { // --desk: только компьютер
+for (const [w, h, tag] of [[1440, 900, 'd'], ...(argv.includes('--desk') ? [] : [[390, 844, 'm']])]) { // --desk: только компьютер
   const mobile = tag === 'm';
   const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: mobile || PERF ? 2 : 1, isMobile: mobile, hasTouch: mobile }); // телефон: (pointer: coarse) — меньше травы, без затенения // время кадра меряем на ретине: так упираемся в видеокарту, а не в шум
   page.on('pageerror', (e) => console.error('ОШИБКА СТРАНИЦЫ:', e.message));

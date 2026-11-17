@@ -267,7 +267,7 @@ function forest(atlas, count) {
     for (const [i, j] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
       P.push(x + side.x * i * w / 2, y - 1 + j * h, z + side.z * i * w / 2);
       n.copy(to).multiplyScalar(0.7).addScaledVector(side, i * 0.7).addScaledVector(up, 0.25).normalize(); N.push(n.x, n.y, n.z);
-      U.push(i < 0 ? sp[0] : sp[2], j ? sp[1] : sp[3]);
+      U.push(i < 0 ? sp[0] + 0.005 : sp[2] - 0.005, j ? sp[1] + 0.008 : sp[3] - 0.003); // отступ внутрь: край соседнего спрайта атласа висел над елью чёрточкой
     }
     I.push(b, b + 1, b + 2, b, b + 2, b + 3);
   }
@@ -282,7 +282,7 @@ function forest(atlas, count) {
     for (const [i, j] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
       P.push(x + side.x * i * w / 2, y - 1 + j * h, z + side.z * i * w / 2);
       n.copy(to).multiplyScalar(0.7).addScaledVector(side, i * 0.7).addScaledVector(up, 0.25).normalize(); N.push(n.x, n.y, n.z);
-      U.push(i < 0 ? sp[0] : sp[2], j ? sp[1] : sp[3]);
+      U.push(i < 0 ? sp[0] + 0.005 : sp[2] - 0.005, j ? sp[1] + 0.008 : sp[3] - 0.003); // отступ внутрь: край соседнего спрайта атласа висел над елью чёрточкой
     }
     I.push(b, b + 1, b + 2, b, b + 2, b + 3);
   }
