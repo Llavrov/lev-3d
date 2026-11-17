@@ -71,6 +71,19 @@ if (cmd === 'poses') {
     await page.evaluate((who) => { const p = __lev.game[who], P = p.pos, s = p.side; __lev.shot([P.x - 0.3 * s, 1.6, P.z + 4.2 * s], [P.x, 1.0, P.z]); }, who); // сзади, как в игре
     await shot(`${who}-body-${type}-back`);
   }
+  // Сидя на скамейке (club.js, player.stroll): таз на высоте сиденья 0,44 м, ступни перед ней, ракетка у правой ноги.
+  for (const who of ['lev', 'opp']) {
+    const a = await page.evaluate((who) => {
+      const g = __lev.game, p = g[who], V = p.pos.constructor, at = p.home.clone(), yaw = p.netYaw;
+      const f = new V(Math.sin(yaw), 0, Math.cos(yaw)), r = new V(-Math.cos(yaw), 0, Math.sin(yaw));
+      p.free = true; p.seat = { at, from: at.clone().addScaledVector(f, 0.55), yaw, h: 0.44, w: 0, feet: [-1, 1].map((s) => at.clone().addScaledVector(f, 0.5).addScaledVector(r, s * 0.15)) };
+      for (let i = 0; i < 150; i++) p.update(1 / 120, g.now, new V(), g.b);
+      return { ...p.rig.audit(), hips: +p.rig.b.Hips.getWorldPosition(new V()).y.toFixed(3) };
+    }, who);
+    audits.push({ who, type: 'sit', s: 'sit', ...a });
+    await closeups(`${who}-sit`, who);
+    await page.evaluate((who) => { const p = __lev.game[who]; p.seat = null; p.free = false; p.place(p.home); }, who);
+  }
   writeFileSync(join(OUT, 'audit.jsonl'), audits.map((a) => JSON.stringify(a)).join('\n'));
   const bad = audits.filter((a) => a.Left.elbowBack || a.Right.elbowBack || a.Left.kneeBack || a.Right.kneeBack || (a.Right.wrist ?? 0) > 50 || (a.gripGap ?? 0) > 0.05 || (a.leftOn > 0.5 && a.Left.elbow < 25)); // левая на ракетке почти прямой рукой: плечо выкручено, локоть на коже вывернут
   writeFileSync(join(OUT, 'summary.json'), JSON.stringify({ poses: audits.length, bad: bad.length, badList: bad }, null, 2));
