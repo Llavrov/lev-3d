@@ -19,23 +19,37 @@ export class Game {
     this.pts = new Map([[lev, 0], [opp, 0]]);
     this.games = new Map([[lev, 0], [opp, 0]]);
     this.server = lev;
-    lev.onContact = opp.onContact = (p, st) => this.contact(p, st);
-    for (const p of [lev, opp]) {
-      p.onStep = (f) => {
-        this.sound.step({ vol: (p === lev ? 1 : 0.25) * Math.min(1, 0.4 + p.vel.length() / 4), pan: this.pan(f.pos.x) });
-        if (p.vel.length() > 3) this.dust?.puff(f.pos, p.vel, 1, 0.2); // крошка из-под ног на рывке
-      };
-      p.onPlant = (p, k) => { // встал к удару с бега: упор ногами, грунт из-под обеих ступней
-        this.log('plant', { who: this.who(p), k: r2(k) });
-        this.sound.plant?.({ vol: (p === lev ? 1 : 0.3) * (0.4 + 0.6 * k), pan: this.pan(p.pos.x) });
-        for (const f of Object.values(p.feet)) this.dust?.puff(f.pos, p.vel, 2 + Math.round(3 * k), 0.2 + 0.4 * k);
-      };
-      let last = 0;
-      p.onSlide = (a, b) => { this.marks?.slide(a, b); if (this.now - last > 0.05) { last = this.now; this.dust?.puff(b, p.vel, 2, 0.5); } };
-    }
+    this.hook(lev); this.hook(opp);
     this.ai = new AI(opp, this);
     this.autoLev = null; // ?auto: Лёвой тоже играет ИИ (для проверки)
     this.rally = 0;
+  }
+  // Удар, шаги, упор и скольжение игрока — в розыгрыш, звук, пыль и следы.
+  hook(p) {
+    p.onContact = (p, st) => this.contact(p, st);
+    p.onStep = (f) => {
+      this.sound.step({ vol: (p === this.lev ? 1 : 0.25) * Math.min(1, 0.4 + p.vel.length() / 4), pan: this.pan(f.pos.x) });
+      if (p.vel.length() > 3) this.dust?.puff(f.pos, p.vel, 1, 0.2); // крошка из-под ног на рывке
+    };
+    p.onPlant = (p, k) => { // встал к удару с бега: упор ногами, грунт из-под обеих ступней
+      this.log('plant', { who: this.who(p), k: r2(k) });
+      this.sound.plant?.({ vol: (p === this.lev ? 1 : 0.3) * (0.4 + 0.6 * k), pan: this.pan(p.pos.x) });
+      for (const f of Object.values(p.feet)) this.dust?.puff(f.pos, p.vel, 2 + Math.round(3 * k), 0.2 + 0.4 * k);
+    };
+    let last = 0;
+    p.onSlide = (a, b) => { this.marks?.slide(a, b); if (this.now - last > 0.05) { last = this.now; this.dust?.puff(b, p.vel, 2, 0.5); } };
+  }
+  // Замена на месте Лёвы (club.js): p получает его счёт, подачу и колбэки; auto — за него играет ИИ.
+  // Обратно — swapLev(лёва). Старый игрок отцеплен от розыгрыша и дальше живёт сам (гуляет по клубу).
+  swapLev(p, auto = !p.human) {
+    const old = this.lev;
+    if (p !== old) {
+      for (const m of [this.pts, this.games]) { m.set(p, m.get(old)); m.delete(old); }
+      if (this.server === old) this.server = p;
+      old.onContact = old.onStep = old.onPlant = old.onSlide = null;
+      this.lev = p; this.hook(p);
+    }
+    this.autoLev = auto ? new AI(p, this) : null;
   }
   other(p) { return p === this.lev ? this.opp : this.lev; }
   who(p) { return p === this.lev ? 'lev' : 'opp'; }
@@ -237,6 +251,8 @@ export class Game {
 
   update(dt, now, levMove) {
     this.now = now;
+    // Лёва ушёл с корта, замена ещё идёт к задней линии (club.js ведёт её сам): розыгрыша нет, соперник ждёт на месте.
+    if (this.state === 'away') { this.opp.idle = true; this.opp.update(dt, now, new THREE.Vector3(), this.b); return; }
     if (this.state === 'serve' && this.serveAt && now >= this.serveAt) { this.serveAt = null; this.serve(this.server, now); }
     if (this.state === 'over' && now >= this.nextAt) this.resetPoint(now);
     if (this.state === 'fault' && now >= this.nextAt) this.resetPoint(now, true);
@@ -325,7 +341,7 @@ export class AI {
   // у линии подачи), на 0,3–1 м внутри задней линии, ближе, когда Лёва бьёт из-за линии; у сетки — в 3 м от неё.
   // Сильный соперник читает укороченный по замаху Лёвы и заранее идёт вперёд.
   spot() {
-    const L = this.game.lev, P = L.pos, s = this.skill, z = this.p.side, st = L.stroke;
+    const L = this.game.other(this.p), P = L.pos, s = this.skill, z = this.p.side, st = L.stroke; // тот, кто бьёт ему (ИИ за Лёву или замену — соперник)
     if (st && st !== this.readFor) { this.readFor = st; this.reads = st.drop && Math.random() < clamp((s - 0.5) * 1.6, 0, 0.75); }
     const depth = this.net ? 3.2 : 11.6 - 0.25 * s - 0.6 * clamp((Math.abs(P.z) - 12.2) / 1.5, 0, 1);
     const ext = (sd) => new THREE.Vector3(sd * 4.1, 0, z * (sd * P.x >= 0 ? 11.9 : THREE.MathUtils.lerp(11.9, 6.4, clamp(Math.abs(P.x) / 3, 0, 1)))).sub(P).setY(0).normalize();
@@ -337,7 +353,7 @@ export class AI {
   // свеча, если есть время, иначе обводка. Лёва далеко за линией — иногда укороченный. Короткий мяч Лёвы — атака в угол.
   // Иначе в открытый корт, иногда за спину или глубоко в середину — смена направления.
   aim(p, st) {
-    const g = this.game, L = g.lev.pos, s = this.skill, boss = this.boss, side = -p.side, stretch = clamp((this.ran - 2.2) / 3, 0, 1);
+    const g = this.game, L = g.other(p).pos, s = this.skill, boss = this.boss, side = -p.side, stretch = clamp((this.ran - 2.2) / 3, 0, 1);
     // Растянут — бьёт безопаснее, ближе к середине; босс целит ближе к линиям (ошибок у него почти нет).
     const away = -Math.sign(L.x || Math.random() - 0.5), wide = (1 - 0.4 * stretch) * (1 + 0.08 * boss);
     const pick = (x0, x1, z0, z1, sx = away) => new THREE.Vector3(sx * rnd(x0, x1) * wide, 0, side * rnd(z0, z1));
