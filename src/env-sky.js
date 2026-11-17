@@ -42,7 +42,7 @@ if (!THREE.ShaderChunk.tonemapping_fragment.includes('airApply')) {
 const NOISE = /* glsl */ `
 float h12(vec2 p){ vec3 q = fract(vec3(p.xyx) * .1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float vn(vec2 p){ vec2 i = floor(p), f = fract(p), u = f * f * (3. - 2. * f); return mix(mix(h12(i), h12(i + vec2(1, 0)), u.x), mix(h12(i + vec2(0, 1)), h12(i + vec2(1, 1)), u.x), u.y); }
-float fbm(vec2 p){ float a = .5, s = 0.; for (int i = 0; i < 5; i++){ s += a * vn(p); p = mat2(1.6, 1.2, -1.2, 1.6) * p + 7.3; a *= .5; } return s; }
+float fbm(vec2 p){ float a = .5, s = 0.; for (int i = 0; i < 4; i++){ s += a * vn(p); p = mat2(1.6, 1.2, -1.2, 1.6) * p + 7.3; a *= .5; } return s; }
 `;
 
 // Небо: от дымки у горизонта к синему зениту, свечение вокруг солнца, кучевые облака на плоскости ~3 км.
@@ -50,9 +50,11 @@ float fbm(vec2 p){ float a = .5, s = 0.; for (int i = 0; i < 5; i++){ s += a * v
 export function buildSky() {
   const time = { value: 0 };
   const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
+    side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: { zen: { value: ZENITH }, haze: { value: HAZE }, time },
-    vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * viewMatrix * vec4(position + cameraPosition, 1.0); }',
+    // Глубина на дальней плоскости и рисуется последним из непрозрачного: шум облаков считается только там, где небо
+    // видно. Первым и без глубины оно считало облака под каждым пикселем кадра.
+    vertexShader: 'varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix * viewMatrix * vec4(position + cameraPosition, 1.0); gl_Position = vec4(p.xy, p.w * .999999, p.w); }', // ровно на плоскости отсекались рёбра треугольников — чёрные чёрточки на телефоне
     fragmentShader: `uniform vec3 zen, haze; uniform float time; varying vec3 vDir;
       ${NOISE}
       ${AIR}
@@ -65,7 +67,7 @@ export function buildSky() {
         if (rd.y > .004) {
           vec2 cp = rd.xz / (rd.y + .05) * .55 + vec2(time * .0015, time * .0004);
           float cov = .53 + .06 * rd.z; // над дальним концом долины (−z) облаков больше
-          float n = cloud(cp), n2 = cloud(cp + normalize(SUN_DIR.xz) * .12);
+          float n = cloud(cp), n2 = fbm(cp * 2.7 + normalize(SUN_DIR.xz) * .3) * .38 + n * .62; // плотность ближе к солнцу: дёшево, от той же формы
           float cl = smoothstep(cov, cov + .16, n) * smoothstep(.0, .08, rd.y), thick = smoothstep(cov + .04, cov + .3, n);
           float lit = clamp(.6 + (n - n2) * 6., 0., 1.); // со стороны солнца плотность ниже — край светится
           vec3 cc = mix(vec3(.55, .6, .7), vec3(1.25, 1.18, 1.08), lit * (1. - .45 * thick)) * 1.5 + vec3(.6, .45, .3) * pow(s, 6.) * (1. - thick);
@@ -80,7 +82,7 @@ export function buildSky() {
   // Радиус 20 км, а не единичный шар: проход затенения рисует сцену своим материалом, и шар в 1 м вставал серым
   // кругом посреди корта.
   const sky = new THREE.Mesh(new THREE.SphereGeometry(20000, 48, 24), mat);
-  sky.frustumCulled = false; sky.renderOrder = -10; sky.name = 'sky';
+  sky.frustumCulled = false; sky.renderOrder = 1000; sky.name = 'sky';
   sky.onBeforeRender = () => { time.value = performance.now() / 1000; };
   return sky;
 }

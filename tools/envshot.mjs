@@ -5,6 +5,7 @@
 //   node tools/envshot.mjs --perf --gpu                       ещё и время кадра игровой камеры на видеокарте
 //   --dist <папка> — снимать собранную версию (vite build) вместо dev-сервера: так сравниваем с резервной копией
 //   --eval '<js>' — выполнить в странице перед съёмкой (пробы без правки кода)
+//   --desk — без кадров телефона (быстрее)
 //   --gpu — через видеокарту Мака (metal), а не программный swiftshader: так время кадра похоже на настоящее.
 import { chromium } from 'playwright-core';
 import { mkdirSync, existsSync } from 'node:fs';
@@ -38,9 +39,9 @@ const VIEWS = {
 const browser = await chromium.launch({ headless: true, args: GPU ? ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const want = (n) => !ONLY.length || ONLY.includes(n);
 
-for (const [w, h, tag] of [[1440, 900, 'd'], [375, 812, 'm']]) {
+for (const [w, h, tag] of [[1440, 900, 'd'], ...(argv.includes('--desk') ? [] : [[375, 812, 'm']])]) { // --desk: только компьютер
   const mobile = tag === 'm';
-  const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: mobile || PERF ? 2 : 1 }); // время кадра меряем на ретине: так упираемся в видеокарту, а не в шум
+  const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: mobile || PERF ? 2 : 1, isMobile: mobile, hasTouch: mobile }); // телефон: (pointer: coarse) — меньше травы, без затенения // время кадра меряем на ретине: так упираемся в видеокарту, а не в шум
   page.on('pageerror', (e) => console.error('ОШИБКА СТРАНИЦЫ:', e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.error('console:', m.text()); });
   // Без горячей перезагрузки: рядом правят код другие агенты, и Vite перезагружал страницу посреди съёмки.
@@ -75,7 +76,7 @@ for (const [w, h, tag] of [[1440, 900, 'd'], [375, 812, 'm']]) {
       let tri = 0, meshes = 0; __lev.scene.traverse((o) => { if (o.isMesh && o.visible) { meshes++; const g = o.geometry; tri += ((g.index ? g.index.count : g.attributes.position.count) / 3) * (o.count ?? 1); } });
       window.__noDraw = false;
       return { ...all, parts, meshes, tris: Math.round(tri) };
-    }, ['mountains', 'forest', 'clubhouse', 'sky', 'fence', 'props']);
+    }, ['mountains', 'forest', 'sky', 'fence', 'props', 'club', 'tufts', 'hedges', 'valley']);
     console.log(`игровая камера 2880×1800: видеокарта ${perf.gpu} мс, JS ${perf.cpu} мс, мешей ${perf.meshes}, треугольников ${perf.tris}`);
     console.log('доля частей (видеокарта, мс):', JSON.stringify(perf.parts));
   }

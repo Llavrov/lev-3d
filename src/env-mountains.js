@@ -35,7 +35,7 @@ const PEAKS = [
 const K = 90; // мягкость слияния вершин, м
 
 // Площадка клуба: тут ровно (y = 0), по ней ходят, на ней корт, шале, дорожки, скамейки.
-export const PAD = { x0: -24, x1: 34, z0: -44, z1: 31 };
+export const PAD = { x0: -24, x1: 58, z0: -44, z1: 37 }; // до дороги справа: стоянка и вход тоже ровные
 export const DROP = 18; // дно долины ниже площадки клуба, м
 export const padDist = (x, z) => Math.hypot(Math.max(PAD.x0 - x, 0, x - PAD.x1), Math.max(PAD.z0 - z, 0, z - PAD.z1));
 // Холм клуба: за краем площадки пологие бугры по метру, дальше склон к дну долины — вперёд (−z) длиннее, его видно
@@ -64,6 +64,10 @@ export function heightAt(x, z) {
   if (Math.abs(x) < 700 && Math.abs(z) < 700) y += knoll(x, z) + DROP; // дальше холм уже сошёл на нет
   return y - DROP - 0.05;
 }
+
+// Дорога и река вдоль долины (x от z): шейдер склона рисует их лентами, вдоль реки растут деревья, дома их обходят.
+export const roadX = (z) => -180 * Math.sin(z / 1400) + 70 * Math.sin(z / 430 + 1);
+export const riverX = (z) => -180 * Math.sin(z / 1400) - 160 + 55 * Math.sin(z / 260) + 25 * Math.sin(z / 97 + 2);
 
 // Доли леса, скалы и снега в точке: по высоте над дном долины и крутизне (ny — y нормали). Те же пороги шейдер ломает шумом.
 function zones(x, z, y, ny) {
@@ -135,6 +139,12 @@ function bakeSun(geos, bake) {
 const NOISE = /* glsl */ `
 float h12(vec2 p){ vec3 q = fract(vec3(p.xyx) * .1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float vn(vec2 p){ vec2 i = floor(p), f = fract(p), u = f * f * (3. - 2. * f); return mix(mix(h12(i), h12(i + vec2(1, 0)), u.x), mix(h12(i + vec2(0, 1)), h12(i + vec2(1, 1)), u.x), u.y); }
+// Рёбра и кулуары скалы вдоль линии падения: a — вдоль горизонтали склона, y — высота. fine > 1 — только крупные (0..1).
+float ribs(float a, float y, float fine){
+  float r1 = 1. - abs(vn(vec2(a / 85., y / 380.)) * 2. - 1.);
+  if (fine > 1.) return r1;
+  return r1 * 30. + (1. - abs(vn(vec2(a / 28., y / 120.) + 7.) * 2. - 1.)) * 10. * fine;
+}
 `;
 
 // Цвет склона считается в пикселе: доли из вершин плюс шум, поэтому кромки снега, скал и леса рваные и чёткие,
@@ -166,14 +176,20 @@ function terrainMaterial(U, club) {
       vec3 rockC = mix(vec3(.16, .15, .14), vec3(.32, .3, .27), n2 * .6 + n3 * .4);
       vec3 forestC = mix(vec3(.014, .028, .016), vec3(.03, .05, .028), n3); // ельник: заметно темнее луга, кроны пятнами
       float alt = smoothstep(1500., 1900., vW.y + (nn - .5) * 300.);
+      meadow *= mix(1., .62, smoothstep(40., 500., vW.y)) * mix(1., .8, 1. - flat_); // на склонах луг темнее и бурее, не салатовые пятна
       vec3 c = mix(meadow, alpine, alt);
       c = mix(c, forestC, smoothstep(.45, .55, vZone.x + (nn - .5) * .5));
       // Скала: вертикальные промоины и полки, в крутых местах темнее; под скалой осыпь светлее.
       float sy = normalize(vN).y;
-      rockC *= (.7 + .45 * vn(vec2((vW.x - vW.z) / 35., vW.y / 160.))) * mix(1., .6, smoothstep(.6, .3, sy));
+      // Рельеф скалы для света: рёбра и кулуары вдоль линии падения, мельче — уступы. Октавы гаснут, когда мельче пикселя.
+      vec3 Nn = normalize(vN); vec2 tng = normalize(vec2(-Nn.z, Nn.x) + 1e-4); float along = dot(vW.xz, tng);
+      float pix = dist * .0012;
+      float rib = ribs(along, vW.y, 99.), rib2 = 1. - abs(vn(vec2(along / 28., vW.y / 120.) + 7.) * 2. - 1.);
+      rockC *= (.55 + .6 * rib * rib) * (.85 + .3 * rib2) * mix(1., .6, smoothstep(.6, .3, sy));
       float rk = smoothstep(.45, .6, vZone.y + (n2 - .5) * .5 + (n3 - .5) * .25);
       c = mix(c, mix(rockC, vec3(.3, .29, .27), smoothstep(.62, .75, sy) * .6), rk);
-      c = mix(c, snowC, smoothstep(.45, .55, vZone.z + (nn - .5) * .6));
+      c = mix(c, snowC, smoothstep(.45, .55, vZone.z + (nn - .5) * .6 + (rib - .5) * .3));
+      float bumpK = mix(.15, 1., rk) * smoothstep(.97, .8, Nn.y) * smoothstep(250., 900., dist); // только склоны; у клуба рельеф настоящий
       #ifdef CLUB
         vec2 q = vW.xz;
         float near = 1. - smoothstep(90., 260., dist);
@@ -203,7 +219,22 @@ function terrainMaterial(U, club) {
         lawn = mix(lawn, mix(grav, vec3(.42, .17, .08), .55), smoothstep(.7, .1, cd + (vn(q * 3.) - .5) * .5) * step(0., cd + .2) * .8);
         c = mix(c, lawn, near);
       #endif
+      // Дорога (асфальт 7 м) и река (14 м, в ней небо) по дну долины; у реки берег темнее и сырее.
+      float fw = fwidth(vW.x) + fwidth(vW.z) + .01, rz = vW.z;
+      float roadD = abs(vW.x - (-180. * sin(rz / 1400.) + 70. * sin(rz / 430. + 1.)));
+      float rivD = abs(vW.x - (-180. * sin(rz / 1400.) - 160. + 55. * sin(rz / 260.) + 25. * sin(rz / 97. + 2.)));
+      float low = smoothstep(60., 20., vW.y + 18.) * smoothstep(.9, .97, normalize(vN).y);
+      c *= 1. - .35 * smoothstep(30., 8., rivD) * low;
+      c = mix(c, vec3(.1, .1, .1), smoothstep(2.6 + fw, 2.6 - fw, roadD) * low);
+      c = mix(c, vec3(.16, .22, .28), smoothstep(7. + fw, 7. - fw, rivD) * low);
       diffuseColor.rgb *= c * vZone.w;`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        if (bumpK > .001) { // наклон рельефа скалы разностями в мире: по контуру (a) и по высоте (y) — гладко, без ступенек
+          float e = max(pix * 1.5, 3.), fine = smoothstep(40., 12., pix);
+          float h0 = ribs(along, vW.y, fine), ha = (ribs(along + e, vW.y, fine) - h0) / e, hy = (ribs(along, vW.y + e, fine) - h0) / e;
+          vec3 T1 = vec3(tng.x, 0., tng.y), U = vec3(0., 1., 0.) - Nn * Nn.y; float sinT = length(U); U /= max(sinT, 1e-3);
+          normal = normalize(normal - mat3(viewMatrix) * (ha * T1 + hy * sinT * U) * bumpK * .8);
+        }`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
         // Тень гребней и облаков: облака на ~3 км плывут, тени от них ложатся на горы дальше 400 м от клуба.
         vec2 cs = (vW.xz + SUN_XZ * (3200. - vW.y)) / 2600. + vec2(time * .0035, time * .001);
@@ -229,8 +260,23 @@ function forest(atlas, count) {
     // в несколько градусов, и ближний лесок закрыл бы всю долину до горы.
     const grove = rad < 900 && !(z < -30 && Math.abs(x) < 40 + 0.3 * -z) ? Math.min(1, Math.max(0, (vnoise(x / 90, z / 90) - 0.58) * 10)) : 0;
     if (Math.max(zones(x, z, y, ny)[0], grove) < 0.5 + (r() - 0.5) * 0.4) continue;
-    if (padDist(x, z) < 6) continue;
+    if (padDist(x, z) < 6 || Math.abs(x - riverX(z)) < 9 || Math.abs(x - roadX(z)) < 6) continue;
     const sp = SPRITES[Math.floor(r() * SPRITES.length)], h = 14 + r() * 16, w = h * ((sp[2] - sp[0]) / (sp[3] - sp[1])) * 1.0;
+    to.set(-x, 0, -z).normalize(); side.crossVectors(up, to).normalize();
+    const b = P.length / 3;
+    for (const [i, j] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
+      P.push(x + side.x * i * w / 2, y - 1 + j * h, z + side.z * i * w / 2);
+      n.copy(to).multiplyScalar(0.7).addScaledVector(side, i * 0.7).addScaledVector(up, 0.25).normalize(); N.push(n.x, n.y, n.z);
+      U.push(i < 0 ? sp[0] : sp[2], j ? sp[1] : sp[3]);
+    }
+    I.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  }
+  // Деревья вдоль реки: ряд по обоим берегам с просветами — как на настоящих долинах.
+  for (let z = -7000; z < 7000; z += 14 + r() * 26) {
+    if (vnoise(z / 300, 3.3) < 0.35) continue;
+    const sgn = r() < 0.5 ? -1 : 1, x = riverX(z) + sgn * (9 + r() * 10), y = heightAt(x, z);
+    if (padDist(x, z) < 20) continue;
+    const sp = SPRITES[Math.floor(r() * SPRITES.length)], h = 10 + r() * 9, w = h * ((sp[2] - sp[0]) / (sp[3] - sp[1]));
     to.set(-x, 0, -z).normalize(); side.crossVectors(up, to).normalize();
     const b = P.length / 3;
     for (const [i, j] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {

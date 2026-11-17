@@ -18,7 +18,18 @@ export const PATHS = [
   [1.2, [[9.2, 3.99], [10.85, 3.99]]],
   [1.4, [[10.85, 10.2], [10.85, -19.3]]],
   [1.5, [[10.85, 10.2], [11.4, 15.8], [10.3, 21.6], [6, 24.7], [-2, 25.7], [-12, 25.3], [-23, 23.6]]],
+  [1.6, [[10.6, 20.4], [15.5, 25.6], [26, 28.8], [38, 30.2], [48.5, 30.6]]], // ко входу с дороги и стоянке
+  [7, [[51.3, 22], [51.3, 32]]], // гравийная стоянка у дороги (дорога на x ≈ 57.5)
 ];
+// Насколько точка дальше края дорожки, м (минус — на дорожке). Деревья и камни ставим не ближе пары метров.
+export function pathGap(x, z) {
+  let best = Infinity;
+  for (const [w, pts] of PATHS) for (let i = 1; i < pts.length; i++) {
+    const [ax, az] = pts[i - 1], [bx, bz] = pts[i], dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+    best = Math.min(best, Math.hypot(x - ax - dx * t, z - az - dz * t) - w / 2);
+  }
+  return best;
+}
 // Клумбы: [x, z, полуось x, полуось z]. У торца шале, у флагштока, у таблички, круглая на газоне справа.
 const BEDS = [[23.2, -18.2, 8, 0.75], [15.2, -16.8, 1.0, 1.0], [13.7, 20.9, 1.7, 0.8], [17.2, 4.5, 1.8, 1.8]];
 // Живая изгородь граба вдоль забора снаружи: [x0, z0, x1, z1, высота, толщина].
@@ -30,7 +41,7 @@ const BUSHES = [[32.9, -18.1, 1.25], [32.8, -35.9, 1.1], [15.2, -36.4, 0.95], [1
 const ROCKS = [[-8, -47.5, 1.4], [-6.5, -48.6, 0.8], [12.3, -49.3, 1.1], [25.4, -46.8, 1.8], [-26.4, -30.2, 1.2], [-27.8, -28.5, 0.7], [38.4, -10.2, 1.5],
   [36.6, 2.2, 0.9], [-28.6, 10.4, 1.3], [20.4, 30.8, 1.0], [-14.2, 33.8, 1.2], [14.9, 21.4, 0.45], [12.6, 20.1, 0.32], [-17.6, 22.2, 0.6]];
 // Фонари вдоль дорожек: [x, z].
-const LAMPS = [[11.75, -14.5], [11.75, -1.4], [11.95, 13.6], [3, 26.3], [-9.5, 26.6]];
+const LAMPS = [[11.75, -14.5], [11.75, -1.4], [11.95, 13.6], [3, 26.3], [-9.5, 26.6], [27, 30.1], [43.6, 29.1]];
 const FLAG = [15.2, -16.8], SIGN = [13.7, 21.1, -2.7]; // табличка лицом к корту и к идущим от входа
 const BENCHES_OUT = [[12.3, -6.5], [12.3, 9], [-4.5, 21.7]]; // скамейки зрителей (env.js): вокруг них трава гуще
 
@@ -142,7 +153,7 @@ function tufts(map, time) {
   // По карте: у изгороди, стволов, камней, фонарей; по некошеному лугу за площадкой — пятнами.
   for (let k = 0; k < 60000 && grass.length < 9000 * N; k++) {
     const x = MAP.x0 + r() * MAP.size, z = MAP.z0 + r() * MAP.size, [, , b] = map.at(x, z), pd = padDist(x, z);
-    const meadow = Math.min(1, Math.max(0, (pd - 2) / 10)) * (0.25 + 0.75 * vnoise(x / 7, z / 7));
+    const meadow = Math.min(1, Math.max(0, (pd - 4) / 25)) * Math.max(0, vnoise(x / 6, z / 6) * 1.4 - 0.35); // луг густеет к склону пятнами, без ровной кромки
     if (r() > Math.max(b * 0.9, meadow * 0.5)) continue;
     put(grass, x, z, 0.6 + r() * 0.7);
   }
@@ -277,13 +288,13 @@ function hedges(leaf) {
 // Куст или камень: икосаэдр, искажённый шумом. Куст — круглый, с нормалями оболочки (свет мягкий, как у кроны),
 // камень — сплюснутый, с плоским низом, сидит в земле.
 function blobGeometry(detail, seed, rock) {
-  const ico = new THREE.IcosahedronGeometry(1, detail); ico.deleteAttribute('normal'); ico.deleteAttribute('uv');
+  const ico = new THREE.IcosahedronGeometry(1, rock ? 1 : detail); ico.deleteAttribute('normal'); ico.deleteAttribute('uv'); // камень грубее: грани читаются сколами
   const g = mergeVertices(ico), p = g.attributes.position, v = new THREE.Vector3(); // у икосаэдра вершины граней свои: склеиваем, иначе шум рвёт поверхность
   const shell = [];
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i); shell.push(v.clone());
     const n = vnoise(v.x * 1.7 + seed, v.y * 1.7 + v.z * 0.9) * 0.6 + vnoise(v.z * 3.1 + seed, v.x * 3.1 - v.y) * 0.4;
-    v.multiplyScalar(rock ? 0.8 + 0.45 * n + 0.1 * Math.abs(Math.sin(v.x * 4 + seed)) : 0.85 + 0.3 * n);
+    v.multiplyScalar(rock ? 0.7 + 0.6 * n + 0.12 * Math.abs(Math.sin(v.x * 4 + seed)) : 0.85 + 0.3 * n);
     v.y = rock ? Math.max(v.y * 0.62, -0.18) : v.y * 0.78 + 0.12;
     p.setXYZ(i, v.x, v.y, v.z);
   }
@@ -376,7 +387,7 @@ export function buildClub(trees) {
   // Камни: заданные у клуба и россыпь по склону холма за площадкой.
   const r = rng(23), stones = [...ROCKS];
   for (let k = 0; k < 400 && stones.length < 60; k++) { const a = r() * 6.28, d = 60 + r() * 120, x = Math.sin(a) * d, z = -Math.cos(a) * d; if (padDist(x, z) > 12) stones.push([x, z, 0.5 + r() * r() * 2.2]); }
-  const rockMat = triplanar(new THREE.MeshLambertMaterial({ map: rock, vertexColors: true }), 1.6);
+  const rockMat = triplanar(new THREE.MeshLambertMaterial({ map: rock, vertexColors: true, flatShading: true }), 1.6);
   const rocks = blobs(stones, [0, 1, 2].map((s) => blobGeometry(2, 10 + s * 5.3, true)), rockMat, ([x, z, s], rr) => [new THREE.Vector3(x, heightAt(x, z) - 0.08 * s, z), new THREE.Vector3(s * (0.8 + rr() * 0.5), s * (0.7 + rr() * 0.4), s * (0.8 + rr() * 0.5))], (rr) => new THREE.Color().setHSL(0.09, 0.06, 0.34 + rr() * 0.14));
   g.add(rocks);
   g.getObjectByName('tufts').children[0].onBeforeRender = () => { time.value = performance.now() / 1000; }; // часы ветра: трава рисуется всегда

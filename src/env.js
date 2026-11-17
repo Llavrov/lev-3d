@@ -5,7 +5,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { buildMountains, heightAt } from './env-mountains.js';
 import { buildSky, HAZE } from './env-sky.js';
-import { buildClub } from './env-club.js';
+import { buildClub, pathGap } from './env-club.js';
+import { buildValley } from './env-valley.js';
 export { SUN, HAZE, AIR_DENSITY, outdoorEnv } from './env-sky.js';
 export const HORIZON = HAZE; // старое имя цвета дымки
 
@@ -53,7 +54,7 @@ function foliage(m) {
 function treeSpots() {
   const r = rng(31), out = [];
   const free = (x, z, gap) => !(x > 9.6 && x < 34 && z > -38 && z < -12) && !(Math.abs(x) < 26 && z < -22 && z > -160) && !(Math.abs(x) < 22 && z > 22 && z < 40)
-    && out.every((s) => (s[1] - x) ** 2 + (s[2] - z) ** 2 > gap * gap) && !(Math.abs(x) < 12.5 && Math.abs(z) < 23);
+    && out.every((s) => (s[1] - x) ** 2 + (s[2] - z) ** 2 > gap * gap) && !(Math.abs(x) < 12.5 && Math.abs(z) < 23) && pathGap(x, z) > 2.5;
   const put = (kind, x, z, s, gap) => { if (free(x, z, gap)) out.push([kind, x, z, s]); };
   for (let i = 0; i < 9; i++) put(['tree_2', 'tree_3', 'tree_1'][i % 3], -15 - r() * 4, -22 + i * 5.5 + r() * 2, 0.8 + r() * 0.3, 3.5);
   for (let i = 0; i < 5; i++) put('broad_1', -22 + i * 11 + r() * 3, 44 + r() * 8, 1 + r() * 0.3, 3.4); // за спиной Лёвы подальше: в меню над забором видны горы
@@ -183,7 +184,7 @@ function props() {
 
 export function buildEnv() {
   const g = new THREE.Group(), spots = treeSpots(), club = buildClub(spots), mountains = buildMountains(club.uniforms);
-  g.add(buildSky(), mountains, club.group, props());
+  g.add(buildSky(), mountains, club.group, buildValley(spots), props());
   models(g);
   trees(g, spots, (atlas) => mountains.userData.addForest(atlas)); // лес на склонах ждёт атлас из той же модели
   return g;
