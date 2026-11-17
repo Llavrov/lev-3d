@@ -71,6 +71,16 @@
   body.practice #pbar { display: flex; gap: 8px; position: fixed; top: calc(10px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); }
   #pbar button { padding: 0 16px; background: rgba(16, 24, 20, .55); border-color: rgba(255, 255, 255, .2); }
   #pbar button[hidden] { display: none; }
+  /* Прогулка по клубу (club.js): в матче слева сверху «Выйти с корта», на прогулке «Сесть», «Вид», «На корт»; удары прячем */
+  #cbar { display: none; gap: 8px; position: fixed; top: calc(10px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); }
+  body:not(.menu):not(.practice) #cbar { display: flex; }
+  #cbar button { min-height: 44px; padding: 0 14px; border: 1px solid rgba(255, 255, 255, .2); border-radius: 12px; background: rgba(16, 24, 20, .55); color: #fff; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px; -webkit-tap-highlight-color: transparent; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  #cbar button:active { background: rgba(255, 255, 255, .2); }
+  #cbar button[hidden] { display: none; }
+  #cbar kbd { min-width: 20px; height: 20px; padding: 0 5px; margin: 0; font-size: 11px; border-radius: 5px; box-shadow: 0 1px 0 #8f9690; }
+  body.club #pad, body.club #hint { display: none !important; }
+  @media (max-width: 640px) { #cbar { top: calc(64px + env(safe-area-inset-top)); } } /* под счётом */
   body.menu #pad, body.menu #joy { display: none !important; } /* кнопки ударов на телефоне — только в игре */
 
   #loader { position: fixed; inset: 0; z-index: 4; display: grid; place-items: center; background: #b8d0e3; text-shadow: 0 1px 8px rgba(0, 0, 0, .25); transition: opacity .5s; }
@@ -90,7 +100,7 @@
   @media (pointer: coarse) {
     #pad { display: grid; }
     #start .touch-only { display: block; }
-    #start .keys-only { display: none; }
+    #start .keys-only, #cbar kbd { display: none; }
     #hint { bottom: calc(232px + env(safe-area-inset-bottom)); } /* выше кнопок ударов */
     body.practice #lesson { bottom: auto; top: calc(66px + env(safe-area-inset-top)); } /* на телефоне внизу кнопки и сам Лёва: урок сверху */
   }
@@ -100,13 +110,14 @@
 <canvas id="c"></canvas>
 
 <div id="hud" aria-live="polite">
-  <div class="side"><span class="nm"><small>Лёва</small><span class="st" id="st-l"><span></span></span></span><i id="srv-l"></i><b id="pl">0</b></div>
+  <div class="side"><span class="nm"><small id="nl">Лёва</small><span class="st" id="st-l"><span></span></span></span><i id="srv-l"></i><b id="pl">0</b></div>
   <span class="games"><span id="gl">0</span>&nbsp;:&nbsp;<span id="go">0</span></span>
   <div class="side"><b id="po">0</b><i id="srv-o"></i><span class="nm"><small>Соперник</small><span class="st" id="st-o"><span></span></span></span></div>
 </div>
 <div id="msg"></div>
 <div id="lesson" aria-live="polite"><p id="ltext"></p><span id="ldots"></span></div>
 <div id="pbar"><button id="pexit">Выйти</button><button id="pnext">Дальше</button></div>
+<div id="cbar"><button id="cexit">Выйти с&nbsp;корта<kbd>Q</kbd></button><button id="csit" hidden>Сесть<kbd>E</kbd></button><button id="cview" hidden>Вид<kbd>V</kbd></button><button id="cback" hidden>На&nbsp;корт<kbd>R</kbd></button></div>
 <div id="hint"></div>
 
 <div id="pad">

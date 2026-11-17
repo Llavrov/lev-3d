@@ -16,6 +16,7 @@ import { buildBall } from './ball.js';
 import { fitRacketModel, dressRacket } from './racket.js';
 import { Player, POWER, holdOf, powerOf } from './player.js';
 import { Game, AI } from './game.js';
+import { Club } from './club.js';
 import { Practice } from './practice.js';
 import { STROKES, sample } from './swing.js';
 import { makeSound } from './sound.js';
@@ -77,7 +78,7 @@ scene.add(spot);
 let spotPlan = null, spotAt = 0;
 function showSpot(now, dt) {
   const g = game, L = g.lev, b = g.b;
-  const incoming = b.live && g.state === 'rally' && g.lastHitter === g.opp && !L.stroke;
+  const incoming = b.live && g.state === 'rally' && g.lastHitter === g.opp && !L.stroke && !g.autoLev; // за замену играет ИИ — подсказки не нужны
   if (incoming && now >= spotAt) { spotAt = now + 0.1; const p = L.plan(b, now, 0); spotPlan = p && !p.out ? p : null; }
   if (!incoming) spotPlan = null;
   let want = 0;
@@ -109,7 +110,7 @@ const aimGuide = (() => {
   return {
     update(dt, now) {
       const lev = game.lev, st = lev.stroke;
-      const active = started && game.state === 'rally' && game.lastHitter === game.opp && game.b.live && st && !st.contacted && st.pred;
+      const active = started && !game.autoLev && game.state === 'rally' && game.lastHitter === game.opp && game.b.live && st && !st.contacted && st.pred;
       if (active && now >= next) {
         next = now + 0.08;
         goal.copy(game.shotFor(lev, st, 0.9).target).setY(0.05); // 5 см над кортом: ниже их перекрывает окружение
@@ -235,7 +236,7 @@ const $ = (id) => document.getElementById(id);
 const hud = {
   score(g) {
     const [a, b] = g.call();
-    $('pl').textContent = a; $('po').textContent = b;
+    $('pl').textContent = a; $('po').textContent = b; $('nl').textContent = g.lev.human ? 'Лёва' : 'Замена';
     $('gl').textContent = g.games.get(g.lev); $('go').textContent = g.games.get(g.opp);
     $('srv-l').classList.toggle('on', g.server === g.lev); $('srv-o').classList.toggle('on', g.server === g.opp);
   },
@@ -314,7 +315,7 @@ const log = (() => {
 
 // kind 'auto' — форхенд или бэкхенд по стороне, где будет мяч (укороченный, кручёный I, резаный U). spin — 'top' | 'cut'.
 function hit(kind, drop = false, key = '', spin = null) {
-  if (!game || !started) return;
+  if (!game || !started || club?.active) return;
   sound.unlock();
   if (game.state === 'serve' && game.server === game.lev) return game.serve(game.lev, game.now);
   if (key === 'Space') return; // пробел только подаёт: раньше в розыгрыше он бил форхендом и перебивал нажатый бэкхенд
@@ -335,6 +336,7 @@ addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (!started && (e.code === 'Space' || e.code === 'Enter')) return start();
   if (!started && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) return switchRacket(e.code === 'ArrowLeft' ? -1 : 1);
+  if (clubKey(e.code)) return;
   if (/^(Key[WASD]|Arrow)/.test(e.code)) { if (swinging()) aimOnly.add(e.code); log('key', { k: e.code, down: 1, aim: aimOnly.has(e.code) }); }
   if (e.code === 'KeyK') hit('fh', false, e.code);
   if (e.code === 'KeyJ') hit('bh', false, e.code);
@@ -346,6 +348,28 @@ addEventListener('keydown', (e) => {
   document.querySelectorAll(`#lesson kbd[data-k="${e.code}"]`).forEach((k) => { k.classList.add('on'); setTimeout(() => k.classList.remove('on'), 250); });
   if (e.code === 'Space') hit('fh', false, e.code);
 });
+// ---------- Прогулка по клубу (club.js) ----------
+// Q — уйти с корта, E — сесть на скамейку или встать, V — вид (со скамейки → ТВ → крупно за заменой), R — вернуться на корт.
+// Те же действия кнопками (#cbar), ходьба — WASD или джойстик, Shift или джойстик до упора — бегом.
+let club = null, sub = null, subReady = null;
+function clubKey(code) {
+  if (!started || !game || game.drill) return false;
+  if (code === 'KeyQ' && !club.active) return leave(), true;
+  if (!club.active) return false;
+  if (code === 'KeyE') { if (club.mode === 'sit') club.stand(); else club.sit(); } else if (code === 'KeyV') club.nextView(); else if (code === 'KeyR') club.back(game.now, Q.has('auto')); else return false;
+  return true;
+}
+async function leave() { if (club.active || club.leaving) return; club.leaving = true; club.exit(await subReady, game.now); club.leaving = false; } // замена догружается в фоне
+const walkInput = () => { const a = axes(); return { x: a.x, y: a.y, run: held('ShiftLeft', 'ShiftRight') || stick.length() > 0.95 }; };
+function clubUi(mode, canSit) {
+  document.body.classList.toggle('club', !!mode);
+  $('cexit').hidden = !!mode; $('cback').hidden = !mode; $('cview').hidden = mode !== 'sit';
+  $('csit').hidden = !(mode === 'sit' || (mode === 'walk' && canSit)); $('csit').firstChild.textContent = mode === 'sit' ? 'Встать' : 'Сесть';
+  if (!mode) court.getObjectByName('fence-near').visible = false; // снова матч: камера за этой стенкой
+}
+for (const [id, code] of [['cexit', 'KeyQ'], ['csit', 'KeyE'], ['cview', 'KeyV'], ['cback', 'KeyR']]) $(id).addEventListener('click', (e) => { e.currentTarget.blur(); clubKey(code); });
+const clubCam = (dt) => { court.getObjectByName('fence-near').visible = club.camera(dt, camera, follow); };
+
 // Отпустил клавишу удара (или тач-кнопку) — сила дальше не растёт.
 function release(key) { const st = game?.lev.stroke; if (st && st.holdTo === null && (st.holdKey === key || !key)) st.holdTo = game.now; }
 addEventListener('keyup', (e) => { keys.delete(e.code); aimOnly.delete(e.code); release(e.code); if (/^(Key[WASD]|Arrow)/.test(e.code)) log('key', { k: e.code, down: 0 }); });
@@ -411,7 +435,9 @@ const loadOpt = (url) => loader.loadAsync(url).catch(() => null);
 const dressAll = () => {
   if (!game) return;
   const oppRacket = RACKETS.find((r) => r !== myRacket && racketModels[r]) ?? null;
-  for (const [p, name] of [[game.lev, myRacket], [game.opp, oppRacket]]) {
+  const subRacket = RACKETS.find((r) => r !== myRacket && r !== oppRacket && racketModels[r]) ?? oppRacket; // у замены третья
+  for (const [p, name] of [[club?.lev ?? game.lev, myRacket], [game.opp, oppRacket], [sub, subRacket]]) {
+    if (!p) continue;
     if (name && racketModels[name]) dressRacket(p.racket, racketModels[name].clone(true));
   }
   $('rkName').textContent = RACKET_NAMES[myRacket];
@@ -444,6 +470,13 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
   game.onShot = (p, power, at) => powerFx.shot(p, power, at);
   opp.measure();
   log('start', { reach: lev.measure(), opp: !!oppGltf, racket: myRacket, w: innerWidth, h: innerHeight, touch: matchMedia('(pointer: coarse)').matches });
+  club = new Club({ game, lev, court, sound, onMode: clubUi });
+  // Замена (club.js): модель из Meshy грузится после старта, без неё — соперник в голубом.
+  subReady = loadOpt('/models/sub.glb').then((g) => {
+    sub = new Player(scene, g ?? oppGltf ?? gltf, { side: 1, height: 1.8, racketColor: '#2f7d4f', cloth: g ? null : '#86bfe6' });
+    sub.wrap.visible = sub.racket.visible = false; sub.measure(); dressAll();
+    return sub;
+  });
   dressAll();
   game.now = 0;
   if (Q.has('auto')) { game.autoLev = new AI(lev, game); start(); }
@@ -529,12 +562,13 @@ renderer.setAnimationLoop(() => {
     game.lev.rig.placeRacket(rk, face);
     controls.update();
   } else if (game && window.__pause) { // ?debug: тест шагает игру сам через __lev.step
-    if (!window.__camHold) follow(dt);
+    if (!window.__camHold) { if (club?.active) clubCam(dt); else follow(dt); }
   } else if (game) {
     game.now += dt;
     if (started) {
       const a = axes();
       game.update(dt, game.now, levMove());
+      club.update(dt, game.now, walkInput());
       powerFx.track(game.now);
       if (game.state === 'rally' && game.now >= (game.nextSample ?? 0)) {
         game.nextSample = game.now + 0.2;
@@ -547,7 +581,7 @@ renderer.setAnimationLoop(() => {
       game.lev.update(dt, game.now, new THREE.Vector3(), game.b);
       game.opp.update(dt, game.now, new THREE.Vector3(), game.b);
     }
-    if (started) follow(dt); else menuCam(dt);
+    if (club.active) clubCam(dt); else if (started) follow(dt); else menuCam(dt);
     showLanding(game.now); showSpot(game.now, dt);
     aimGuide.update(dt, game.now);
     powerFx.update(dt, game.now);
@@ -559,9 +593,10 @@ if (Q.has('debug')) window.__lev = {
   scene, camera, get game() { return game; },
   // Пошаговая проверка: __pause = true, потом step(секунды, движение {x, y}) — игра идёт ровно на заданное время.
   step(sec, a = null, h = window.__dt ?? 1 / 120) { // без a — бег от зажатых клавиш, как в игре; __dt — шаг кадра (проверка на 30–60 кадрах)
-    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); powerFx.track(game.now); }
+    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, a ?? walkInput()); powerFx.track(game.now); }
   },
-  render() { window.__camHold = false; follow(1); showLanding(game.now); showSpot(game.now, 1); aimGuide.update(0.2, game.now); powerFx.update(0, game.now); draw(); }, // кадр сразу, не дожидаясь requestAnimationFrame
+  get club() { return club; },
+  render() { window.__camHold = false; if (club.active) { club.snap(camera, follow); clubCam(0); } else follow(1); showLanding(game.now); showSpot(game.now, 1); aimGuide.update(0.2, game.now); powerFx.update(0, game.now); draw(); }, // кадр сразу, не дожидаясь requestAnimationFrame
   shot(eye, at) { window.__camHold = true; camera.position.fromArray(eye); camera.lookAt(new THREE.Vector3(...at)); draw(); }, // кадр с любой точки — смотреть соперника и ракетки
   // Поза удара в момент s (с от удара) на месте, без игры: смотреть руки, кисти, ноги крупно.
   pose(type, s, who = 'lev') { const p = game[who], [A, B, u] = sample(STROKES[type], s); const r = p.rig.pose(A, B, u, { Left: p.feet.Left, Right: p.feet.Right, crouch: 0.07 }); p.rig.placeRacket(r.rk, r.face); },
