@@ -5,7 +5,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { buildMountains, heightAt } from './env-mountains.js';
 import { buildSky, HAZE } from './env-sky.js';
-import { buildClub, pathGap } from './env-club.js';
+import { buildClub, pathGap, WIND } from './env-club.js';
 import { buildValley } from './env-valley.js';
 export { SUN, HAZE, AIR_DENSITY, outdoorEnv } from './env-sky.js';
 export const HORIZON = HAZE; // старое имя цвета дымки
@@ -35,6 +35,16 @@ function shellNormals(geo) {
 function foliage(m) {
   m.vertexColors = true; m.side = THREE.DoubleSide; m.envMapIntensity = 0.6;
   m.onBeforeCompile = (sh) => {
+    // Ветерок: крона качается тем сильнее, чем выше, листья мелко дрожат; у каждого дерева своя фаза.
+    sh.uniforms.wind = WIND;
+    sh.vertexShader = 'uniform float wind;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      vec3 io = vec3(0.);
+      #ifdef USE_INSTANCING
+        io = instanceMatrix[3].xyz;
+      #endif
+      float hh = max(transformed.y - 2., 0.);
+      transformed.x += sin(wind * 1.2 + io.x * .3 + io.z * .1) * .006 * hh + sin(wind * 7. + position.z * 4. + io.x) * .012;
+      transformed.z += cos(wind * .9 + io.z * .3) * .005 * hh + cos(wind * 6.3 + position.x * 4. + io.z) * .012;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''))
       .replace('#include <lights_pars_begin>', THREE.ShaderChunk.lights_pars_begin.replace('mix( hemiLight.groundColor,', 'mix( hemiLight.groundColor * vec3(0.45, 0.95, 0.5),'))
@@ -124,13 +134,32 @@ const PLACES = { // имя: [высота, м; тень; [[x, z, поворот,
   bike: [1.05, false, [[9.75, -10.5, Math.PI / 2]]],
 };
 
+// У шале от Meshy штукатурка в серых разводах: светлые и почти серые тексели тянем к ровной белой штукатурке,
+// оставляя немного своей фактуры. Дерево, окна и герань (насыщенные или тёмные) не трогаем. Материал у шале свой
+// (glTF), остальные модели его не делят.
+function cleanPlaster(m) {
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      float pl = dot(diffuseColor.rgb, vec3(.3, .59, .11)), mx = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)), mn = min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
+      float plaster = smoothstep(.22, .42, pl) * smoothstep(.25, .1, (mx - mn) / (mx + .001));
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.78, .76, .71) * (.94 + .12 * pl), plaster * .75);`)
+      // Стены после упрощения сетки мятые: нормаль штукатурки прижимаем к плоскости стены (шале стоит по осям мира).
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      vec3 nw = normalize((vec4(normal, 0.) * viewMatrix).xyz);
+      if (plaster > .01 && abs(nw.y) < .6) {
+        vec3 ax = abs(nw.x) > abs(nw.z) ? vec3(sign(nw.x), 0., 0.) : vec3(0., 0., sign(nw.z));
+        normal = normalize((viewMatrix * vec4(normalize(mix(nw, ax, plaster * .9)), 0.)).xyz);
+      }`);
+  };
+}
+
 function models(g) {
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   for (const [name, [h, shadow, spots]] of Object.entries(PLACES)) {
     loader.load(`/models/env/${name}.glb`, ({ scene: m }) => {
       const box = new THREE.Box3().setFromObject(m), k = h / (box.max.y - box.min.y), c = box.getCenter(new THREE.Vector3());
       m.scale.setScalar(k); m.position.set(-c.x * k, -box.min.y * k, -c.z * k);
-      m.traverse((o) => { if (o.isMesh) { o.castShadow = shadow; o.receiveShadow = true; } });
+      m.traverse((o) => { if (o.isMesh) { o.castShadow = shadow; o.receiveShadow = true; if (name === 'chalet') cleanPlaster(o.material); } });
       for (const [x, z, rot, y = 0] of spots) {
         const holder = new THREE.Group(); holder.name = name;
         holder.position.set(x, y, z); holder.rotation.y = rot; holder.add(m.clone()); g.add(holder);

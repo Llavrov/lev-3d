@@ -55,8 +55,12 @@ function drawMap(trees) {
   g.setTransform(k, 0, 0, k, -MAP.x0 * k, -MAP.z0 * k); // рисуем в метрах: x вправо, z вниз
   g.globalCompositeOperation = 'lighter'; g.lineCap = g.lineJoin = 'round';
   const B = (a) => `rgba(0,0,255,${a})`, dot = (x, z, r, a) => { g.fillStyle = B(a); g.beginPath(); g.arc(x, z, r, 0, 7); g.fill(); };
-  const rect = (o, w, a) => { g.strokeStyle = B(a); g.lineWidth = w; g.strokeRect(-FX - o, -FZ - o, 2 * (FX + o), 2 * (FZ + o)); };
-  rect(0.6, 0.9, 1); rect(1.1, 1.8, 0.4);
+  // Вдоль забора трава гуще; у корта 1 со стороны дорожки газон скошен до бордюра — зрителям со скамеек виден корт.
+  const rect = (o, w, a, open) => {
+    const x0 = -FX - o, x1 = FX + o, z0 = -FZ - o, z1 = FZ + o;
+    g.strokeStyle = B(a); g.lineWidth = w; g.beginPath(); g.moveTo(x1, z0); g.lineTo(x0, z0); g.lineTo(x0, z1); g.lineTo(x1, z1); if (!open) g.closePath(); g.stroke();
+  };
+  rect(0.6, 0.9, 1, true); rect(1.1, 1.8, 0.4, true);
   g.save(); g.translate(-38, 0); rect(0.6, 0.9, 1); rect(1.1, 1.8, 0.4); g.restore(); // корт 2
   for (const [x0, z0, x1, z1, , w] of HEDGES) { g.strokeStyle = B(0.9); g.lineWidth = w + 0.8; g.beginPath(); g.moveTo(x0, z0); g.lineTo(x1, z1); g.stroke(); }
   for (const t of trees) dot(t[1], t[2], 1.1 * t[3], 0.8);
@@ -376,8 +380,9 @@ function flag(time) {
 }
 
 // Всё вместе. trees — места деревьев из env.js (вокруг стволов трава гуще). Возвращает группу и формы для шейдера газона.
+export const WIND = { value: 0 }; // часы ветра: трава, флаг, листва деревьев (env.js)
 export function buildClub(trees) {
-  const map = drawMap(trees), time = { value: 0 }, g = new THREE.Group(); g.name = 'club';
+  const map = drawMap(trees), time = WIND, g = new THREE.Group(); g.name = 'club';
   const leaf = tex('/tex/hedge.webp'), rock = tex('/tex/rock.webp');
   g.add(hedges(leaf), tufts(map, time), lamps(), sign(), flag(time));
   // Кусты: три варианта, у каждого карточки листвы и тёмная сердцевина с теми же местами.
