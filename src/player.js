@@ -309,7 +309,7 @@ export class Player {
       if (!st.fixed) apart(f, st.to.lerp(ideal(f, st.t0 + st.dur - now), 0.5));
       f.pos.lerpVectors(st.from, st.to, u * u * (3 - 2 * u));
       if (st.bow) f.pos.addScaledVector(st.bow, Math.sin(Math.PI * u)); // скрестный шаг идёт дугой перед опорной ногой, не сквозь неё
-      f.lift = st.h * Math.sin(Math.PI * u ** (st.k ?? 1)); // на бегу пятка взлетает в начале маха (к ягодице), потом нога выносится вперёд
+      f.lift = st.h * Math.sin(Math.PI * (1 - (1 - u) ** (1 / (st.k ?? 1)))); // на бегу пятка взлетает в начале маха (к ягодице), потом нога выносится вперёд; старт с конечной скоростью (u^k давал бесконечную — рывок голени)
       f.yaw += wrapAngle(st.yaw - f.yaw) * Math.min(1, dt * 14);
       if (u >= 1) { f.pos.copy(st.to); f.lift = 0; f.step = null; }
     }
@@ -392,6 +392,15 @@ export class Player {
     f.step = { t0: now, dur: v ? 0.2 : 0.22, from: f.pos.clone(), to, h: 0.05, yaw: deg(fh ? 30 : -30), fixed: true };
     this.plantUntil = st.tContact + 0.15;
   }
+  // Открытая стойка, как на видео Лёвы: в развороте на замах задняя нога (правая на форхенде, левая на бэкхенде) шагает
+  // в сторону и чуть назад, носок наружу — база шире, корпус загружается над ней. Раньше ступни стояли в стойке готовности.
+  loadStep(st, now) {
+    const s = st.type.startsWith('fh') ? 1 : -1, f = s > 0 ? this.feet.Right : this.feet.Left;
+    const to = f.pos.clone().addScaledVector(this.right, s * 0.16).addScaledVector(this.fwd, -0.06);
+    f.step = { t0: now, dur: 0.24, from: f.pos.clone(), to, h: 0.04, yaw: deg(-25 * s), fixed: true };
+    this.plantUntil = Math.max(this.plantUntil ?? 0, st.tContact + 0.15);
+    this.onStep?.(f);
+  }
   // Широкий мяч — как у Алькараса и Синнера: внешняя нога шагает к мячу широко (открытая стойка), таз садится на неё,
   // корпус остаётся над базой. Короткий мяч — передняя нога выпадом вперёд. L — куда и насколько сместится тело (мир).
   lungeStep(st, now, L) {
@@ -438,6 +447,7 @@ export class Player {
     }
     if (st && !st.committed && now >= st.tContact - PREP) this.commit(st);
     if (st && !st.stepIn && st.type !== 'oh' && now >= st.tContact - (st.type.startsWith('v') ? 0.38 : 0.42) && this.vel.length() < 2) { st.stepIn = true; this.stepIn(st, now); } // шаг в удар встаёт до замаха вперёд (~−0,18 с), а не под самое касание
+    if (st && !st.loadStep && !st.stepIn && /^(fh|bh)(-top)?$/.test(st.type) && st.tContact - st.tPress >= 0.55 && now - st.tPress > 0.04 && now < st.tContact - 0.5 && this.vel.length() < 1) { st.loadStep = true; this.loadStep(st, now); }
     if (st && !st.lungeStep && !st.contacted && st.type !== 'oh' && now >= st.tContact - 0.28 && st.reach?.lw && Math.abs(st.reach.lunge) > 0.12) { st.lungeStep = true; this.lungeStep(st, now, st.reach.lw); }
     const aim = st && !st.contacted && ball?.live && move.lengthSq() > 0.01; // у ИИ своя точка — умная остановка только у Лёвы
     this.move(dt, now, move, aim && this.human ? this.runLeft(st, ball, move.clone().normalize()) : Infinity);
@@ -454,7 +464,10 @@ export class Player {
     const settle = now - (this.settleAt ?? -9) < 0.3 ? 0.05 * Math.sin(Math.PI * (now - this.settleAt) / 0.3) : 0;
     let turnTarget = 0;
     if (!st && speed > 0.5) turnTarget = clamp(wrapAngle(Math.atan2(this.vel.x, this.vel.z) - this.netYaw), -1.75, 1.75) * run;
-    this.bodyTurn += clamp(wrapAngle(turnTarget - this.bodyTurn), -6 * dt, 6 * dt);
+    // Разворот корпуса — пружина без перерегулирования (до 7 рад/с), а не ровная скорость 6 рад/с с места: та включалась
+    // и выключалась мгновенно — рывок таза и плеч в начале и конце каждого разворота (до 10 000°/с²).
+    this.turnVel = (this.turnVel ?? 0) + clamp(144 * wrapAngle(turnTarget - this.bodyTurn) - 24 * (this.turnVel ?? 0), -45, 45) * dt; // ускорение до 45 рад/с²
+    this.turnVel = clamp(this.turnVel, -7, 7); this.bodyTurn += this.turnVel * dt;
     this.wrap.rotation.y = this.netYaw + this.bodyTurn;
     this.footwork(dt, now);
 
@@ -481,9 +494,9 @@ export class Player {
         // Приседаем заранее (пик за 0,12 с до удара), к удару ноги уже разгибаются.
         extra = clamp(this.reach.Y[base] - 0.3 - st.h, 0, deep ? 0.32 : 0.3) * (deep ? 0.85 : 0.6) * Math.exp(-(((ss + 0.12) / 0.3) ** 2)); // до 27 см: глубже — колено у земли
       }
-      // Толчок ногами: удар с отскока — загрузка в колени перед ударом (−4,5 см на −0,22 с) и разгибание через касание
+      // Толчок ногами: удар с отскока — загрузка в колени перед ударом (−4,5 см на −0,28 с) и разгибание через касание
       // (+1,5 см после). Раньше таз был ниже всего ровно в момент удара — удар без ног.
-      if (st.type !== 'oh' && !st.type.startsWith('v')) extra += 0.045 * Math.exp(-(((ss + 0.22) / 0.16) ** 2)) - 0.015 * Math.exp(-(((ss - 0.12) / 0.12) ** 2));
+      if (st.type !== 'oh' && !st.type.startsWith('v')) extra += 0.045 * Math.exp(-(((ss + 0.28) / 0.2) ** 2)) - 0.015 * Math.exp(-(((ss - 0.12) / 0.12) ** 2));
       // Разворот перед ударом плавный, 0,25–0,42 с по запасу времени (на видео Лёвы ~0,4 с), а не рывком за 0,1 с.
       st.win = smooth(now - st.tPress, 0, lead >= PREP ? clamp(lead - 0.3, 0.25, 0.42) : 0.14); st.wout = smooth(s, AFTER - 0.3, AFTER);
       if (s > AFTER) this.stroke = null;
@@ -499,7 +512,12 @@ export class Player {
       K = mix(mix(st.from && st.win < 1 ? st.from : loco, k, st.win), loco, st.wout); // вход из той позы, где был: из стойки, бега или прошлого удара
     }
     if (k && st.crossover) K = { ...K, hips: K.hips - 40 * st.crossover * w }; // скрестный шаг: таз к мячу, корпус как был
-    const fl = (f) => ({ pos: f.pos, yaw: f.yaw - this.bodyTurn, lift: f.lift + jump }); // поворот ступни на корте — от лица тела
+    // Перенос веса: после удара с отскока задняя нога встаёт на носок и доворачивается за тазом — вес ушёл на переднюю.
+    // Раньше обе ступни стояли плоско до конца проводки (на видео Лёвы задняя нога отрывается и идёт вперёд).
+    const back = st && !/^(v|oh)/.test(st.type) ? (/^fh/.test(st.type) ? this.feet.Right : this.feet.Left) : null;
+    const toe = back ? smooth(now - st.tContact, -0.05, 0.12) * (1 - smooth(now - st.tContact, 0.55, 0.85)) : 0;
+    const pivot = (f) => (f === back ? toe * deg(18) * f.sign : 0);
+    const fl = (f) => ({ pos: f.pos, yaw: f.yaw - this.bodyTurn + pivot(f), lift: f.lift + jump, toe: f === back ? toe : 0 }); // поворот ступни на корте — от лица тела
     this.wrap.position.copy(this.pos).add(this.lunge);
     this.lastPose = K;
     const { rk, face } = this.rig.pose(K, K, 0, { Left: fl(this.feet.Left), Right: fl(this.feet.Right), crouch: crouch + (k ? this.lungeDrop ?? 0 : 0), dt });
@@ -533,13 +551,17 @@ export class Player {
     this.headYaw += (want - this.headYaw) * Math.min(1, 0.12);
     const bodyFwd = new THREE.Vector3(Math.sin(facing), 0, Math.cos(facing)), bodyRight = this.right.clone().applyAxisAngle(UP, this.bodyTurn);
     const aFwd = this.acc.dot(bodyFwd), aSide = this.acc.dot(bodyRight);
+    // Наклоны по ускорению сглажены (~0,1 с): корпус тяжёлый, на смене разгона и торможения он не перекидывается за 2 кадра.
+    const kl = 1 - Math.exp(-dt / 0.1);
+    this.leanS = (this.leanS ?? 12) + (clamp(12 + 3 * run + 6 * this.sliding + aFwd * 0.9, -2, 24) - (this.leanS ?? 12)) * kl;
+    this.tiltS = (this.tiltS ?? 0) + (clamp(aSide * 0.8, -9, 9) - (this.tiltS ?? 0)) * kl;
     // На бегу руки согнуты под прямым углом и ходят вперёд-назад в такт ногам, левая отпускает ракетку,
     // правая несёт её головкой вверх-вперёд. В осях скелета правая сторона в −X.
     const R3 = (x, y, z) => new THREE.Vector3(-x, y, z).normalize();
     const runUp = (sx, p) => R3(0.18 * sx, -0.95, 0.75 * p), runFo = (sx, p) => R3(-0.15 * sx, 0.25 + 0.45 * p, 0.95 - 0.25 * Math.max(0, -p));
     const blend = (a, b) => a.clone().lerp(b, run).normalize();
     return this.body(now, speed, { ...READY, hips: 0, torso: 0, look: THREE.MathUtils.radToDeg(this.headYaw), lh: 1 - 2 * smooth(speed, 1.5, 3), // меньше нуля — левая не берётся за ракетку, даже если рядом
-      lean: clamp(12 + 3 * run + 6 * this.sliding + aFwd * 0.9, -2, 24), tilt: clamp(aSide * 1.1, -12, 12),
+      lean: this.leanS, tilt: this.tiltS,
       rUp: blend(arm(READY.rUp, -0.7 * pump), runUp(1, -0.6 * pump)), lUp: blend(arm(READY.lUp, 0.7 * pump), runUp(-1, pump)),
       rFo: blend(READY.rFo, runFo(1, -0.6 * pump)), lFo: blend(READY.lFo, runFo(-1, pump)),
       rk: READY.rk.clone().lerp(new THREE.Vector3(0, 0.5, 0).addScaledVector(dirRig, 0.85), run * 0.6).normalize() }); // ракетка на бегу головкой вперёд, не у лица

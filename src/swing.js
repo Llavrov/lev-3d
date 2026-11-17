@@ -34,36 +34,38 @@ export const READY = { hips: 0, torso: 0, lean: 12, look: 0, tilt: 0, nod: 0, fi
   rk: V(-0.7, 0.3, 0.65), face: V(0.65, 0, 0.75) };
 const P = (o) => ({ ...READY, ...o });
 
+// tilt — плечи вбок: в замахе правое плечо ниже (корпус загружен над правой ногой, как на видео), через удар плечи
+// переваливаются и в проводке ниже левое — «плечо через плечо». Без этого корпус ходил ровным цилиндром.
 // Время ключей от момента удара (с): разворот −0.45, петля −0.17, удар 0, ракетка вверх 0.1, захлёст 0.25, финиш 0.5,
 // возврат 0.7, стойка 0.9. Проводка как на видео Лёвы: через 0,1 с ракетка вертикально у головы, к 0,25 с уже над левым
 // плечом; кисть у левого плеча, предплечье ниже подбородка (лицо открыто), левая ловит ракетку за горло у плеча.
 // Возврат: ракетка выходит вперёд головкой вверх, а не переворачивается вниз перед грудью.
 const FH = [
-  P({ t: -0.45, hips: -40, torso: -78, lean: 10, lh: 0,
+  P({ t: -0.45, hips: -40, torso: -78, lean: 10, lh: 0, tilt: 8,
     rUp: V(0.5, -0.6, -0.6), rFo: V(0.3, 0.3, -0.9), lUp: V(0.35, -0.3, 0.9), lFo: V(0.85, 0.05, 0.5),
     rTh: V(0.2, -1, 0.28), rSh: V(0.05, -1, -0.32), lTh: V(-0.1, -1, 0.38), lSh: V(-0.05, -1, -0.12),
     rk: V(0.35, 0.8, -0.45), face: V(0.2, -0.5, 0.8) }),
-  P({ t: -0.17, hips: -35, torso: -75, lean: 12, lh: 0,
+  P({ t: -0.17, hips: -35, torso: -75, lean: 12, lh: 0, tilt: 14,
     rUp: V(0.45, -0.85, -0.35), rFo: V(0.2, -0.6, -0.8), lUp: V(0.4, -0.35, 0.85), lFo: V(0.8, 0, 0.6),
     rTh: V(0.22, -1, 0.35), rSh: V(0.06, -1, -0.4), lTh: V(-0.1, -1, 0.5), lSh: V(-0.05, -1, -0.12),
     rk: V(0.45, -0.45, -0.75), face: V(0.2, -0.3, 0.9) }),
-  P({ t: 0, hips: 18, torso: 15, lean: 10, lh: 0,
+  P({ t: 0, hips: 18, torso: 15, lean: 10, lh: 0, tilt: 6,
     rUp: V(0.7, -0.65, 0.3), rFo: V(0.55, -0.35, 0.9), lUp: V(-0.3, -0.85, 0.3), lFo: V(0.55, 0.15, 0.85),
     rTh: V(0.12, -1, -0.15), rSh: V(0.05, -1, -0.3), lTh: V(-0.12, -1, 0.42), lSh: V(-0.05, -1, -0.15),
     rk: V(0.95, 0.05, -0.2), face: V(0, 0.05, 1) }),
-  P({ t: 0.1, hips: 35, torso: 45, lean: 8, lh: 0,
+  P({ t: 0.1, hips: 35, torso: 45, lean: 8, lh: 0, tilt: -4,
     rUp: V(0.25, -0.05, 0.97), rFo: V(-0.1, 0.9, 0.4), lUp: V(-0.35, -0.85, 0.2), lFo: V(0.3, 0.6, 0.75),
     rTh: V(0.08, -1, -0.22), rSh: V(0.02, -1, -0.38), lTh: V(-0.11, -1, 0.35), lSh: V(-0.05, -1, -0.13),
     rk: V(-0.1, 0.95, 0.2), face: V(-0.7, 0.05, 0.7) }),
-  P({ t: 0.25, hips: 45, torso: 68, lean: 6, lh: 0.5, lhAt: 1,
+  P({ t: 0.25, hips: 45, torso: 68, lean: 6, lh: 0.5, lhAt: 1, tilt: -10,
     rUp: V(-0.35, -0.15, 0.92), rFo: V(-0.45, 0.4, -0.8), lUp: V(-0.3, -0.75, 0.3), lFo: V(0.2, 0.75, 0.6),
     rTh: V(0.05, -1, -0.3), rSh: V(0, -1, -0.45), lTh: V(-0.1, -1, 0.28), lSh: V(-0.05, -1, -0.12),
     rk: V(-0.3, 0.15, -0.94), face: V(-0.9, 0.1, 0.3) }),
-  P({ t: 0.5, hips: 45, torso: 70, lean: 5, lh: 1, lhAt: 1,
+  P({ t: 0.5, hips: 45, torso: 70, lean: 5, lh: 1, lhAt: 1, tilt: -10,
     rUp: V(-0.35, -0.3, 0.88), rFo: V(-0.5, 0.35, -0.8), lUp: V(-0.3, -0.8, 0.3), lFo: V(0.2, 0.7, 0.6),
     rTh: V(0.05, -1, -0.28), rSh: V(0, -1, -0.5), lTh: V(-0.1, -1, 0.22), lSh: V(-0.05, -1, -0.1),
     rk: V(-0.3, 0.05, -0.95), face: V(-0.9, 0.1, 0.3) }),
-  P({ t: 0.7, hips: 15, torso: 20, lean: 9, lh: 1, lhAt: 1,
+  P({ t: 0.7, hips: 15, torso: 20, lean: 9, lh: 1, lhAt: 1, tilt: -3,
     rUp: V(0.1, -0.85, 0.5), rFo: V(-0.45, 0.35, 0.82), lUp: V(-0.2, -0.85, 0.45), lFo: V(0.45, 0.3, 0.85),
     rk: V(-0.55, 0.45, 0.7), face: V(0.8, 0, 0.6) }),
   P({ t: 0.9 }),
@@ -73,25 +75,25 @@ const FH = [
 // проводка вверх через правое плечо: как на видео Лёвы, к 0,25 с кисти у правого плеча, правый локоть в сторону,
 // ракетка обёрнута вокруг плеча почти горизонтально, назад-вправо.
 const BH = [
-  P({ t: -0.45, hips: 40, torso: 78, lean: 10, lh: 1, lhAt: 0,
+  P({ t: -0.45, hips: 40, torso: 78, lean: 10, lh: 1, lhAt: 0, tilt: -8,
     rUp: V(-0.35, -0.8, -0.25), rFo: V(-0.6, -0.55, -0.6), lUp: V(-0.3, -0.9, -0.1), lFo: V(-0.5, -0.3, 0.5),
     rk: V(-0.3, 0.8, -0.5), face: V(-0.2, -0.5, 0.8) }),
-  P({ t: -0.17, hips: 36, torso: 78, lean: 12, lh: 1, lhAt: 0,
+  P({ t: -0.17, hips: 36, torso: 78, lean: 12, lh: 1, lhAt: 0, tilt: -14,
     rUp: V(-0.35, -0.85, -0.3), rFo: V(-0.5, -0.7, -0.45), lUp: V(-0.3, -0.92, -0.2), lFo: V(-0.55, -0.6, 0.3),
     rk: V(-0.5, -0.4, -0.75), face: V(-0.2, -0.3, 0.9) }),
-  P({ t: 0, hips: -10, torso: -10, lean: 10, lh: 1, lhAt: 0,
+  P({ t: 0, hips: -10, torso: -10, lean: 10, lh: 1, lhAt: 0, tilt: -6,
     rUp: V(-0.5, -0.7, 0.4), rFo: V(-0.55, -0.55, 0.6), lUp: V(-0.15, -0.8, 0.55), lFo: V(-0.1, -0.5, 0.85),
     rk: V(-0.95, 0.05, -0.2), face: V(0, 0.05, 1) }),
-  P({ t: 0.1, hips: -30, torso: -40, lean: 8, lh: 1, lhAt: 0,
+  P({ t: 0.1, hips: -30, torso: -40, lean: 8, lh: 1, lhAt: 0, tilt: 4,
     rUp: V(0.1, -0.3, 0.95), rFo: V(0.2, 0.5, 0.85), lUp: V(-0.2, -0.3, 0.95), lFo: V(0.35, 0.45, 0.8),
     rk: V(0.2, 0.85, 0.3), face: V(0.7, 0, 0.7) }),
-  P({ t: 0.25, hips: -40, torso: -70, lean: 6, lh: 1, lhAt: 0,
+  P({ t: 0.25, hips: -40, torso: -70, lean: 6, lh: 1, lhAt: 0, tilt: 10,
     rUp: V(0.6, -0.6, 0.5), rFo: V(0.15, 0.95, -0.2), lUp: V(0.55, -0.3, 0.78), lFo: V(0.55, 0.25, -0.8),
     rk: V(0.75, 0.05, -0.65), face: V(0.4, 0.75, 0.3) }),
-  P({ t: 0.5, hips: -42, torso: -72, lean: 5, lh: 1, lhAt: 0,
+  P({ t: 0.5, hips: -42, torso: -72, lean: 5, lh: 1, lhAt: 0, tilt: 10,
     rUp: V(0.62, -0.68, 0.4), rFo: V(0.15, 0.95, -0.2), lUp: V(0.55, -0.4, 0.73), lFo: V(0.55, 0.25, -0.8),
     rk: V(0.75, -0.05, -0.65), face: V(0.4, 0.75, 0.3) }),
-  P({ t: 0.7, hips: -15, torso: -20, lean: 9, lh: 1, lhAt: 0.6,
+  P({ t: 0.7, hips: -15, torso: -20, lean: 9, lh: 1, lhAt: 0.6, tilt: 3,
     rUp: V(0.15, -0.85, 0.5), rFo: V(-0.4, 0.35, 0.85), lUp: V(-0.15, -0.85, 0.5), lFo: V(0.45, 0.3, 0.85),
     rk: V(-0.55, 0.45, 0.7), face: V(0.8, 0, 0.6) }),
   P({ t: 0.9 }),
@@ -222,11 +224,21 @@ export const STROKES = { fh: FH, bh: BH, 'fh-top': topspin(FH, 1), 'bh-top': top
 export const PREP = 0.45, AFTER = 0.9;
 
 // Смесь двух поз (u = 0 — A, 1 — B): для плавных переходов между стойкой, бегом и ударом.
+// Направления — по дуге с постоянной скоростью (slerp), а не прямой с нормировкой: у почти противоположных направлений
+// прямая проходила рядом с нулём, и сегмент перескакивал за один кадр (предплечье на 150° при развороте на форхенд).
+const _ax = new THREE.Vector3(), UPV = new THREE.Vector3(0, 1, 0);
+function slerpDir(a, b, u) {
+  const th = Math.acos(THREE.MathUtils.clamp(a.dot(b), -1, 1));
+  if (th < 1e-4 || u <= 0) return a.clone();
+  _ax.crossVectors(a, b);
+  if (_ax.lengthSq() < 1e-6) { _ax.crossVectors(UPV, a); if (_ax.lengthSq() < 1e-6) _ax.set(1, 0, 0); }
+  return a.clone().applyAxisAngle(_ax.normalize(), th * Math.min(u, 1));
+}
 export function mix(A, B, u) {
   const o = {};
   for (const k in A) {
     const a = A[k], b = B[k] ?? a;
-    o[k] = typeof a === 'number' ? a + (b - a) * u : a?.isVector3 ? a.clone().lerp(b, u).normalize() : a;
+    o[k] = typeof a === 'number' ? a + (b - a) * u : a?.isVector3 ? slerpDir(a, b, u) : a;
   }
   return o;
 }
@@ -263,7 +275,7 @@ export const CHAIN = { hips: 0.07, torso: 0.025 };
 export function strokeAt(keys, s) {
   const at = (t) => mix(...sample(keys, Math.max(s + t, keys[0].t)));
   const k = at(0), kt = at(CHAIN.torso);
-  return { ...k, hips: at(CHAIN.hips).hips, torso: kt.torso, lean: kt.lean };
+  return { ...k, hips: at(CHAIN.hips).hips, torso: kt.torso, lean: kt.lean, tilt: kt.tilt };
 }
 
 const up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3(1, 0, 0), ahead = new THREE.Vector3(0, 0, 1);
@@ -342,7 +354,7 @@ export class Rig {
       yaw[s] = (f.yaw ?? 0) + 0.55 * (this.hipYaw || 0);
       target[s] = f.pos.clone().setY(f.pos.y + this.ankleH + f.lift);
       const behind = -target[s].clone().sub(hip).dot(fwd);
-      const rise = THREE.MathUtils.clamp(need(hip, target[s]) - feet.crouch, 0, 0.06) * THREE.MathUtils.smoothstep(behind, 0.05, 0.25);
+      const rise = Math.max(THREE.MathUtils.clamp(need(hip, target[s]) - feet.crouch, 0, 0.06) * THREE.MathUtils.smoothstep(behind, 0.05, 0.25), (f.toe ?? 0) * 0.07); // f.toe — пятка вверх сама (перенос веса)
       const a1 = Math.asin(Math.min(1, Math.sin(this.footA0) + rise / this.footLen)); // новый угол ступни к грунту
       toeUp[s] = a1 - this.footA0;
       const ffwd = fwd.clone().applyAxisAngle(up, yaw[s]);
@@ -468,13 +480,19 @@ export class Rig {
     // Наклон вперёд в основном в тазобедренных (таз наклоняется), остальное — позвоночник, как в атлетической стойке.
     // Раньше гнулся только позвоночник, линия таз–шея наклонялась на 55 % ключа, а в покое модель чуть откинута назад:
     // при ключе 10–12° корпус стоял отвесно («столб»), на видео Лёва наклонён на ~10° больше. LEAN0 — добавка ко всем ключам.
-    const leanAll = deg(lerp('lean') + LEAN0);
-    this.rotate('Hips', _q.setFromAxisAngle(side, leanAll * PELVIS_LEAN));
+    // Наклоны вперёд и вбок — в осях самого тела (ось доворачивается вместе с тазом и корпусом): в развороте на замах
+    // корпус наклоняется над правой ногой, как на видео, а не валится вбок к сетке.
+    const leanAll = deg(lerp('lean') + LEAN0), axis = (a, yaw) => a.clone().applyAxisAngle(up, yaw);
+    this.rotate('Hips', _q.setFromAxisAngle(axis(side, this.hipYaw), leanAll * PELVIS_LEAN));
     // Корпус крутится от таза не больше чем на 40°, и не поровну: поясница почти не крутится (15 %), грудной отдел — остальное.
     // Дальше плечи разворачивают ключицы (arm → clavicle).
     const twist = deg(THREE.MathUtils.clamp(lerp('torso') - lerp('hips'), -40, 40)), lean = leanAll * (1 - PELVIS_LEAN) / 3, tilt = deg(lerp('tilt') || 0) / 3;
     const _q3 = new THREE.Quaternion();
-    for (const [s, k] of [['Spine', 0.15], ['Spine1', 0.35], ['Spine2', 0.5]]) this.rotate(s, _q.setFromAxisAngle(up, twist * k).multiply(_q2.setFromAxisAngle(side, lean)).multiply(_q3.setFromAxisAngle(ahead, tilt))); // + — вправо (у Mixamo правая сторона в −X)
+    let yaw = this.hipYaw;
+    for (const [s, k] of [['Spine', 0.15], ['Spine1', 0.35], ['Spine2', 0.5]]) {
+      this.rotate(s, _q.setFromAxisAngle(up, twist * k).multiply(_q2.setFromAxisAngle(axis(side, yaw), lean)).multiply(_q3.setFromAxisAngle(axis(ahead, yaw), tilt))); // + — вправо (у Mixamo правая сторона в −X)
+      yaw += twist * k;
+    }
     // Голова держит мяч: шея берёт 40 % поворота, голова — 60 %, как у живого человека; корпус крутится под ней.
     this.lh = lerp('lh') || 0; this.lhAt = lerp('lhAt') || 0; // левую кисть на ручку ставит placeRacket
     this.fist = lerp('fist') || 0;
