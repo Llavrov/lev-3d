@@ -1,0 +1,16 @@
+# Личное и тяжёлое в открытый репозиторий не кладём: фото Лёвы и картинки GPT с ним, журналы игры,
+# сырые модели Meshy, кадры тестов, резервные копии.
+node_modules
+dist
+ref/
+gpt/
+input/
+logs/
+test-out/
+backup/
+art/
+/*.jpg
+/*.png
+cutout.swift
+.DS_Store
+*.log

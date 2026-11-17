@@ -1,0 +1,10 @@
+node_modules
+dist
+ref
+gpt
+input
+logs
+test-out
+backup
+art
+.git
