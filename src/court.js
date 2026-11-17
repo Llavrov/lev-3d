@@ -256,8 +256,12 @@ export class ClayDust {
   }
 }
 
+// Калитка в боковом заборе со стороны шале (x > 0), у сетки рядом со скамейками: проём z0…z1 высотой 2.1 м, створка
+// открыта наружу. Через неё выходят к дорожке вдоль корта и на террасу (env-club.js).
+export const GATE = { x: HALF_W + COURT.runSide, z0: 3.39, z1: 4.59, h: 2.1 };
+
 // Ограждение: стойки и рабица 3.6 м во всю высоту. Зелёную ветрозащиту сняли (17.11): сквозь сетку видно долину,
-// шале и террасу.
+// шале и террасу. Внизу по периметру бетонный бордюр, в нём стоят стойки.
 function fence() {
   const group = new THREE.Group(), H = 3.6, STEP = 3;
   group.name = 'fence';
@@ -268,18 +272,42 @@ function fence() {
   });
   const linkMat = new THREE.MeshStandardMaterial({ map: link, alphaTest: 0.4, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.3 });
   const steel = new THREE.MeshStandardMaterial({ color: '#26332d', roughness: 0.5, metalness: 0.5 });
-  const wall = (len, x, z, rot) => {
+  // Кусок рабицы от a до b вдоль стенки (локальный x), по высоте от y0 до y1.
+  const mesh = (a, b, y0, y1) => {
+    const len = b - a, h = y1 - y0, lg = new THREE.PlaneGeometry(len, h), lu = lg.attributes.uv;
+    for (let i = 0; i < lu.count; i++) lu.setXY(i, (lu.getX(i) * len + a) / 0.07, (lu.getY(i) * h + y0) / 0.07);
+    const l = new THREE.Mesh(lg, linkMat); l.position.set((a + b) / 2, (y0 + y1) / 2, 0); return l;
+  };
+  const tube = (r, len) => new THREE.CylinderGeometry(r, r, len, 8, 1, true);
+  const wall = (len, x, z, rot, gap = null) => { // gap: [a, b] — проём калитки в локальных x стенки
     const wg = new THREE.Group(); wg.position.set(x, 0, z); wg.rotation.y = rot; group.add(wg);
     const n = Math.round(len / STEP), step = len / n;
-    const lg = new THREE.PlaneGeometry(len, H), lu = lg.attributes.uv;
-    for (let i = 0; i < lu.count; i++) lu.setXY(i, lu.getX(i) * len / 0.07, lu.getY(i) * H / 0.07);
-    const l = new THREE.Mesh(lg, linkMat); l.position.y = H / 2; wg.add(l);
-    const parts = [new THREE.CylinderGeometry(0.024, 0.024, len, 8, 1, true).rotateZ(Math.PI / 2).translate(0, H, 0)]; // верхняя труба
-    for (let i = 0; i <= n; i++) parts.push(new THREE.CylinderGeometry(0.035, 0.035, H + 0.05, 10).translate(-len / 2 + i * step, (H + 0.05) / 2, -0.04));
+    if (!gap) wg.add(mesh(-len / 2, len / 2, 0, H));
+    else wg.add(mesh(-len / 2, gap[0], 0, H), mesh(gap[1], len / 2, 0, H), mesh(gap[0], gap[1], GATE.h, H));
+    const parts = [tube(0.024, len).rotateZ(Math.PI / 2).translate(0, H, 0)]; // верхняя труба
+    const xs = []; for (let i = 0; i <= n; i++) xs.push(-len / 2 + i * step);
+    if (gap) {
+      for (const g of gap) if (xs.every((p) => Math.abs(p - g) > 0.05)) xs.push(g);
+      parts.push(tube(0.024, gap[1] - gap[0]).rotateZ(Math.PI / 2).translate((gap[0] + gap[1]) / 2, GATE.h, 0)); // перекладина над проёмом
+    }
+    for (const px of xs) parts.push(new THREE.CylinderGeometry(0.035, 0.035, H + 0.05, 10).translate(px, (H + 0.05) / 2, -0.04));
     const posts = new THREE.Mesh(mergeGeometries(parts), steel); posts.castShadow = true; wg.add(posts);
+    if (gap) { // створка: рама из трубы и рабица, на петлях у стойки gap[1], открыта наружу на 100°
+      const w = gap[1] - gap[0] - 0.04, hh = GATE.h - 0.08, door = new THREE.Group();
+      door.position.set(gap[1] - 0.02, 0.05, 0); door.rotation.y = -1.75; wg.add(door);
+      const frame = [tube(0.02, w).rotateZ(Math.PI / 2).translate(-w / 2, 0, 0), tube(0.02, w).rotateZ(Math.PI / 2).translate(-w / 2, hh, 0),
+        tube(0.02, hh).translate(0, hh / 2, 0), tube(0.02, hh).translate(-w, hh / 2, 0)];
+      const fm = new THREE.Mesh(mergeGeometries(frame), steel); fm.castShadow = true; door.add(fm);
+      door.add(mesh(-w, 0, 0, hh));
+    }
     return wg;
   };
-  wall(X * 2, 0, -Z, 0); wall(Z * 2, -X, 0, Math.PI / 2); wall(Z * 2, X, 0, -Math.PI / 2);
+  wall(X * 2, 0, -Z, 0); wall(Z * 2, -X, 0, Math.PI / 2); wall(Z * 2, X, 0, -Math.PI / 2, [GATE.z0, GATE.z1]);
+  // Бордюр по периметру: бетон 15 см, на 5 см над землёй; в проёме калитки тоже — порожек.
+  const curb = new THREE.MeshStandardMaterial({ color: '#a7a399', roughness: 0.9 });
+  for (const [w, d, x, z] of [[X * 2 + 0.3, 0.15, 0, -Z - 0.075], [X * 2 + 0.3, 0.15, 0, Z + 0.075], [0.15, Z * 2, -X - 0.075, 0], [0.15, Z * 2, X + 0.075, 0]]) {
+    const c = new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, d), curb); c.position.set(x, 0, z); c.receiveShadow = true; group.add(c);
+  }
   wall(X * 2, 0, Z, Math.PI).name = 'fence-near'; // за спиной Лёвы: в игре прячем, чтобы камере было куда отъехать
   // Таблички с номером корта у сетки. Надпись клуба на стенке пробовали: в меню она оказывалась за головой Лёвы.
   const plate = canvasTex(128, (g, s) => {
