@@ -17,7 +17,7 @@ const FX = 9.145, FZ = 19.885; // ограждение корта
 export const PATHS = [
   [1.2, [[9.2, 3.99], [10.85, 3.99]]],
   [1.4, [[10.85, 10.2], [10.85, -19.3]]],
-  [1.5, [[10.85, 10.2], [11.4, 15.8], [10.3, 21.6], [6, 24.7], [-2, 25.7], [-12, 25.3], [-23, 23.6]]],
+  [1.5, [[10.85, 10.2], [11.4, 15.8], [10.3, 21.6], [6, 24.7], [-2, 25.7], [-12, 25.3], [-23, 23.6], [-25.6, 14], [-26.8, 3.99], [-28.7, 3.99]]], // за спиной Лёвы к калитке корта 2
   [1.6, [[10.6, 20.4], [15.5, 25.6], [26, 28.8], [38, 30.2], [48.5, 30.6]]], // ко входу с дороги и стоянке
   [7, [[51.3, 22], [51.3, 32]]], // гравийная стоянка у дороги (дорога на x ≈ 57.5)
 ];
@@ -47,7 +47,7 @@ const BENCHES_OUT = [[12.3, -6.5], [12.3, 9], [-4.5, 21.7]]; // скамейки
 
 // ---------- Карта клуба на земле ----------
 // R — гравий дорожек, G — клумбы, B — некошеная трава (у забора, изгороди, стволов, камней). Квадрат 100 м, 10 см на пиксель.
-export const MAP = { x0: -44, z0: -64, size: 100, n: 1024 };
+export const MAP = { x0: -54, z0: -66, size: 110, n: 1024 };
 function drawMap(trees) {
   const c = document.createElement('canvas'); c.width = c.height = MAP.n;
   const g = c.getContext('2d'), k = MAP.n / MAP.size;
@@ -57,6 +57,7 @@ function drawMap(trees) {
   const B = (a) => `rgba(0,0,255,${a})`, dot = (x, z, r, a) => { g.fillStyle = B(a); g.beginPath(); g.arc(x, z, r, 0, 7); g.fill(); };
   const rect = (o, w, a) => { g.strokeStyle = B(a); g.lineWidth = w; g.strokeRect(-FX - o, -FZ - o, 2 * (FX + o), 2 * (FZ + o)); };
   rect(0.6, 0.9, 1); rect(1.1, 1.8, 0.4);
+  g.save(); g.translate(-38, 0); rect(0.6, 0.9, 1); rect(1.1, 1.8, 0.4); g.restore(); // корт 2
   for (const [x0, z0, x1, z1, , w] of HEDGES) { g.strokeStyle = B(0.9); g.lineWidth = w + 0.8; g.beginPath(); g.moveTo(x0, z0); g.lineTo(x1, z1); g.stroke(); }
   for (const t of trees) dot(t[1], t[2], 1.1 * t[3], 0.8);
   for (const [x, z, s] of [...ROCKS, ...BUSHES]) dot(x, z, s * 1.1, 0.7);
@@ -137,7 +138,7 @@ function tuftMaterial(map, time, flowers) {
 function tufts(map, time) {
   const r = rng(11), grass = [], flowers = [];
   const free = (x, z) => {
-    if (Math.abs(x) < FX + 0.15 && Math.abs(z) < FZ + 0.15) return false; // корт
+    if ((Math.abs(x) < FX + 0.15 || Math.abs(x + 38) < FX + 0.15) && Math.abs(z) < FZ + 0.15) return false; // корты
     if (x > 10.1 && x < 32 && z > -35.2 && z < -18.9) return false; // терраса и шале
     const [p, bed] = map.at(x, z); return p < 0.2 && bed < 0.3;
   };
@@ -145,10 +146,11 @@ function tufts(map, time) {
   const N = COARSE ? 0.35 : 1;
   // Вдоль забора снаружи, кроме калитки и стороны с дорожкой — там газон стригут до бордюра.
   for (let k = 0; k < 2600 * N; k++) {
-    const side = Math.floor(r() * 4), t = r() * 2 - 1, o = 0.2 + Math.pow(r(), 1.6) * 1.3;
+    const side = Math.floor(r() * 4), t = r() * 2 - 1, o = 0.2 + Math.pow(r(), 1.6) * 1.3, c2 = r() < 0.3 ? -38 : 0; // треть — у корта 2
     const [x, z] = side === 0 ? [-FX - o, t * FZ] : side === 1 ? [t * FX, -FZ - o] : side === 2 ? [t * FX, FZ + o] : [FX + o, t * FZ];
-    if (side === 3) continue; // со стороны дорожки газон стрижен до бордюра: зрителям со скамеек виден корт
-    put(grass, x, z, 0.7 + r() * 0.6 - o * 0.15);
+    if (side === 3 && !c2) continue; // со стороны дорожки газон стрижен до бордюра: зрителям со скамеек виден корт
+    if (side === 3 && Math.abs(z - 3.99) < 1) continue; // проём калитки корта 2
+    put(grass, x + c2, z, 0.7 + r() * 0.6 - o * 0.15);
   }
   // По карте: у изгороди, стволов, камней, фонарей; по некошеному лугу за площадкой — пятнами.
   for (let k = 0; k < 60000 && grass.length < 9000 * N; k++) {
@@ -387,6 +389,8 @@ export function buildClub(trees) {
   // Камни: заданные у клуба и россыпь по склону холма за площадкой.
   const r = rng(23), stones = [...ROCKS];
   for (let k = 0; k < 400 && stones.length < 60; k++) { const a = r() * 6.28, d = 60 + r() * 120, x = Math.sin(a) * d, z = -Math.cos(a) * d; if (padDist(x, z) > 12) stones.push([x, z, 0.5 + r() * r() * 2.2]); }
+  const clear = ([x, z, s]) => pathGap(x, z) > s + 0.6 && !((Math.abs(x) < FX + 1 + s || Math.abs(x + 38) < FX + 1 + s) && Math.abs(z) < FZ + 1 + s); // не на дорожке и не у корта
+  stones.splice(0, stones.length, ...stones.filter(clear));
   const rockMat = triplanar(new THREE.MeshLambertMaterial({ map: rock, vertexColors: true, flatShading: true }), 1.6);
   const rocks = blobs(stones, [0, 1, 2].map((s) => blobGeometry(2, 10 + s * 5.3, true)), rockMat, ([x, z, s], rr) => [new THREE.Vector3(x, heightAt(x, z) - 0.08 * s, z), new THREE.Vector3(s * (0.8 + rr() * 0.5), s * (0.7 + rr() * 0.4), s * (0.8 + rr() * 0.5))], (rr) => new THREE.Color().setHSL(0.09, 0.06, 0.34 + rr() * 0.14));
   g.add(rocks);

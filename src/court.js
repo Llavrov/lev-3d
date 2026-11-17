@@ -262,7 +262,7 @@ export const GATE = { x: HALF_W + COURT.runSide, z0: 3.39, z1: 4.59, h: 2.1 };
 
 // Ограждение: стойки и рабица 3.6 м во всю высоту. Зелёную ветрозащиту сняли (17.11): сквозь сетку видно долину,
 // шале и террасу. Внизу по периметру бетонный бордюр, в нём стоят стойки.
-function fence() {
+function fence(num = '1') {
   const group = new THREE.Group(), H = 3.6, STEP = 3;
   group.name = 'fence';
   const X = HALF_W + COURT.runSide, Z = HALF_L + COURT.runBack;
@@ -312,7 +312,7 @@ function fence() {
   // Таблички с номером корта у сетки. Надпись клуба на стенке пробовали: в меню она оказывалась за головой Лёвы.
   const plate = canvasTex(128, (g, s) => {
     g.fillStyle = '#f1efe8'; g.fillRect(0, 0, s, s); g.strokeStyle = '#1e4335'; g.lineWidth = 6; g.strokeRect(8, 8, s - 16, s - 16);
-    g.fillStyle = '#1e4335'; g.font = '700 84px system-ui, -apple-system, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('1', s / 2, s / 2 + 4);
+    g.fillStyle = '#1e4335'; g.font = '700 84px system-ui, -apple-system, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(num, s / 2, s / 2 + 4);
   });
   for (const sd of [-1, 1]) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.45), new THREE.MeshStandardMaterial({ map: plate, roughness: 0.5 }));
@@ -321,11 +321,23 @@ function fence() {
   return group;
 }
 
+// Корт 2 — соседний, слева за елями (COURT2_X): тот же грунт, линии, сетка и забор с калиткой, табличка «2».
+// Свои имена у групп, чтобы getObjectByName('net' | 'fence-near') находил корт 1.
+export const COURT2_X = -38;
+function neighbour(clay) {
+  const g = new THREE.Group(); g.name = 'court2'; g.position.x = COURT2_X;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(W_ALL, L_ALL), clay);
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+  const n = net(), f = fence('2'); n.name = 'net2'; f.name = 'fence2'; f.getObjectByName('fence-near').name = 'fence2-near';
+  g.add(ground, lines(), n, f);
+  return g;
+}
+
 export function buildCourt() {
-  const group = new THREE.Group();
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(W_ALL, L_ALL), clayMaterial());
+  const group = new THREE.Group(), clay = clayMaterial();
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(W_ALL, L_ALL), clay);
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
   // Луг, долина и горы вокруг — в env.js.
-  group.add(ground, lines(), net(), fence(), buildEnv());
+  group.add(ground, lines(), net(), fence(), buildEnv(), neighbour(clay));
   return group;
 }

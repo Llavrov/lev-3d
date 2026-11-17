@@ -35,7 +35,7 @@ const PEAKS = [
 const K = 90; // мягкость слияния вершин, м
 
 // Площадка клуба: тут ровно (y = 0), по ней ходят, на ней корт, шале, дорожки, скамейки.
-export const PAD = { x0: -24, x1: 58, z0: -44, z1: 37 }; // до дороги справа: стоянка и вход тоже ровные
+export const PAD = { x0: -54, x1: 58, z0: -44, z1: 37 }; // от корта 2 слева до дороги справа: стоянка и вход тоже ровные
 export const DROP = 18; // дно долины ниже площадки клуба, м
 export const padDist = (x, z) => Math.hypot(Math.max(PAD.x0 - x, 0, x - PAD.x1), Math.max(PAD.z0 - z, 0, z - PAD.z1));
 // Холм клуба: за краем площадки пологие бугры по метру, дальше склон к дну долины — вперёд (−z) длиннее, его видно
@@ -215,7 +215,7 @@ function terrainMaterial(U, club) {
         grav = max(grav, 0.) * (.8 + .3 * vn(q / 2.5)) * vec3(.56, .52, .46);
         lawn = mix(lawn, grav, smoothstep(.47, .55, pe));
         // Вокруг корта крошка, вынесенная обувью, — рыжая кайма за бордюром.
-        float cd = max(abs(q.x) - 9.3, abs(q.y) - 20.04);
+        float cd = min(max(abs(q.x) - 9.3, abs(q.y) - 20.04), max(abs(q.x + 38.) - 9.3, abs(q.y) - 20.04)); // корт 1 и корт 2
         lawn = mix(lawn, mix(grav, vec3(.42, .17, .08), .55), smoothstep(.7, .1, cd + (vn(q * 3.) - .5) * .5) * step(0., cd + .2) * .8);
         c = mix(c, lawn, near);
       #endif

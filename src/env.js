@@ -53,7 +53,7 @@ function foliage(m) {
 // слева ряд высоких елей (их тень ложится на левый запас), справа у дальнего угла шале с террасой, за спиной Лёвы липы поодаль.
 function treeSpots() {
   const r = rng(31), out = [];
-  const free = (x, z, gap) => !(x > 9.6 && x < 34 && z > -38 && z < -12) && !(Math.abs(x) < 26 && z < -22 && z > -160) && !(Math.abs(x) < 22 && z > 22 && z < 40)
+  const free = (x, z, gap) => !(x > 9.6 && x < 34 && z > -38 && z < -12) && !(x > -50 && x < -26 && Math.abs(z) < 23) /* корт 2 */ && !(Math.abs(x) < 26 && z < -22 && z > -160) && !(Math.abs(x) < 22 && z > 22 && z < 40)
     && out.every((s) => (s[1] - x) ** 2 + (s[2] - z) ** 2 > gap * gap) && !(Math.abs(x) < 12.5 && Math.abs(z) < 23) && pathGap(x, z) > 2.5;
   const put = (kind, x, z, s, gap) => { if (free(x, z, gap)) out.push([kind, x, z, s]); };
   for (let i = 0; i < 9; i++) put(['tree_2', 'tree_3', 'tree_1'][i % 3], -15 - r() * 4, -22 + i * 5.5 + r() * 2, 0.8 + r() * 0.3, 3.5);
