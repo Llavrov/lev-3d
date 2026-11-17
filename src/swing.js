@@ -17,6 +17,7 @@ const GRIP_A = THREE.MathUtils.degToRad(40), WRIST_MAX = THREE.MathUtils.degToRa
 // ключица вверх (рука выше плеча) и вперёд (рука поперёк груди) — как лопатка у человека.
 const HUM_MAX = THREE.MathUtils.degToRad(90), ROLL_MAX = THREE.MathUtils.degToRad(95), CLAV_UP = THREE.MathUtils.degToRad(24), CLAV_FWD = THREE.MathUtils.degToRad(24); // грудь с ключиц снята весами (tools/rig-weights.py): плечо выходит вперёд, рука поперёк груди не входит в неё
 export const LOWER = /^(Hips|(Left|Right)(UpLeg|Leg|Foot|ToeBase|Toe_End))$/; // ноги может вести клип бега
+const LEAN0 = 6, PELVIS_LEAN = 0.6; // наклон: добавка ко всем ключам (°) и доля таза (pose)
 
 const deg = THREE.MathUtils.degToRad;
 const V = (x, y, z) => new THREE.Vector3(-x, y, z).normalize(); // у Mixamo лицо в +Z, правая рука в −X: пишем с x вправо
@@ -255,6 +256,15 @@ export function sample(keys, s) {
   const last = keys.at(-1);
   return [last, last, 0];
 }
+// Поза удара в момент s с кинетической цепью: таз берём из ключей на 70 мс позже, корпус на 25 мс, руку — как есть.
+// Поворот идёт снизу вверх и пик скорости таза приходится на −0,07 с, корпуса на −0,03, а не всё тело разом в момент
+// удара (разбор движения 18.11: таз, плечи и рука крутились синхронно, пик скорости таза узким всплеском на касании).
+export const CHAIN = { hips: 0.07, torso: 0.025 };
+export function strokeAt(keys, s) {
+  const at = (t) => mix(...sample(keys, Math.max(s + t, keys[0].t)));
+  const k = at(0), kt = at(CHAIN.torso);
+  return { ...k, hips: at(CHAIN.hips).hips, torso: kt.torso, lean: kt.lean };
+}
 
 const up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3(1, 0, 0), ahead = new THREE.Vector3(0, 0, 1);
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _m = new THREE.Matrix4();
@@ -340,6 +350,11 @@ export class Rig {
       if (f.lift < 0.01) drop = Math.max(drop, need(hip, target[s])); // ступня в воздухе таз не тянет: нога просто согнута или вытянута
     }
     drop = Math.min(drop, feet.crouch + 0.08); // не глубже: дальняя нога лучше выпрямится, чем таз просядет
+    // Таз не прыгает: просадку «дотянуться до дальней ступни» ведём плавно (feet.dt — шаг кадра). Раньше она включалась
+    // в кадр, когда ступня вставала или отрывалась, и на бегу таз скакал до 11 см за 1/30 с. Вниз быстрее — ступне надо достать.
+    let reachDrop = drop - feet.crouch;
+    if (feet.dt && this.reachDrop != null) reachDrop = this.reachDrop + (reachDrop - this.reachDrop) * (1 - Math.exp(-feet.dt / (reachDrop > this.reachDrop ? 0.035 : 0.08)));
+    this.reachDrop = reachDrop; drop = feet.crouch + reachDrop;
     hips.position.y = this.hipsRest.y - drop / hips.parent.getWorldScale(_v).y;
     this.root.updateMatrixWorld(true);
     for (const s of ['Left', 'Right']) {
@@ -450,15 +465,20 @@ export class Rig {
     this.b.Hips.position.copy(this.hipsRest);
     this.hipYaw = deg(lerp('hips'));
     this.rotate('Hips', _q.setFromAxisAngle(up, this.hipYaw));
+    // Наклон вперёд в основном в тазобедренных (таз наклоняется), остальное — позвоночник, как в атлетической стойке.
+    // Раньше гнулся только позвоночник, линия таз–шея наклонялась на 55 % ключа, а в покое модель чуть откинута назад:
+    // при ключе 10–12° корпус стоял отвесно («столб»), на видео Лёва наклонён на ~10° больше. LEAN0 — добавка ко всем ключам.
+    const leanAll = deg(lerp('lean') + LEAN0);
+    this.rotate('Hips', _q.setFromAxisAngle(side, leanAll * PELVIS_LEAN));
     // Корпус крутится от таза не больше чем на 40°, и не поровну: поясница почти не крутится (15 %), грудной отдел — остальное.
     // Дальше плечи разворачивают ключицы (arm → clavicle).
-    const twist = deg(THREE.MathUtils.clamp(lerp('torso') - lerp('hips'), -40, 40)), lean = deg(lerp('lean')) / 3, tilt = deg(lerp('tilt') || 0) / 3;
+    const twist = deg(THREE.MathUtils.clamp(lerp('torso') - lerp('hips'), -40, 40)), lean = leanAll * (1 - PELVIS_LEAN) / 3, tilt = deg(lerp('tilt') || 0) / 3;
     const _q3 = new THREE.Quaternion();
     for (const [s, k] of [['Spine', 0.15], ['Spine1', 0.35], ['Spine2', 0.5]]) this.rotate(s, _q.setFromAxisAngle(up, twist * k).multiply(_q2.setFromAxisAngle(side, lean)).multiply(_q3.setFromAxisAngle(ahead, tilt))); // + — вправо (у Mixamo правая сторона в −X)
     // Голова держит мяч: шея берёт 40 % поворота, голова — 60 %, как у живого человека; корпус крутится под ней.
     this.lh = lerp('lh') || 0; this.lhAt = lerp('lhAt') || 0; // левую кисть на ручку ставит placeRacket
     this.fist = lerp('fist') || 0;
-    const look = deg(lerp('look') || 0), nod = deg(lerp('nod') || 0); // nod — голова вниз (°), язык тела между очками
+    const look = deg(lerp('look') || 0), nod = deg(lerp('nod') || 0) - deg(LEAN0); // nod — голова вниз (°), язык тела между очками; добавку наклона голова отдаёт — взгляд не в землю
     this.rotate('Neck', _q.setFromAxisAngle(up, -(this.hipYaw + twist) * 0.55 + look * 0.4).multiply(_q2.setFromAxisAngle(side, nod * 0.4)));
     this.rotate('Head', _q.setFromAxisAngle(up, look * 0.6).multiply(_q2.setFromAxisAngle(side, nod * 0.6)));
     this.arm('Right', vec('rUp'), vec('rFo'));
