@@ -83,6 +83,8 @@ class Rally2 extends Game {
       if (h === 'away') { busy = true; continue; } // её ведёт Girls (матч, кофе)
       let to = h ?? (p === this.picker ? b.pos.clone().setY(0) : this.spotOf(p));
       if (p === this.picker && p.pos.distanceTo(to) < 0.45) { this.picker = null; this.ballMesh.visible = false; to = this.spotOf(p); } // подобрала
+      const x = p.pos.z * to.z < 0 ? p.pos.x + ((to.x - p.pos.x) * p.pos.z) / (p.pos.z - to.z) : null; // где путь пересекает сетку
+      if (x !== null && Math.abs(x) < 7.2) to = V(7.7 * Math.sign(to.x || x || 1), Math.sign(p.pos.z) * 0.4); // в обход столба, не сквозь сетку
       const d = to.clone().sub(p.pos).setY(0), len = d.length(), there = len < 0.18;
       if (!there) p.free = true; else if (!h) p.free = false; // на месте — разворот к сетке; у Лёвы стоит, как подошла
       if (!there || h || p === this.picker) busy = true;
@@ -265,7 +267,7 @@ export class Girls {
     if (kind === 'talk') { // подходит к Лёве: за калиткой — к проёму изнутри, на корте — на 1,2 м к нему
       const me = L.pos.clone().setX(L.pos.x - COURT2_X).setY(0), inside = Math.abs(me.x) < GATE.x && Math.abs(me.z) < COURT.len / 2 + COURT.runBack;
       const spot = inside ? me.clone().add(g.p.pos.clone().sub(me).setY(0).setLength(1.2)) : V(GATE.x - 0.75, GZ);
-      spot.x = clamp(spot.x, -7.4, 7.4); spot.z = g.c.side > 0 ? clamp(spot.z, 0.8, 17.8) : clamp(spot.z, -17.8, -0.8); // своя половина
+      if (inside) { spot.x = clamp(spot.x, -7.4, 7.4); spot.z = g.c.side > 0 ? clamp(spot.z, 0.8, 17.8) : clamp(spot.z, -17.8, -0.8); } // на корте — со своей половины
       this.sim.hold(g.p, spot, now);
     }
     this.dlg = { g, asked: {}, kind, at: L.pos.clone() };
