@@ -17,6 +17,7 @@ import { fitRacketModel, dressRacket } from './racket.js';
 import { Player, POWER, holdOf, powerOf } from './player.js';
 import { Game, AI } from './game.js';
 import { Club } from './club.js';
+import { ROSTER, setOpponent, rivalPicker } from './rivals.js';
 import { Practice } from './practice.js';
 import { STROKES, sample } from './swing.js';
 import { makeSound } from './sound.js';
@@ -436,7 +437,7 @@ const dressAll = () => {
   if (!game) return;
   const oppRacket = RACKETS.find((r) => r !== myRacket && racketModels[r]) ?? null;
   const subRacket = RACKETS.find((r) => r !== myRacket && r !== oppRacket && racketModels[r]) ?? oppRacket; // у замены третья
-  for (const [p, name] of [[club?.lev ?? game.lev, myRacket], [game.opp, oppRacket], [sub, subRacket]]) {
+  for (const [p, name] of [[club?.lev ?? game.lev, myRacket], [game.opp, game.opp.rival?.racket ?? oppRacket], [sub, subRacket]]) {
     if (!p) continue;
     if (name && racketModels[name]) dressRacket(p.racket, racketModels[name].clone(true));
   }
@@ -477,8 +478,11 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
     sub.wrap.visible = sub.racket.visible = false; sub.measure(); dressAll();
     return sub;
   });
-  dressAll();
   game.now = 0;
+  const rival = ROSTER.find((r) => r.id === Q.get('rival')); // ?rival=gh|ch|jp|ru — соперник из rivals.js; ждём после клуба и часов: кадры идут и во время загрузки
+  if (rival) await setOpponent(game, rival);
+  if (Q.has('debug')) rivalPicker(game, dressAll); // выбор соперника на стартовом экране
+  dressAll();
   if (Q.has('auto')) { game.autoLev = new AI(lev, game); start(); }
   hud.score(game);
   $('loader').classList.add('done'); window.__ready = true; // заставка index.html больше не покажет «не запустилась»
