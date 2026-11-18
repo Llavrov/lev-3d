@@ -12,7 +12,7 @@ const $ = (id) => document.getElementById(id);
 const pct = (k) => `${k >= 1 ? '+' : '−'}${Math.round(Math.abs(k - 1) * 1000) / 10}%`.replace('.', ',');
 
 let C = null; // контекст: game, lev, club, camera, onRacket
-const P = { sta0: 1, games: 0, won: 0, rally: 0, saveAt: 0, panel: false };
+const P = { sta0: 1, games: 0, won: 0, rally: 0, saveAt: 0, panel: false, state: null };
 
 export function initProfile(ctx) {
   C = ctx;
@@ -61,9 +61,10 @@ export function tick(dt, now) {
     if (L.idle) L.mood += 0.12 * stats.mood * dt; // между очками настрой тянется к своему, а не к нулю
     if (g.rally !== P.rally) { if (g.lastHitter === L && g.rally > P.rally) stats.train('technique', 0.1, true); P.rally = g.rally; } // попал по мячу — техника
     // Геймы: настрой и живые мячи.
-    const sum = g.games.get(L) + g.games.get(g.opp), won = g.games.get(L);
-    if (sum > P.games) { stats.cheer(won > P.won ? 0.06 : -0.04); outfit.useBalls(); }
+    const [sum, won] = played(g);
+    if (sum > P.games) stats.cheer(won > P.won ? 0.06 : -0.04);
     P.games = sum; P.won = won;
+    if (g.state === 'match-over' && P.state !== 'match-over') { stats.cheer(g.ended === L ? 0.12 : -0.06); outfit.useBalls(); stats.emit('match'); } // матч сыгран — живых мячей на матч меньше
   } else if (L.free) {
     // Прогулка: бегом устаёт, шагом отдыхает, сидя на скамейке снимает усталость.
     const v = L.vel.length(), sit = L.seat && L.seat.w > 0.9;
@@ -72,10 +73,14 @@ export function tick(dt, now) {
     if (sit) { stats.relieve(dt * 0.5, true); stats.mood += (Math.max(stats.mood, 0.1) - stats.mood) * dt * 0.02; }
   }
   P.sta0 = L.stamina;
-  if (g.games && g.lev !== L) { P.games = g.games.get(g.lev) + g.games.get(g.opp); P.won = g.games.get(g.lev); } // замена играет — не наши геймы
+  if (g.lev !== L) [P.games, P.won] = played(g); // замена играет — не наши геймы
+  P.state = g.state;
   if (now > P.saveAt) { P.saveAt = now + 3; stats.save(); }
   gymTick(dt);
 }
+
+// Геймов в матче всего и у Лёвы (у того, кто на его месте): прошлые сеты плюс текущий.
+const played = (g) => { const s = g.sets ?? []; return [s.reduce((n, [a, b]) => n + a + b, 0) + g.games.get(g.lev) + g.games.get(g.opp), s.reduce((n, [a]) => n + a, 0) + g.games.get(g.lev)]; };
 
 // Без сил на прогулке не бежит, в магазине и зале стоит.
 // Усталость видно и на прогулке: от 70 Лёва идёт медленнее (к 100 — на треть).
@@ -126,7 +131,7 @@ function fillPanel() {
   const fx = [r.power !== 1 && `сила ${pct(r.power)}`, r.control !== 1 && `контроль ${pct(r.control)}`].filter(Boolean).join(', ');
   const items = [`Ракетка «${r.name}»${fx ? ` (${fx})` : ''}`, sh.name + (sh.speed > 1 ? ` (скорость ${pct(sh.speed)})` : ''),
     ...['shirt', 'shorts', 'cap', 'band', 'wrist', 'bag'].map((k) => ITEM[outfit.worn[k]]?.name).filter(Boolean)];
-  if (outfit.balls) items.push(`Новые мячи ещё ${outfit.balls}&nbsp;${plural(outfit.balls, 'гейм', 'гейма', 'геймов')}`);
+  if (outfit.balls) items.push(`Новые мячи ещё ${outfit.balls}&nbsp;${plural(outfit.balls, 'матч', 'матча', 'матчей')}`);
   $('panelWorn').innerHTML = 'Надето: ' + items.join(' · ').replace(/ (в|и|с|на|к) /g, ' $1&nbsp;');
 }
 export const plural = (n, one, few, many) => { const a = n % 10, b = n % 100; return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many; };

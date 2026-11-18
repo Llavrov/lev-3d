@@ -79,10 +79,10 @@ if (ONLY.includes('look')) {
   for (const [name, items] of [['look-a', ['shirt-black', 'shorts-red', 'cap-white', 'wrist-lime', 'bag-red', 'shoes-clay']], ['look-b', ['shirt-sky', 'shorts-navy', 'band-red', 'wrist-black', 'bag-black', 'shoes-light', 'neon-pink']]]) {
     await page.evaluate((items) => { const o = __eco.outfit; for (const k of ['cap', 'band', 'wrist', 'bag']) o.takeOff(k); for (const id of items) { o.give(id); o.wear(id); } }, items);
     await page.evaluate(() => __lev.step(0.6, { x: 0, y: 0.6 })); // идёт: руки и ноги в движении
-    for (const [view, eye] of [['front', [0.6, 1.25, 2.4]], ['back', [-0.5, 1.4, -2.4]], ['head', [0.35, 1.72, 0.75]], ['side', [2.2, 1.3, 0.2]]]) {
+    for (const [view, eye] of [['front', [0.6, 1.25, 2.4]], ['back', [-0.5, 1.4, -2.4]], ['head', [0.35, 1.72, 0.75]], ['head-side', [0.85, 1.7, 0.08]], ['head-back', [-0.35, 1.78, -0.8]], ['side', [2.2, 1.3, 0.2]]]) {
       await page.evaluate(([eye, view]) => {
         const L = __lev.club.lev, y = L.netYaw + L.bodyTurn, f = [Math.sin(y), Math.cos(y)], r = [-Math.cos(y), Math.sin(y)];
-        const at = view === 'head' ? 1.62 : 1.0;
+        const at = view.startsWith('head') ? 1.64 : 1.0;
         __lev.shot([L.pos.x + f[0] * eye[2] + r[0] * eye[0], eye[1], L.pos.z + f[1] * eye[2] + r[1] * eye[0]], [L.pos.x, at, L.pos.z]);
       }, [eye, view]);
       await page.screenshot({ path: join(OUT, `${name}-${view}.png`) });

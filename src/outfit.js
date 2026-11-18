@@ -42,7 +42,7 @@ export const CATALOG = [
   it('bag-black', 'bag', 'Чёрная сумка', 45, { color: '#1c1e22' }),
   it('bag-red', 'bag', 'Красная сумка', 45, { color: '#b3202e' }),
   it('bag-navy', 'bag', 'Тёмно-синяя сумка', 45, { color: '#1f3566' }),
-  it('balls', 'balls', 'Банка мячей', 6, { games: 12 }),
+  it('balls', 'balls', 'Банка мячей', 6, { matches: 3 }),
 ];
 export const ITEM = Object.fromEntries(CATALOG.map((x) => [x.id, x]));
 const FREE = CATALOG.filter((x) => x.price === 0).map((x) => x.id);
@@ -57,14 +57,14 @@ export class Outfit {
     // Ракетку раньше помнил main.js под ключом racket: подхватываем, если она стартовая.
     this.worn = {};
     for (const k of SLOTS) { const id = s?.worn?.[k]; this.worn[k] = ok(id, k) && this.owned.has(id) ? id : DEFAULT[k] ?? null; }
-    this.balls = Number.isFinite(s?.balls) ? Math.max(0, Math.min(99, Math.round(s.balls))) : 0; // сколько геймов ещё живые мячи
+    this.balls = Number.isFinite(s?.ballMatches) ? Math.max(0, Math.min(99, Math.round(s.ballMatches))) : 0; // сколько матчей ещё живые мячи
     this.listeners = new Set();
   }
   on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
-  save() { this.store.set(KEY, { owned: [...this.owned].filter((id) => !FREE.includes(id)), worn: this.worn, balls: this.balls }); for (const fn of this.listeners) fn(); }
+  save() { this.store.set(KEY, { owned: [...this.owned].filter((id) => !FREE.includes(id)), worn: this.worn, ballMatches: this.balls }); for (const fn of this.listeners) fn(); }
   has(id) { return this.owned.has(id); }
   // Купить уже оплаченное (деньги списывает shop.js). Мячи — расходник: прибавляют живые геймы.
-  give(id) { const x = ITEM[id]; if (!x) return; if (x.kind === 'balls') this.balls += x.games; else this.owned.add(id); this.save(); }
+  give(id) { const x = ITEM[id]; if (!x) return; if (x.kind === 'balls') this.balls += x.matches; else this.owned.add(id); this.save(); }
   wear(id) { const x = ITEM[id]; if (!x || !this.owned.has(id) || !SLOTS.includes(x.kind)) return false; this.worn[x.kind] = id; this.save(); return true; }
   // Снять можно только вещи «для вида» без замены: кепку, повязку, напульсники, сумку.
   takeOff(kind) { if (!['cap', 'band', 'wrist', 'bag'].includes(kind)) return; this.worn[kind] = null; this.save(); }
@@ -94,7 +94,11 @@ function recolor(mesh, U) {
   m.onBeforeCompile = function (sh, r) {
     prev.call(this, sh, r);
     Object.assign(sh.uniforms, U);
-    sh.fragmentShader = 'uniform sampler2D oMask; uniform vec3 oShirt, oShorts, oShoes, oOn, oRef;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+    // vGeo — точка в позе привязки: всё, что выше края кепки, — макушка с волосами; под кепкой её не рисуем.
+    sh.vertexShader = 'varying vec3 vGeo;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vGeo = position;');
+    sh.fragmentShader = 'uniform sampler2D oMask; uniform vec3 oShirt, oShorts, oShoes, oOn, oRef; uniform vec4 oCut; varying vec3 vGeo;\n' + sh.fragmentShader
+      .replace('void main() {', 'void main() {\n  if (oCut.w > 0.5 && vGeo.y > oCut.x + oCut.y * (vGeo.z - oCut.z)) discard;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
       { vec3 om = texture2D(oMask, vMapUv).rgb; om *= step(max(om.r, max(om.g, om.b)) - 0.001, om) * oOn; // на стыке островов — только свой канал
         float lum = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
         diffuseColor.rgb = mix(diffuseColor.rgb, oShirt * min(1.5, lum / oRef.x), om.r);
@@ -151,39 +155,42 @@ function buildHead(info) {
   const yb = j.y + 0.66 * H, sb = slice(head, yb, 0.012 * u), gap = 0.004 * u;
   const band = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.034 * u, 48, 1, true), cloth('#fff'));
   band.scale.set(sb.ax + gap, 1, sb.az + gap); band.position.set(sb.cx, yb, sb.cz);
-  // Купол облегает голову с волосами: из центра на высоте края кепки по каждому направлению берём самую дальнюю
-  // вершину головы и отступаем на 6 мм. Козырёк — полудиск спереди у края купола, чуть вниз.
-  const yc = j.y + 0.53 * H, above = head.filter((v) => v.y > yc - 0.01 * u), g2 = 0.004 * u;
-  const cx = (Math.min(...above.map((v) => v.x)) + Math.max(...above.map((v) => v.x))) / 2, cz = (Math.min(...above.map((v) => v.z)) + Math.max(...above.map((v) => v.z))) / 2;
-  const NA = 36, NE = 10, R = Array.from({ length: NE + 1 }, () => new Float32Array(NA));
-  for (const v of above) {
-    const dx = v.x - cx, dy = Math.max(0, v.y - yc), dz = v.z - cz, el = Math.atan2(dy, Math.hypot(dx, dz)), az = Math.atan2(dx, dz);
-    const i = Math.min(NE, Math.round((el / (Math.PI / 2)) * NE)), k = ((Math.round((az / (2 * Math.PI)) * NA) % NA) + NA) % NA, r = Math.hypot(dx, dy, dz);
-    for (const ii of [i - 1, i, i + 1]) for (const kk of [k - 1, k, k + 1]) if (ii >= 0 && ii <= NE) { const row = R[ii], q = (kk + NA) % NA; row[q] = Math.max(row[q], r); } // соседние ячейки — без дыр
+  // Бейсболка. Край — на лбу на 1,5 см выше бровей (брови — на 4,5 см выше кончика носа), сзади чуть ниже (наклон 0,1).
+  // Всё, что выше края, — макушку с волосами — шейдер не рисует (oCut), поэтому купол низкий, по форме головы, а не шлем
+  // поверх причёски. Купол из шести клиньев (швы), кнопка сверху, козырёк 7,5 см изогнут по ширине и опущен вперёд.
+  const nose = head.reduce((m, v) => (v.y > j.y && v.z > m.z ? v : m), head[0]);
+  const yf = nose.y + 0.06 * u, zf = nose.z, tilt = 0.1, edge = (z) => yf + tilt * (z - zf);
+  const ring = head.filter((v) => Math.abs(v.y - edge(v.z)) < 0.008 * u);
+  const cx = (Math.min(...ring.map((v) => v.x)) + Math.max(...ring.map((v) => v.x))) / 2, cz = (Math.min(...ring.map((v) => v.z)) + Math.max(...ring.map((v) => v.z))) / 2;
+  const NA = 48, NE = 12, r0 = new Float32Array(NA), bin = (dx, dz) => ((Math.round((Math.atan2(dx, dz) / (2 * Math.PI)) * NA) % NA) + NA) % NA;
+  for (const v of ring) { const k = bin(v.x - cx, v.z - cz); r0[k] = Math.max(r0[k], Math.hypot(v.x - cx, v.z - cz)); }
+  for (let pass = 0; pass < 3; pass++) { const src = r0.slice(); for (let k = 0; k < NA; k++) r0[k] = Math.max(src[k], (src[(k + NA - 1) % NA] + src[k] + src[(k + 1) % NA]) / 3); } // без провалов между ячейками
+  const capGap = 0.004 * u, yc0 = edge(cz);
+  const yTop = yc0 + THREE.MathUtils.clamp(top - yc0 - 0.035 * u, 0.09 * u, 0.115 * u); // волосы под кепкой прижаты на 3,5 см
+  const rim = (k) => { const th = (2 * Math.PI * k) / NA, r = r0[((k % NA) + NA) % NA] + capGap, x = cx + r * Math.sin(th), z = cz + r * Math.cos(th); return new THREE.Vector3(x, edge(z) - 0.003 * u, z); };
+  const at = (k, al) => { const R = rim(k), c = Math.pow(Math.cos(al), 0.85); return new THREE.Vector3(cx + (R.x - cx) * c, R.y + (yTop - R.y) * Math.pow(Math.sin(al), 0.9), cz + (R.z - cz) * c); };
+  const pos = [], idx = [];
+  for (let i = 0; i <= NE; i++) for (let k = 0; k < NA; k++) pos.push(...at(k, (Math.PI / 2) * (i / NE)).toArray());
+  for (let i = 0; i < NE; i++) for (let k = 0; k < NA; k++) { const a = i * NA + k, b = i * NA + ((k + 1) % NA), c = a + NA, d = b + NA; idx.push(a, d, b, a, c, d); }
+  const crownGeo = new THREE.BufferGeometry(); crownGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); crownGeo.setIndex(idx); crownGeo.computeVertexNormals();
+  const cap = new THREE.Group(), mat = Object.assign(cloth('#fff'), { side: THREE.DoubleSide }), seamMat = Object.assign(cloth('#fff'), { userData: { shade: 0.72 } });
+  cap.add(new THREE.Mesh(crownGeo, mat));
+  for (let s = 0; s < 6; s++) { // швы клиньев: по меридианам на 1 мм над тканью
+    const k = (s * NA) / 6, pts = [];
+    for (let i = 1; i <= 20; i++) { const p = at(k, (Math.PI / 2) * 0.97 * (i / 20)); pts.push(p.add(new THREE.Vector3(p.x - cx, 0.4 * (p.y - yc0), p.z - cz).setLength(0.0012 * u))); }
+    cap.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.0014 * u, 4), seamMat));
   }
-  // Сглаживание: отдельные пряди не выпирают буграми, купол ровный (но не уже 97% исходного — волосы не протыкают).
-  for (let pass = 0; pass < 3; pass++) {
-    const src = R.map((row) => row.slice());
-    for (let i = 0; i <= NE; i++) for (let k = 0; k < NA; k++) {
-      let sum = 0, n = 0;
-      for (const ii of [i - 1, i, i + 1]) for (const kk of [k - 1, k, k + 1]) if (ii >= 0 && ii <= NE && src[ii][(kk + NA) % NA] > 0) { sum += src[ii][(kk + NA) % NA]; n++; }
-      R[i][k] = Math.max(n ? sum / n : 0, 0.97 * src[i][k]);
-    }
+  const btn = new THREE.Mesh(new THREE.SphereGeometry(0.009 * u, 14, 8), seamMat); btn.scale.y = 0.5; btn.position.set(cx, yTop, cz);
+  // Козырёк: от края купола спереди (±75°) наружу, длиннее посередине, края загнуты вниз, весь опущен на 10°.
+  const bp = [], bi = [], NU = 30, NV = 6, L = 0.075 * u;
+  for (let i = 0; i <= NU; i++) {
+    const w = -1 + (2 * i) / NU, k = (w * 75 * NA) / 360, R = rim(Math.round(k)), ph = (w * 75 * Math.PI) / 180, l = L * Math.pow(Math.cos(ph), 0.5);
+    for (let jv = 0; jv <= NV; jv++) { const v = (jv / NV) * l; bp.push(R.x + Math.sin(ph) * v, R.y - v * Math.sin(0.17) - 0.014 * u * w * w * (jv / NV), R.z + Math.cos(ph) * v); }
   }
-  const dome = new THREE.SphereGeometry(1, NA, NE, 0, Math.PI * 2, 0, Math.PI / 2), dp = dome.attributes.position, dir = new THREE.Vector3();
-  for (let i = 0; i < dp.count; i++) {
-    dir.fromBufferAttribute(dp, i);
-    const el = Math.asin(Math.min(1, dir.y)), az = Math.atan2(dir.x, dir.z);
-    const ei = Math.min(NE, Math.round((el / (Math.PI / 2)) * NE)), ki = ((Math.round((az / (2 * Math.PI)) * NA) % NA) + NA) % NA;
-    dp.setXYZ(i, cx + dir.x * (R[ei][ki] + g2), yc + dir.y * (R[ei][ki] + g2), cz + dir.z * (R[ei][ki] + g2));
-  }
-  dome.computeVertexNormals();
-  const cap = new THREE.Group(), mat = cloth('#fff');
-  const front = R[0][0] + g2, half = 0.5 * (R[0][Math.round(NA / 4)] + R[0][Math.round((3 * NA) / 4)]) + g2;
-  const brim = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.006 * u, 32, 1, false, -Math.PI / 2, Math.PI), mat);
-  brim.scale.set(half * 0.92, 1, 0.09 * u); brim.position.set(cx, yc + 0.004 * u, cz + front - 0.012 * u); brim.rotation.x = 0.24; // козырёк чуть вниз
-  const btn = new THREE.Mesh(new THREE.SphereGeometry(0.008 * u, 12, 8), mat); btn.position.set(cx, yc + R[NE][0] + g2, cz);
-  cap.add(new THREE.Mesh(dome, mat), brim, btn);
+  for (let i = 0; i < NU; i++) for (let jv = 0; jv < NV; jv++) { const a = i * (NV + 1) + jv, b = a + NV + 1; bi.push(a, b, a + 1, b, b + 1, a + 1); }
+  const brimGeo = new THREE.BufferGeometry(); brimGeo.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3)); brimGeo.setIndex(bi); brimGeo.computeVertexNormals();
+  cap.add(new THREE.Mesh(brimGeo, mat), btn);
+  cap.userData.cut = new THREE.Vector4(yf, tilt, zf, 1);
   return { band: attach(info, 'Head', band), cap: attach(info, 'Head', cap) };
 }
 
@@ -269,7 +276,7 @@ export function dress(player, o = outfit) {
   if (!mesh) return;
   let k = player.outfitKit;
   if (!k) {
-    const U = { oMask: { value: maskTex() }, oShirt: { value: new THREE.Color() }, oShorts: { value: new THREE.Color() }, oShoes: { value: new THREE.Color() }, oOn: { value: new THREE.Vector3() }, oRef: { value: new THREE.Vector3(REF.shirt, REF.shorts, REF.shoes) } };
+    const U = { oMask: { value: maskTex() }, oShirt: { value: new THREE.Color() }, oShorts: { value: new THREE.Color() }, oShoes: { value: new THREE.Color() }, oOn: { value: new THREE.Vector3() }, oRef: { value: new THREE.Vector3(REF.shirt, REF.shorts, REF.shoes) }, oCut: { value: new THREE.Vector4() } };
     recolor(mesh, U);
     const info = bindInfo(mesh);
     k = player.outfitKit = { U, ...buildHead(info), wristL: buildWrist(info, 'Left'), wristR: buildWrist(info, 'Right'), bag: buildBag(info) };
@@ -278,9 +285,10 @@ export function dress(player, o = outfit) {
   for (const [slot, u, i] of [['shirt', U.oShirt, 'x'], ['shorts', U.oShorts, 'y'], ['shoes', U.oShoes, 'z']]) {
     const c = col(slot); U.oOn.value[i] = c ? 1 : 0; if (c) u.value.set(c);
   }
-  const paint = (obj, slot) => { const c = col(slot); obj.visible = !!c; if (c) obj.traverse((x) => { if (x.isMesh && !x.material.userData.keep) x.material.color.set(c); }); };
+  const paint = (obj, slot) => { const c = col(slot); obj.visible = !!c; if (c) obj.traverse((x) => { if (x.isMesh && !x.material.userData.keep) x.material.color.set(c).multiplyScalar(x.material.userData.shade ?? 1); }); };
   paint(k.cap, 'cap'); paint(k.band, 'band'); paint(k.wristL, 'wrist'); paint(k.wristR, 'wrist'); paint(k.bag, 'bag');
   if (k.cap.visible) k.band.visible = false; // под кепкой повязку не видно — и не торчит
+  U.oCut.value.copy(k.cap.userData.cut).setW(k.cap.visible ? 1 : 0);
   k.bagWorn = k.bag.visible;
 }
 // Сумку видно только на прогулке (и в магазине на примерке).

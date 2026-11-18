@@ -50,7 +50,7 @@ function render() {
     const own = outfit.has(x.id), worn = outfit.worn[x.kind] === x.id;
     const fx = x.kind === 'racket' ? [x.power !== 1 && `сила ${pct(x.power)}`, x.control !== 1 && `контроль ${pct(x.control)}`].filter(Boolean).join(', ')
       : x.kind === 'shoes' && x.speed > 1 ? `скорость ${pct(x.speed)}`
-      : x.kind === 'balls' ? (outfit.balls ? `живые ещё ${outfit.balls} ${plural(outfit.balls, 'гейм', 'гейма', 'геймов')}` : `живой отскок ${x.games} геймов`) : '';
+      : x.kind === 'balls' ? (outfit.balls ? `живые ещё ${outfit.balls} ${plural(outfit.balls, 'матч', 'матча', 'матчей')}` : `живой отскок ${x.matches} матча`) : '';
     const btn = (a, t, dis = false) => `<button type="button" data-act="${a}" data-id="${x.id}"${dis ? ' disabled' : ''}${a === 'buy' ? ' class="buy"' : ''}>${t}</button>`;
     const action = x.kind === 'balls' || !own ? `<span class="price">${fmtCHF(x.price)}</span>${btn('buy', 'Купить', !wallet.can(x.price))}`
       : worn ? (['cap', 'band', 'wrist', 'bag'].includes(x.kind) ? btn('off', 'Снять') : '<span class="on">Надето</span>') : btn('wear', 'Надеть');
