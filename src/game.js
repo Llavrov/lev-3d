@@ -95,6 +95,7 @@ export class Game {
 
   // second — вторая подача после ошибки на первой: тот же подающий, счёт не меняется.
   resetPoint(now, second = false) {
+    if (this.ended) return this.newMatch(now); // матч кончился, а очко зовут снова (вернулся из клуба) — новый матч
     if (!second) { this.serveNo = 1; this.ai.newPoint(); }
     this.court = this.courtSide();
     for (const p of [this.lev, this.opp]) p.place(servePos(p, this.court, p === this.server));

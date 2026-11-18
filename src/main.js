@@ -251,7 +251,7 @@ const hud = {
     }
   },
   hint(t) { $('hint').textContent = t; },
-  serveHint: matchMedia('(pointer: coarse)').matches ? 'Подача\u00a0— кнопкой «Сверху» или\u00a0«Снизу»' : 'K\u00a0— подача сверху, J\u00a0— снизу', // на телефоне кнопки ударов на подаче подписаны «Сверху» и «Снизу»
+  serveHint: matchMedia('(pointer: coarse)').matches ? 'Подача\u00a0— «Сверху» или\u00a0«Снизу»' : 'K\u00a0— подача сверху, J\u00a0— снизу', // на телефоне кнопки ударов на подаче подписаны «Сверху» и «Снизу»
   flash(t, good) {
     const el = $('msg');
     el.textContent = t; el.className = good ? 'show good' : 'show';
@@ -440,7 +440,6 @@ function endUi(w) {
   if (!w) return;
   $('endT').textContent = w === game.lev ? 'Лёва выиграл' : 'Соперник выиграл';
   $('endS').textContent = game.sets.map(([a, b]) => `${a}:${b}`).join(' · ');
-  $('again').focus();
 }
 const again = () => { endUi(null); game.newMatch(game.now); };
 $('again').addEventListener('click', again);

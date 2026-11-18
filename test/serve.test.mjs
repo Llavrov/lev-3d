@@ -93,6 +93,7 @@ test('матч: 1 сет — конец после сета; до двух се�
   const one = game(1);
   take(one.g, one.lev, 24);
   assert.equal(one.g.ended, one.lev); assert.ok(one.log.some((e) => e.type === 'match'));
+  one.g.resetPoint(0); assert.equal(one.g.ended, null, 'очко после конца матча (вернулся из клуба) — уже новый матч'); assert.deepEqual(one.g.sets, []);
   const three = game(3);
   take(three.g, three.opp, 24); assert.equal(three.g.ended, null);
   take(three.g, three.opp, 24); assert.equal(three.g.ended, three.opp);
