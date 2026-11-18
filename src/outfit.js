@@ -166,7 +166,7 @@ function buildHead(info) {
   for (const v of ring) { const k = bin(v.x - cx, v.z - cz); r0[k] = Math.max(r0[k], Math.hypot(v.x - cx, v.z - cz)); }
   for (let pass = 0; pass < 3; pass++) { const src = r0.slice(); for (let k = 0; k < NA; k++) r0[k] = Math.max(src[k], (src[(k + NA - 1) % NA] + src[k] + src[(k + 1) % NA]) / 3); } // без провалов между ячейками
   const capGap = 0.004 * u, yc0 = edge(cz);
-  const yTop = yc0 + THREE.MathUtils.clamp(top - yc0 - 0.035 * u, 0.09 * u, 0.115 * u); // волосы под кепкой прижаты на 3,5 см
+  const yTop = yc0 + THREE.MathUtils.clamp(top - yc0 - 0.05 * u, 0.08 * u, 0.1 * u); // низкий купол: волосы под кепкой прижаты на 5 см
   const rim = (k) => { const th = (2 * Math.PI * k) / NA, r = r0[((k % NA) + NA) % NA] + capGap, x = cx + r * Math.sin(th), z = cz + r * Math.cos(th); return new THREE.Vector3(x, edge(z) - 0.003 * u, z); };
   const at = (k, al) => { const R = rim(k), c = Math.pow(Math.cos(al), 0.85); return new THREE.Vector3(cx + (R.x - cx) * c, R.y + (yTop - R.y) * Math.pow(Math.sin(al), 0.9), cz + (R.z - cz) * c); };
   const pos = [], idx = [];

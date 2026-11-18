@@ -20,6 +20,7 @@ export const STATIONS = {
   rope: { name: 'Скакалка', T: 0.62, xp: { stamina: 0.9, speed: 0.35 }, tire: 0.35 },
 };
 // Зал в городе: площадки town.gymStations по порядку — жим, присед, турник, скакалка; пятая свободна (под будущий снаряд).
+const PLACED = []; // снаряды в сцене
 const TOWN_KINDS = ['bench', 'squat', 'pullup', 'rope'];
 // Площадь, которую снаряд занимает на полу (в осях станции): x0, z0, x1, z1 — не пройти насквозь.
 const FOOT = { bench: [-0.65, -0.8, 0.65, 0.4], squat: [-0.75, -0.65, 0.75, -0.35], pullup: [-0.78, -0.2, 0.78, 0.3], rope: [-0.2, -0.2, 0.2, 0.2] };
@@ -98,7 +99,7 @@ export function place(s, scene) {
   s.yaw ??= 0;
   s.group ??= buildStation(s.kind);
   s.group.position.copy(s.pos); s.group.rotation.y = s.yaw;
-  if (!s.group.parent) scene.add(s.group);
+  if (!s.group.parent) { scene.add(s.group); PLACED.push(s.group); }
   return s;
 }
 
@@ -126,6 +127,7 @@ export function openGym(station) {
   L.bodyTurn = Math.atan2(Math.sin(station.yaw - L.netYaw), Math.cos(station.yaw - L.netYaw)); L.turnVel = 0;
   L.racket.visible = false;
   if (station.group.userData.idle) station.group.userData.idle.visible = false;
+  for (const g of PLACED) g.visible = g === station.group; // соседние снаряды не загораживают кадр (в зале они в 3,6 м)
   $('gymH').textContent = st.name; $('gym').hidden = false; S.last = null;
   startSet();
   return true;
@@ -136,6 +138,7 @@ export function closeGym() {
   if (bar) { bar.position.copy(S.station.group.userData.rack); bar.quaternion.identity(); }
   S.rope?.removeFromParent(); S.handles?.forEach((h) => h.removeFromParent());
   if (S.station.group.userData.idle) S.station.group.userData.idle.visible = true;
+  for (const g of PLACED) g.visible = true;
   L.racket.visible = true; L.wrap.rotation.set(0, L.netYaw + L.bodyTurn, 0); L.wrap.position.copy(L.pos);
   S = null; $('gym').hidden = true;
 }
