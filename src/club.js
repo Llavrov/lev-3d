@@ -4,7 +4,7 @@
 // ТВ сверху из-за задней линии, крупно за заменой (камера матча follow из main.js).
 import * as THREE from 'three';
 import { COURT, GATE, COURT2_X } from './court.js';
-import { SEATS, HOUSE, groundAt } from './env.js';
+import { SEATS, HOUSE, groundAt, door } from './env.js';
 import { PAD } from './env-mountains.js';
 
 const clamp = THREE.MathUtils.clamp;
@@ -134,12 +134,13 @@ export class Club {
   // Сесть на ближнюю скамейку: подойти к месту перед ней, развернуться и сесть.
   sit() {
     const s = this.near;
+    if (this.mode === 'walk' && !s && this.nearDoor) { door.toggle(); this.set('walk'); return; } // дверь дома; shortcut: до interact.js E знает только скамейки и дверь
     if (this.mode !== 'walk' || !s || this.lev.seat) return;
     this.path = [s.at.clone().addScaledVector(s.f, 0.55)]; this.toSeat = s;
   }
   stand() { if (this.lev.seat && !this.lev.seat.up) { this.lev.seat.up = true; this.set('walk'); } }
   nextView() { if (this.mode === 'sit') { this.view = VIEWS[(VIEWS.indexOf(this.view) + 1) % VIEWS.length]; this.set('sit'); } }
-  set(mode) { this.mode = mode; this.onMode(mode, !!this.near, this.view); }
+  set(mode) { this.mode = mode; this.onMode(mode, !!this.near || this.nearDoor, this.view, !this.near && this.nearDoor ? (door.open ? 'Закрыть дверь' : 'Открыть дверь') : null); }
 
   // Куда идти по точкам пути: скорость k (1 — шаг), к последней точке тормозит. Дошёл до конца — null.
   steer(p, path, k = 1) {
@@ -189,6 +190,8 @@ export class Club {
     }
     const near = this.mode === 'walk' && !L.seat && !this.path ? this.seats.reduce((b, s) => { const d = s.at.distanceTo(L.pos.clone().setY(0)); return d < 1.2 && (!b || d < b.d) ? { s, d } : b; }, null) : null;
     if ((near?.s ?? null) !== this.near) { this.near = near?.s ?? null; this.set(this.mode); }
+    const nd = this.mode === 'walk' && !L.seat && !this.path && Math.hypot(door.pos.x - L.pos.x, door.pos.z - L.pos.z) < 1.6;
+    if (nd !== !!this.nearDoor) { this.nearDoor = nd; this.set(this.mode); }
   }
 
   // Камера. follow — камера матча (крупно за заменой). Возвращает, видно ли ближнюю стенку забора (в матче её прячут).

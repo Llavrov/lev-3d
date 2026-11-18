@@ -374,10 +374,10 @@ async function leave() {
   club.leaving = true; club.exit(await subReady, game.now); club.leaving = false; // замена догружается в фоне
 }
 const walkInput = () => { const a = axes(); return { x: a.x, y: a.y, run: held('ShiftLeft', 'ShiftRight') || stick.length() > 0.95 }; };
-function clubUi(mode, canSit) {
+function clubUi(mode, canSit, view, act) {
   document.body.classList.toggle('club', !!mode);
   $('cexit').hidden = !!mode; $('cback').hidden = !mode; $('cview').hidden = mode !== 'sit';
-  $('csit').hidden = !(mode === 'sit' || (mode === 'walk' && canSit)); $('csit').firstChild.textContent = mode === 'sit' ? 'Встать' : 'Сесть';
+  $('csit').hidden = !(mode === 'sit' || (mode === 'walk' && canSit)); $('csit').firstChild.textContent = mode === 'sit' ? 'Встать' : act ?? 'Сесть';
   if (!mode) court.getObjectByName('fence-near').visible = false; // снова матч: камера за этой стенкой
 }
 for (const [id, code] of [['cexit', 'KeyQ'], ['csit', 'KeyE'], ['cview', 'KeyV'], ['cback', 'KeyR']]) $(id).addEventListener('click', (e) => { e.currentTarget.blur(); clubKey(code); });
