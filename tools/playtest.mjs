@@ -26,7 +26,7 @@ const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--ena
 const page = await browser.newPage(cmd === 'touch' || (cmd === 'fx' && argv.includes('--phone')) ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : { viewport: { width: 960, height: 960 } });
 page.on('pageerror', (e) => console.error('ОШИБКА СТРАНИЦЫ:', e.message));
 async function load() {
-  await page.goto(`${URL}/?debug&noao&nolog${BOT === 'ai' && cmd === 'match' ? '&auto' : ''}${opt('q', '')}`); // --q "&rig=1" — свои параметры страницы
+  await page.goto(`${URL}/?debug&noao&nolog${BOT === 'ai' && cmd === 'match' ? '&auto' : ''}${opt('q', '')}`, { timeout: 180000 }); // загруженная машина грузит страницу дольше 30 с; --q "&rig=1" — свои параметры страницы
   await page.waitForFunction(() => window.__lev?.game?.lev?.contactPt && !document.getElementById('play').disabled, null, { timeout: 120000 });
   await page.evaluate((HZ) => {
     window.__pause = true; window.__noDraw = true; window.__dt = 1 / HZ;
