@@ -60,18 +60,18 @@ function wall() {
 
 export class Practice {
   // mode: 'lessons' | 'wall'; ui: { text(html), dots(n, need), flash(html, good) }; touch — подсказки про кнопки, а не клавиши.
-  constructor(game, mode, { scene, court, ui, touch, store }) {
-    Object.assign(this, { g: game, mode, ui, store, touch });
+  // here — стенка на полукорте (halfcourt.js): своя стенка уже стоит, сетку и место Лёвы не трогаем;
+  // box [x, z, h] — невысокий забор: мяч ниже h отскакивает от |x| = x и z = z (сзади) и от крыльев у стенки.
+  constructor(game, mode, { scene, court, ui, touch, store, here = null }) {
+    Object.assign(this, { g: game, mode, ui, store, touch, box: here?.box ?? null });
     this.b = touch ? (k) => ({ KeyK: '«Форхенд»', KeyJ: '«Бэкхенд»', KeyL: '«Укороч.»', KeyI: '«Кручёный» и&nbsp;удар', KeyU: '«Резаный» и&nbsp;удар', KeyA: 'джойстик влево', KeyD: 'джойстик вправо', Space: 'кнопку удара' }[k])
       : (k) => `<kbd data-k="${k}">${{ KeyK: 'K', KeyJ: 'J', KeyL: 'L', KeyI: 'I', KeyU: 'U', KeyA: 'A', KeyD: 'D', Space: 'Пробел' }[k]}</kbd>`;
     const { opp, lev } = game;
     opp.place(new THREE.Vector3(0, 0, -60)); opp.wrap.visible = false; opp.racket.visible = false; // соперника нет
     game.server = lev; game.state = 'drill';
     if (mode === 'wall') {
-      court.getObjectByName('net').visible = false;
-      scene.add(wall());
+      if (!here) { court.getObjectByName('net').visible = false; scene.add(wall()); lev.place(lev.home.clone()); }
       this.series = 0; this.best = +(store.get('wallBest') ?? 0);
-      lev.place(lev.home.clone());
       this.serveAt = game.now + 0.6;
     } else {
       scene.add(machine());
@@ -132,6 +132,7 @@ export class Practice {
   // После каждого шага физики: мяч Лёвы долетел до стенки — отражаем (стенка гасит его примерно на треть).
   afterStep(b) {
     const g = this.g;
+    if (this.box) this.fence(b, this.box);
     if (this.mode !== 'wall' || g.state !== 'rally' || g.lastHitter !== g.lev || b.pos.z >= 0 || b.vel.z >= 0) return;
     if (Math.abs(b.pos.x) > WALL_W) return this.miss('Мимо стенки');
     if (b.pos.y > WALL_H) return this.miss('Выше стенки');
@@ -140,6 +141,14 @@ export class Practice {
     Object.assign(g, { lastHitter: g.opp, bounces: 0, rally: g.rally + 1 }); b.bounces = 0;
     g.sound.bounce({ vol: 0.7, pan: g.pan(b.pos.x) }); g.markLanding();
     this.series++; this.show();
+  }
+
+  // Забор полукорта: ниже его верха мяч отскакивает от сетки, теряя ход. Крылья у стенки — после промаха мимо неё.
+  fence(b, [X, Z, H]) {
+    if (b.pos.y > H && !(b.pos.z < 0 && b.pos.y < 3)) return;
+    if (b.pos.y < H && Math.abs(b.pos.x) > X && b.pos.x * b.vel.x > 0) { b.pos.x = Math.sign(b.pos.x) * X; b.vel.x *= -0.3; b.vel.z *= 0.5; b.spin = 0; }
+    if (b.pos.y < H && b.pos.z > Z && b.vel.z > 0) { b.pos.z = Z; b.vel.z *= -0.3; b.vel.x *= 0.5; b.spin = 0; }
+    if (b.pos.z < -0.05 && b.vel.z < 0 && Math.abs(b.pos.x) > WALL_W && this.g.state !== 'rally') { b.pos.z = -0.05; b.vel.z *= -0.3; b.vel.x *= 0.5; b.spin = 0; }
   }
 
   // Отскок: h — кто последним бил (мячемёт и стенка — это g.opp), n — какой отскок с удара.

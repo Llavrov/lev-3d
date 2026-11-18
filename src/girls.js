@@ -6,8 +6,8 @@
 // Разговор: «E — поговорить» у калитки корта 2 или рядом с девушкой в паузе, диалог внизу экрана (1–3 или нажатие),
 // память в localStorage. «Сыграем?» — сет с ней на корте 1 вместо соперника (счёт и итог — game.js и экран итога
 // main.js); «Кофе» — она идёт на террасу к точке MEET и садится. Во время разговора Лёва и она стоят лицом друг к другу.
-// При слиянии с interact.js: near() ищет, с кем говорить (калитка корта 2, девушка рядом, столик) — заменить на
-// register({ pos, r, label: () => 'Поговорить', act: () => this.act() }) для калитки и каждой девушки, кнопку #ctalk убрать.
+// near() ищет, с кем говорить (калитка корта 2, девушка рядом, столик); подсказка «E поговорить» и нажатие — общие
+// для всех предметов (interact.js, регистрация в main.js).
 import * as THREE from 'three';
 import { Player } from './player.js';
 import { Game, AI, servePos } from './game.js';
@@ -34,7 +34,7 @@ const PICK = { ...WALK, lean: 50, nod: 20, crouch: 0.55, lh: -1,
 // Кофе на террасе: стул у столика (PLACES.table в env.js, 11,7; −26,2): середина сиденья на настиле 0,15 м, куда лицом
 // (как netYaw: лицом в (sin yaw, 0, cos yaw), к столу) и высота сиденья над настилом. Замер по модели столика со стульями;
 // стулья переделывает «жизнь клуба» — при слиянии поставить сюда место стула. lev — второй стул, напротив.
-export const MEET = { pos: [11.97, 0.15, -25.68], yaw: -2.66, h: 0.49, lev: { pos: [11.54, 0.15, -26.76], yaw: 0.28 } };
+export const MEET = { pos: [11.75, 0.15, -25.54], yaw: Math.PI, h: 0.6, lev: { pos: [11.54, 0.15, -26.76], yaw: 0.28 } }; // стул у столика 1 с юга (props.js), сиденье 0,45 над настилом
 // С калитки корта 2 на террасу по дорожкам клуба (PATHS в env-club.js), мир.
 const TO_TERRACE = [[-28.7, 3.99], [-26.8, 3.99], [-25.6, 14], [-23, 23.6], [-12, 25.3], [-2, 25.7], [6, 24.7], [10.3, 21.6], [11.4, 15.8], [10.85, 10.2], [10.85, -19.3], [10.6, -23.8]].map(([x, z]) => V(x, z));
 
@@ -142,7 +142,6 @@ const fresh = () => ({ met: false, talks: 0, mood: 0, coffee: 0, stood: false, p
 
 // ---------- Интерфейс: кнопка «Поговорить» и диалог внизу ----------
 const CSS = `
-#ctalk[hidden] { display: none; }
 #gtalk { position: fixed; left: calc(12px + env(safe-area-inset-left)); right: calc(12px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 540px; margin: 0 auto; padding: 14px 16px 12px; border-radius: 16px; background: rgba(16, 24, 20, .74); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: #fff; z-index: 20; box-sizing: border-box; }
 #gtalk[hidden] { display: none; }
 #gtalk .who { font-size: 13px; font-weight: 600; color: var(--accent, #d6ef3c); margin: 0 44px 4px 0; }
@@ -156,12 +155,10 @@ const CSS = `
 
 function makeUi() {
   const st = document.createElement('style'); st.textContent = CSS; document.head.append(st);
-  const btn = document.createElement('button'); btn.id = 'ctalk'; btn.hidden = true; btn.innerHTML = 'Поговорить<kbd>E</kbd>';
-  document.getElementById('cbar')?.append(btn);
   const box = document.createElement('div'); box.id = 'gtalk'; box.hidden = true;
   box.innerHTML = '<p class="who"></p><p class="say"></p><div class="opts"></div><button class="x" aria-label="Закрыть"><svg width="18" height="18" viewBox="0 0 18 18"><path d="M3 3l12 12M15 3L3 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>';
   document.body.append(box);
-  return { btn, box, who: box.querySelector('.who'), say: box.querySelector('.say'), opts: box.querySelector('.opts'), x: box.querySelector('.x') };
+  return { box, who: box.querySelector('.who'), say: box.querySelector('.say'), opts: box.querySelector('.opts'), x: box.querySelector('.x') };
 }
 
 // Где левая ладонь в наклоне PICK относительно тела (вправо, вперёд, высота) — куда встать, чтобы мяч был под рукой.
@@ -203,9 +200,8 @@ export class Girls {
     this.girls = []; this.acc = 0; this.seen = true; this.shadows = null; this.dlg = null; this.match = null;
     this.sphere = new THREE.Sphere(V(COURT2_X, 0, 1), 21); this.fr = new THREE.Frustum(); this.m4 = new THREE.Matrix4();
     this.ui = makeUi();
-    this.ui.btn.addEventListener('click', (e) => { e.currentTarget.blur(); this.act(); });
     this.ui.x.addEventListener('click', () => this.close());
-    addEventListener('keydown', (e) => this.key(e), true); // раньше main.js: E у девушки — разговор, а не скамейка
+    addEventListener('keydown', (e) => this.key(e), true); // цифры ответов раньше main.js
     const play = ['play', 'pLessons', 'pWall'].map((id) => document.getElementById(id)).filter(Boolean);
     if (Q.has('girl')) for (const b of play) b.disabled = true; // ?girl=1|2 — сразу матч с ней (проверка): ждать модель
     this.ready = this.load().then(() => {
@@ -307,8 +303,7 @@ export class Girls {
         if (g) best = { g, d: dg, kind: 'talk' };
       }
     }
-    this.target = best;
-    this.ui.btn.hidden = !best;
+    this.target = best; // E — interact.js (main.js)
     // Ушёл от места разговора дальше 3,5 м — разговор окончен.
     if (this.dlg?.at && L.pos.distanceTo(this.dlg.at) > 3.5) this.close();
     if (this.dlg?.until && now > this.dlg.until) this.close();
@@ -318,7 +313,6 @@ export class Girls {
     if (e.repeat) return;
     if (this.dlg && /^Digit[1-3]$/.test(e.code)) { this.choose(+e.code.slice(5) - 1); e.stopImmediatePropagation(); return; }
     if (this.dlg && e.code === 'Escape') { this.close(); return; }
-    if (e.code === 'KeyE' && this.target && !this.dlg) { this.act(); e.stopImmediatePropagation(); }
   }
 
   // ---------- Разговор ----------
@@ -330,7 +324,7 @@ export class Girls {
       if (inside) { spot.x = clamp(spot.x, -7.4, 7.4); spot.z = g.c.side > 0 ? clamp(spot.z, 0.8, 17.8) : clamp(spot.z, -17.8, -0.8); } // на корте — со своей половины
       this.sim.hold(g.p, spot, now);
     }
-    this.dlg = { g, asked: {}, kind, at: L.pos.clone() }; this.ui.btn.hidden = true;
+    this.dlg = { g, asked: {}, kind, at: L.pos.clone() };
     this.remember(g, { talks: g.mem.talks + 1 });
     this.show(kind === 'cafe' ? 'cafe' : g.mem.met ? 'hub' : 'hello');
   }

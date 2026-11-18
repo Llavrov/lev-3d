@@ -90,9 +90,10 @@ if (ONLY.some((k) => ['talk', 'match', 'coffee'].includes(k))) for (const [w, h]
   const at = await walkTo([[10.85, 10.2], [11.4, 15.8], [10.3, 21.6], [6, 24.7], [-2, 25.7], [-12, 25.3], [-23, 23.6], [-25.6, 14], [-26.8, 3.99], [-28.0, 3.99]]);
   check(Math.hypot(at[0] + 28, at[1] - 3.99) < 0.6, `${tag}: Лёва у калитки корта 2 (${at})`);
   // Ждём паузу между очками — появится «Поговорить».
-  const btn = await page.evaluate(() => { for (let i = 0; i < 400 && document.getElementById('ctalk').hidden; i++) __lev.step(0.05, { x: 0, y: 0 }); return !document.getElementById('ctalk').hidden; });
+  const talk = () => document.getElementById('actE').lastChild.textContent.toLowerCase() === 'поговорить' && !document.getElementById('actE').hidden; // строка действия interact.js
+  const btn = await page.evaluate((f) => { const ok = eval(f); for (let i = 0; i < 400 && !ok(); i++) __lev.step(0.05, { x: 0, y: 0 }); return ok(); }, talk.toString());
   check(btn, `${tag}: у калитки есть «Поговорить»`);
-  if (phone) await page.tap('#ctalk'); else await page.keyboard.press('e');
+  if (phone) await page.tap('#actE'); else await page.keyboard.press('e');
   await page.evaluate(() => { __lev.step(2.5, { x: 0, y: 0 }); });
   const d1 = await page.evaluate(() => ({ open: !document.getElementById('gtalk').hidden, who: document.querySelector('#gtalk .who').textContent, say: document.querySelector('#gtalk .say').textContent, opts: [...document.querySelectorAll('#gtalk .opts button')].map((b) => b.textContent) }));
   check(d1.open && d1.opts.length >= 2, `${tag}: диалог: ${d1.who}: «${d1.say}» → ${d1.opts.join(' | ')}`);

@@ -499,7 +499,6 @@ export class Rides {
     const c = this.car, lvl = clamp((c.slip - 1.2) / 3, 0, 1) * clamp(c.vel.length() / 3, 0, 1); // занос и ручник — следы, дым, визг
     this.skid.update(dt, [c.local(0.66, 0, AX[1]), c.local(-0.66, 0, AX[1])], lvl);
     this.club.sound?.screech(lvl);
-    const fast = v === c && Math.abs(c.v) > 1.5; if (fast !== this.fast) { this.fast = fast; this.sync(); }
     if (!v) { const n = this.nearest(); if (n !== this.near) { this.near = n; this.sync(); } this.town.update(dt, L.pos); return false; }
     const i = this.wantOff ? { x: 0, y: Math.abs(v.v) > 0.1 ? -Math.sign(v.v) : 0 } : this.input(inp);
     v.update(dt, i, this.world, true);
@@ -524,7 +523,7 @@ export class Rides {
     camera.position.lerp(eye, k); this.look.lerp(look, k); camera.lookAt(this.look);
   }
 
-  // Кнопки: «Сесть»/«Слезть» рядом с «На корт»; на телефоне в езде — руль слева, газ и тормоз справа (зона от 56 px).
+  // Кнопки езды на телефоне: руль слева, газ и тормоз справа (зона от 56 px). Сесть и слезть — E и кнопка действия.
   ui() {
     const css = document.createElement('style');
     css.textContent = `#vpad { display: none; position: fixed; inset: auto 0 0 0; padding: 0 calc(14px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)); justify-content: space-between; pointer-events: none; }
@@ -544,16 +543,11 @@ export class Rides {
     }
     this.fader = document.createElement('div'); this.fader.id = 'vfade';
     document.body.append(pad, this.fader);
-    this.button = document.createElement('button'); this.button.id = 'vride'; this.button.hidden = true;
-    this.button.addEventListener('click', (e) => { e.currentTarget.blur(); this.use(); });
-    const bar = document.getElementById('cbar'); (bar ?? document.body).insertBefore(this.button, document.getElementById('cback'));
   }
   sync() {
-    const v = this.active ?? this.near, ride = !!this.active;
+    const ride = !!this.active; // «Сесть на велосипед», «Слезть» — подсказка и кнопка действия из interact.js (main.js)
     document.body.classList.toggle('ride', ride);
-    this.button.hidden = !v;
-    this.hbBtn ??= document.querySelector('#vpad .hb'); this.hbBtn.hidden = !(ride && v.kind === 'car');
-    if (v) this.button.innerHTML = (ride ? (v.kind === 'car' ? (this.fast ? 'Выпрыгнуть' : 'Выйти') : 'Слезть') : v.kind === 'car' ? 'Сесть в&nbsp;машину' : 'Сесть на&nbsp;велосипед') + '<kbd>E</kbd>';
+    this.hbBtn ??= document.querySelector('#vpad .hb'); this.hbBtn.hidden = !(ride && this.active.kind === 'car');
     if (!ride) Object.assign(this.btn, { l: 0, r: 0, g: 0, b: 0, h: 0 });
   }
 }

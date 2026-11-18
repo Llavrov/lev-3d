@@ -26,7 +26,7 @@ for (const [w, h] of [[1440, 900], [390, 844]].filter(([w]) => !ONLY || String(w
   const shot = async (name) => { await page.evaluate(() => __lev.render()); await page.screenshot({ path: join(OUT, `${name}-${tag}.png`), timeout: 180000 }); };
   const look = async (name, eye, at) => { await page.evaluate(([e, a]) => __lev.shot(e, a), [eye, at]); await page.screenshot({ path: join(OUT, `${name}-${tag}.png`), timeout: 180000 }); };
   const act = async (key, id) => { if (phone) await page.tap('#' + id); else await page.keyboard.press(key); await page.waitForTimeout(50); };
-  const st = () => page.evaluate(() => { const c = __lev.club, r = c.ride, L = c.lev; return { mode: c.mode, ride: r?.active?.kind ?? null, w: r?.w, x: +L.pos.x.toFixed(2), y: +L.pos.y.toFixed(2), z: +L.pos.z.toFixed(2), btn: document.getElementById('vride')?.hidden === false ? document.getElementById('vride').textContent : null }; });
+  const st = () => page.evaluate(() => { const c = __lev.club, r = c.ride, L = c.lev; return { mode: c.mode, ride: r?.active?.kind ?? null, w: r?.w, x: +L.pos.x.toFixed(2), y: +L.pos.y.toFixed(2), z: +L.pos.z.toFixed(2), btn: (() => { const b = document.getElementById('actE'); if (b.hidden) return null; const t = b.lastChild.textContent; return t[0].toUpperCase() + t.slice(1); })() }; }); // строка действия interact.js (E / кнопка #actE)
   // Идти к точкам, держа направление относительно камеры (как WASD или джойстик).
   const walkTo = (pts, run = false) => page.evaluate(([pts, run]) => {
     const c = __lev.club, L = c.lev;
@@ -63,7 +63,7 @@ for (const [w, h] of [[1440, 900], [390, 844]].filter(([w]) => !ONLY || String(w
   await walkTo([[10.85, -4], [10.6, -10.3]]);
   const nb = await st();
   check(nb.btn?.startsWith('Сесть на'), `${tag}: у велосипеда кнопка «${nb.btn}»`);
-  await act('e', 'vride');
+  await act('e', 'actE');
   await page.evaluate(() => __lev.step(0.8, { x: 0, y: 0 }, 1 / 60));
   const onBike = await st(), ab = await audit();
   check(onBike.ride === 'bike' && onBike.w === 1, `${tag}: сел на велосипед`);
@@ -82,7 +82,7 @@ for (const [w, h] of [[1440, 900], [390, 844]].filter(([w]) => !ONLY || String(w
   const r2 = await driveTo([[11.4, 15.8], [15.5, 25.6], [26, 28.8], [38, 30.2], [48, 30.4]], 5, 60);
   check(Math.hypot(r2.x - 48, r2.z - 30.4) < 3, `${tag}: доехал на велосипеде до стоянки ${JSON.stringify(r2)}`);
   await page.evaluate(() => { for (let i = 0; i < 40 && Math.abs(__lev.club.ride.active.v) > 0.3; i++) __lev.step(0.1, { x: 0, y: -Math.sign(__lev.club.ride.active.v) }, 1 / 60); });
-  await act('e', 'vride');
+  await act('e', 'actE');
   const midOff = await page.evaluate(() => { __lev.step(0.22, { x: 0, y: 0 }, 1 / 60); const r = __lev.club.ride, L = __lev.club.lev; return +L.wrap.position.distanceTo(r.bike.pos).toFixed(2); }); // посередине слезания тело между седлом и землёй рядом
   await page.evaluate(() => __lev.step(1, { x: 0, y: 0 }, 1 / 60));
   const offBike = await page.evaluate(() => { const r = __lev.club.ride, L = __lev.club.lev; return { ride: r.active, d: +L.pos.distanceTo(r.bike.pos).toFixed(2) }; });
@@ -92,7 +92,7 @@ for (const [w, h] of [[1440, 900], [390, 844]].filter(([w]) => !ONLY || String(w
   await walkTo([[door[0], door[2]]]);
   const nc = await st();
   check(nc.btn?.startsWith('Сесть в'), `${tag}: у машины кнопка «${nc.btn}»`);
-  await act('e', 'vride');
+  await act('e', 'actE');
   await page.evaluate(() => __lev.step(0.8, { x: 0, y: 0 }, 1 / 60));
   const inCar = await st(), ac = await audit();
   check(inCar.ride === 'car', `${tag}: сел в машину`);
@@ -116,7 +116,7 @@ for (const [w, h] of [[1440, 900], [390, 844]].filter(([w]) => !ONLY || String(w
   check(leg2.x > 205 && leg1.jumps + leg2.jumps === 0 && Math.min(leg1.minDy, leg2.minDy) > -0.1 && Math.max(leg1.maxDy, leg2.maxDy) < 0.15, `${tag}: доехал до улицы без провалов и прыжков ${JSON.stringify({ leg1, leg2 })}`);
   await page.evaluate(() => { for (let i = 0; i < 60 && Math.abs(__lev.club.ride.active.v) > 0.3; i++) __lev.step(0.1, { x: 0, y: -Math.sign(__lev.club.ride.active.v) }, 1 / 60); });
   await shot('car-town');
-  await act('e', 'vride');
+  await act('e', 'actE');
   await page.evaluate(() => __lev.step(1, { x: 0, y: 0 }, 1 / 60));
   const outCar = await st();
   const dCar = await page.evaluate(() => +__lev.club.lev.pos.distanceTo(__lev.club.ride.car.pos).toFixed(2));
