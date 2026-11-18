@@ -27,6 +27,11 @@ const VIEWS = {
   lawn: null, // газон и ствол крупно — по ближайшему дереву
   feet: [[15, 1.5, 6], [17.5, 0, 9]], // газон у ног
   bumps: [[30, 1.8, 12], [10, 0, 0]], // бугры по газону против света
+  hills: [[14, 1.7, 17], [34, 0.9, 0]], // холм справа от корта с уровня глаз
+  hillstop: [[8, 20, 32], [30, 0, -2]], // холмы сверху наискось
+  flowers: [[11.4, 4.3, -25.2], [13.3, 4.05, -27.4]], // ящик с геранью на балконе крупно
+  flowers2: [[19.2, 4.6, -18.4], [17.4, 4.0, -20.8]], // ящик под окном второго этажа
+  shelves: [[23.7, 1.7, -24.2], [25.5, 1.55, -27.6]], // полки бара из-за стойки
   plan: [[8, 70, -6], [8, 0, -6.01]],
 };
 const want = (n) => !ONLY.length || ONLY.includes(n);
@@ -45,7 +50,7 @@ for (const [w, h] of [[1440, 900], ...(argv.includes('--desk') ? [] : [[390, 844
   const shot = async (name, eye, at) => { await page.evaluate(([e, a]) => { __lev.shot(e, a); __lev.shot(e, a); }, [eye, at]); await page.screenshot({ path: join(OUT, `${name}-${tag}.png`), timeout: 180000 }); };
   if (want('game')) { await page.evaluate(() => __lev.render()); await page.screenshot({ path: join(OUT, `game-${tag}.png`), timeout: 180000 }); }
   for (const [name, v] of Object.entries(VIEWS)) {
-    if (!want(name) || (phone && !['terrace', 'inside', 'lawn', 'facade'].includes(name))) continue;
+    if (!want(name) || (phone && !['terrace', 'inside', 'lawn', 'facade', 'hills'].includes(name))) continue;
     if (name === 'dooropen') await page.evaluate(async () => { const door = __lev.scene.getObjectByName('door').userData.door; if (!door.open) door.toggle(performance.now() / 1000 - 2); });
     if (name === 'inside') await page.evaluate(async () => { const door = __lev.scene.getObjectByName('door').userData.door; if (!door.open) door.toggle(performance.now() / 1000 - 2); });
     if (name === 'lawn') { // ближайшая к корту липа: камера сзади-сбоку, как на скрине Лёвы

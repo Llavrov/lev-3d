@@ -34,7 +34,7 @@ function boxUV(g, tile, swap) {
 const tint = (g, c) => { const a = new Float32Array(g.attributes.position.count * 3); for (let i = 0; i < a.length; i += 3) a.set(c, i); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
 const WHITE = [1, 1, 1];
 // Наборы геометрии по материалам: всё одного материала сливается в одну сетку.
-const P = { stone: [], plaster: [], wood: [], roof: [], paint: [], glass: [], curtain: [], rail: [], flowers: [], inPlaster: [], inWood: [], inStone: [], bottles: [], glow: [] };
+const P = { stone: [], plaster: [], wood: [], roof: [], paint: [], glass: [], curtain: [], rail: [], gerLeaf: [], gerFlower: [], gerTrail: [], gerTrailF: [], inPaint: [], inPlaster: [], inWood: [], inStone: [], bottles: [], glow: [] };
 const TILE = { stone: 1.5, plaster: 1.6, wood: 1.4, roof: 3, paint: 1.4, inPlaster: 1.6, inWood: 1.4, inStone: 1.2 };
 // Коробка по углам (в мире, по осям); swap — доски вертикально.
 function box(kind, x0, y0, z0, x1, y1, z1, col = WHITE, swap = false) {
@@ -88,22 +88,87 @@ function windowAt(side, plane, u, yb, w, h, { upper = false, shutters = true, bo
   if (flowerBox) { B('wood', -w / 2 - 0.1, w / 2 + 0.1, yb - 0.28, yb - 0.08, 0.07, 0.3, [0.6, 0.45, 0.35]); geraniums(at, -w / 2 - 0.05, w / 2 + 0.05, yb - 0.08, 0.19); }
 }
 
-// Герань в ящике: кусты листьев и шапки красных и розовых соцветий, часть свисает через край к улице.
-const leafGeo = new THREE.IcosahedronGeometry(1, 1), bloomGeo = new THREE.IcosahedronGeometry(1, 1);
+// Герань в ящике карточками: округлые листья с тёмным кольцом лежат шапкой, над ними зонтики по 5–15 цветков на
+// цветоносах (красные, реже розовые и лососевые), к улице свисают плети с листьями и цветками. Нормаль карточек —
+// вверх и наружу: ящик освещён как одна масса. at(s, y, d) — точка в осях ящика: вдоль, высота, наружу от стены.
 const gr = rng(17);
+const FLOWER = [[0.85, 0.06, 0.05], [0.85, 0.06, 0.05], [0.78, 0.04, 0.06], [0.95, 0.3, 0.42], [0.98, 0.42, 0.3]];
+function card(kind, at, s, y, d, w, h, yaw, pitch, nOut, col) {
+  const o = new THREE.Vector3(...at(0, 0, 0)), D = new THREE.Vector3(...at(0, 0, 1)).sub(o), A = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), D); // правая тройка
+  const g = new THREE.PlaneGeometry(w, h).translate(0, h / 2, 0); // низ карточки в точке
+  const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(A, new THREE.Vector3(0, 1, 0), D)); // оси ящика
+  g.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'))).applyQuaternion(q).translate(...at(s, y, d));
+  const n = new THREE.Vector3(0, 1, 0).addScaledVector(D, nOut).normalize(), nn = g.attributes.normal;
+  for (let i = 0; i < nn.count; i++) nn.setXYZ(i, n.x, n.y, n.z);
+  P[kind].push(tint(g, col));
+}
 function geraniums(at, s0, s1, y, d) {
-  for (let s = s0; s < s1; s += 0.11) {
-    const leaf = at(s + (gr() - 0.5) * 0.05, y + 0.05 + gr() * 0.06, d + (gr() - 0.3) * 0.12), k = 0.07 + gr() * 0.04;
-    put('flowers', leafGeo.clone(), new THREE.Matrix4().compose(new THREE.Vector3(...leaf), new THREE.Quaternion().random(), new THREE.Vector3(k, k * 0.7, k)), [0.17 + gr() * 0.06, 0.32 + gr() * 0.1, 0.1]);
-    if (gr() < 0.75) {
-      const red = gr() < 0.75, b = at(s + (gr() - 0.5) * 0.08, y + 0.17 + gr() * 0.08, d + (gr() - 0.5) * 0.12), r = 0.045 + gr() * 0.025;
-      put('flowers', bloomGeo.clone(), new THREE.Matrix4().compose(new THREE.Vector3(...b), new THREE.Quaternion(), new THREE.Vector3(r, r * 0.8, r)), red ? [0.78, 0.07, 0.06] : [0.9, 0.35, 0.5]);
-    }
-    if (gr() < 0.35) { // свисающая плеть
-      const h = at(s, y - 0.12 - gr() * 0.15, d + 0.14), k2 = 0.05 + gr() * 0.03;
-      put('flowers', leafGeo.clone(), new THREE.Matrix4().compose(new THREE.Vector3(...h), new THREE.Quaternion().random(), new THREE.Vector3(k2, k2 * 1.4, k2)), [0.18, 0.33, 0.11]);
-    }
+  const L = s1 - s0, out = d + 0.13;
+  for (let i = 0; i < L / 0.022; i++) { // листья шапкой 15–20 см: лежат сверху, стоят к улице, свешиваются через край
+    const s = s0 + gr() * L, k = 0.12 + gr() * 0.07, t = gr();
+    if (t < 0.45) card('gerLeaf', at, s, y + 0.03 + gr() * 0.12, d + (gr() - 0.5) * 0.2, k, k, gr() * 6.28, -1.3 + gr() * 0.5, 0.3, [1, 1, 1]);
+    else if (t < 0.8) card('gerLeaf', at, s, y - 0.01 + gr() * 0.05, d + (gr() - 0.3) * 0.18, k, k * 1.1, (gr() - 0.5) * 1.4, -0.5 + gr() * 0.45, 0.6, [1, 1, 1]);
+    else card('gerLeaf', at, s, y + 0.02, out - 0.03, k, k, (gr() - 0.5) * 0.8, 0.5 + gr() * 0.5, 1, [1, 1, 1]);
   }
+  for (let i = 0; i < L / 0.075; i++) { // зонтики на цветоносах над листьями: две карточки крестом
+    const s = s0 + gr() * L, h = 0.2 + gr() * 0.1, a = gr() * 3.14, c = FLOWER[Math.floor(gr() * FLOWER.length)], dd = d + (gr() - 0.4) * 0.16;
+    for (const da of [0, Math.PI / 2]) card('gerFlower', at, s, y + 0.02, dd, h * 0.8, h, a + da, -0.15 + gr() * 0.12, 0.4, c);
+  }
+  for (let i = 0; i < L / 0.16; i++) { // плети через край к улице
+    const s = s0 + gr() * L, h = 0.22 + gr() * 0.25, c = gr() < 0.5 ? FLOWER[Math.floor(gr() * FLOWER.length)] : null;
+    card(c ? 'gerTrailF' : 'gerTrail', at, s, y + 0.03 - h, out + 0.01 + gr() * 0.04, 0.11, h, (gr() - 0.5) * 0.6, -0.15, 1.5, c ?? [1, 1, 1]);
+  }
+}
+// Текстуры герани (холст): лист — округлый, край зубчиками, тёмное кольцо, жилки; зонтик — 5–15 цветков по пять
+// лепестков, белёсые (цвет — тон вершин), бутоны, цветоносы; плеть — стебель с листьями плюща, внизу зонтик.
+function gerLeafTex() {
+  const N = 128, c = document.createElement('canvas'); c.width = c.height = N;
+  const g = c.getContext('2d'), r = rng(61);
+  for (let i = 0; i < 5; i++) {
+    const cx = N / 2 + (r() - 0.5) * 50, cy = N / 2 + (r() - 0.5) * 50, R = 20 + r() * 10, base = ['#3d6a26', '#45742b', '#4f7f30', '#3a6324'][i % 4];
+    g.beginPath(); for (let a = 0; a <= 6.3; a += 0.1) { const rr = R * (1 + 0.07 * Math.sin(a * 11)); g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+    g.fillStyle = base; g.fill();
+    g.strokeStyle = 'rgba(60,32,14,0.45)'; g.lineWidth = R * 0.22; g.beginPath(); g.arc(cx, cy, R * 0.55, 0, 7); g.stroke(); // тёмное кольцо зональной герани
+    g.strokeStyle = 'rgba(170,200,120,0.35)'; g.lineWidth = 1; for (let a = 0; a < 6.3; a += 0.7) { g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * R * 0.9, cy + Math.sin(a) * R * 0.9); g.stroke(); }
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function umbel(g, cx, cy, R, r, n) {
+  for (let i = 0; i < n; i++) {
+    const a = r() * 6.28, d = Math.sqrt(r()) * R, x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d * 0.75, p = 4.5 + r() * 2.5;
+    for (let k = 0; k < 5; k++) { const b = (k / 5) * 6.28 + a; g.fillStyle = `rgb(${235 + r() * 20 | 0},${215 + r() * 40 | 0},${215 + r() * 40 | 0})`; g.beginPath(); g.ellipse(x + Math.cos(b) * p * 0.7, y + Math.sin(b) * p * 0.7, p * 0.75, p * 0.55, b, 0, 7); g.fill(); }
+    g.fillStyle = 'rgba(120,60,40,0.7)'; g.beginPath(); g.arc(x, y, 1.6, 0, 7); g.fill();
+  }
+  g.fillStyle = '#7d8f45'; for (let i = 0; i < 3; i++) { g.beginPath(); g.ellipse(cx + (r() - 0.5) * R * 2, cy + R * 0.6 + r() * 4, 2.5, 3.5, 0, 0, 7); g.fill(); } // бутоны
+}
+function gerFlowerTex() {
+  const W = 96, H = 128, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), r = rng(67);
+  g.strokeStyle = '#4c6b2a'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(W / 2, H); g.quadraticCurveTo(W / 2 + 6, H * 0.6, W / 2, 40); g.stroke(); // цветонос
+  umbel(g, W / 2, 36, 32, r, 15);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function gerTrailTex(flower) {
+  const W = 48, H = 192, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), r = rng(flower ? 71 : 73);
+  g.strokeStyle = '#4f6a2c'; g.lineWidth = 2; g.beginPath(); g.moveTo(W / 2, 0); g.bezierCurveTo(W / 2 + 10, H * 0.3, W / 2 - 10, H * 0.65, W / 2 + 3, flower ? H - 30 : H - 6); g.stroke(); // стебель свисает сверху
+  for (let y = 8; y < (flower ? H - 40 : H - 10); y += 13 + r() * 6) { // листья плюща: пять лопастей
+    const x = W / 2 + (r() - 0.5) * 22, R = 7 + r() * 4;
+    g.fillStyle = ['#3e6a27', '#4a7a2e', '#365d22'][Math.floor(r() * 3)];
+    g.beginPath(); for (let a = 0; a <= 6.3; a += 0.1) { const rr = R * (0.75 + 0.25 * Math.abs(Math.cos(a * 2.5))); g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } g.fill();
+  }
+  if (flower) umbel(g, W / 2, H - 22, 15, r, 7); // зонтик на конце плети
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+// Карточки без переворота нормали у изнанки (свет от «массы», а не от каждой карточки); тон вершин красит только
+// белёсые лепестки, листья и стебли остаются своими.
+function cardMat(map) {
+  const m = new THREE.MeshLambertMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true });
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''))
+      .replace('#include <color_fragment>', 'diffuseColor.rgb = mix(diffuseColor.rgb, vColor.rgb * (.45 + .55 * diffuseColor.g), smoothstep(.32, .55, min(diffuseColor.r, diffuseColor.b)));');
+  };
+  return m;
 }
 
 // ---------- Снаружи ----------
@@ -222,13 +287,49 @@ function interior() {
   box('inWood', cx - 0.08, 1.05, cz0 - 0.05, cx + 0.65, 1.12, cz1 + 0.05, DARK);
   box('inWood', IN.x1 - 0.55, FL, cz0, IN.x1, 0.95, cz1, OAK, true);
   box('inWood', IN.x1 - 0.6, 0.95, cz0 - 0.03, IN.x1, 1.0, cz1 + 0.03, DARK);
-  const br = rng(5), BOT = [[0.12, 0.3, 0.12], [0.35, 0.18, 0.07], [0.75, 0.7, 0.6], [0.5, 0.12, 0.08], [0.15, 0.2, 0.32], [0.65, 0.5, 0.15]];
-  const bottle = mergeGeometries([new THREE.CylinderGeometry(0.035, 0.035, 0.2, 8).translate(0, 0.1, 0), new THREE.CylinderGeometry(0.012, 0.03, 0.09, 8).translate(0, 0.245, 0)].map((g) => g.toNonIndexed()));
-  for (const y of [1.35, 1.75, 2.15]) {
-    box('inWood', IN.x1 - 0.28, y - 0.04, cz0, IN.x1, y, cz1, DARK);
-    for (let z = cz0 + 0.08; z < cz1 - 0.05; z += 0.09 + br() * 0.06) { const k = 0.85 + br() * 0.4; put('bottles', bottle.clone(), new THREE.Matrix4().compose(new THREE.Vector3(IN.x1 - 0.14, y, z), new THREE.Quaternion(), new THREE.Vector3(k, k, k)), BOT[Math.floor(br() * BOT.length)]); }
-  }
-  for (let z = cz0 + 0.4; z < cz1; z += 0.9) put('bottles', bottle.clone(), M(IN.x1 - 0.3, 1.0, z), BOT[Math.floor(br() * BOT.length)]); // на шкафу
+  // Полки за стойкой: группами — бутылки разной формы, бокалы, стаканы, книги, ящик, бочонок; между группами пусто.
+  for (const y of [1.35, 1.75, 2.15]) box('inWood', IN.x1 - 0.28, y - 0.04, cz0, IN.x1, y, cz1, DARK);
+  const br = rng(5), sx = IN.x1 - 0.14;
+  const cyl = (r0, r1, h, y0, seg = 10) => new THREE.CylinderGeometry(r1, r0, h, seg).translate(0, y0 + h / 2, 0);
+  const SHAPES = { // бутылки: тело, плечи, горлышко; [геометрия, ширина в ряду]
+    wine: [mergeGeometries([cyl(0.037, 0.037, 0.2, 0), cyl(0.037, 0.014, 0.05, 0.2), cyl(0.014, 0.013, 0.08, 0.25)].map((g) => g.toNonIndexed())), 0.09],
+    square: [mergeGeometries([new THREE.BoxGeometry(0.075, 0.17, 0.075).translate(0, 0.085, 0), cyl(0.02, 0.015, 0.05, 0.17)].map((g) => g.toNonIndexed())), 0.1],
+    flask: [mergeGeometries([new THREE.SphereGeometry(0.055, 10, 8).scale(1, 1.1, 0.7).translate(0, 0.06, 0), cyl(0.013, 0.012, 0.07, 0.11)].map((g) => g.toNonIndexed())), 0.12],
+    slim: [mergeGeometries([cyl(0.028, 0.028, 0.25, 0), cyl(0.028, 0.01, 0.04, 0.25), cyl(0.01, 0.01, 0.05, 0.29)].map((g) => g.toNonIndexed())), 0.075],
+  };
+  const GLASS = { wine: [[0.08, 0.22, 0.1], [0.25, 0.12, 0.05], [0.2, 0.06, 0.06]], square: [[0.62, 0.4, 0.12], [0.75, 0.75, 0.68]], flask: [[0.75, 0.78, 0.72], [0.1, 0.25, 0.12]], slim: [[0.78, 0.8, 0.75], [0.5, 0.35, 0.08]] };
+  const wineGlass = mergeGeometries([cyl(0.03, 0.03, 0.004, 0), cyl(0.004, 0.004, 0.09, 0.004), cyl(0.012, 0.036, 0.08, 0.094)].map((g) => g.toNonIndexed()));
+  const tumbler = cyl(0.033, 0.036, 0.085, 0).toNonIndexed();
+  const at = (z, y) => new THREE.Vector3(sx + (br() - 0.5) * 0.06, y, z);
+  const shelf = (y, z0, z1) => {
+    for (let z = z0; z < z1;) {
+      const kind = br(), room = z1 - z;
+      if (kind < 0.3) { // пусто
+        z += 0.35 + br() * 0.6;
+      } else if (kind < 0.62) { // бутылки одного вида группой, кое-где выше и ниже
+        const names = Object.keys(SHAPES), nm = names[Math.floor(br() * names.length)], [geo, w] = SHAPES[nm], n = 3 + Math.floor(br() * 5);
+        for (let i = 0; i < n && z < z1; i++, z += w) { const k = 0.9 + br() * 0.25, cols = GLASS[nm]; put('bottles', geo.clone(), new THREE.Matrix4().compose(at(z + w / 2, y), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), br() * 3), new THREE.Vector3(k, k * (0.9 + br() * 0.2), k)), cols[Math.floor(br() * cols.length)]); }
+        z += 0.12;
+      } else if (kind < 0.76) { // бокалы или стаканы рядом
+        const wg = br() < 0.5, n = 4 + Math.floor(br() * 4);
+        for (let i = 0; i < n && z < z1; i++, z += 0.085) put('bottles', (wg ? wineGlass : tumbler).clone(), M(sx + (i % 2) * 0.07 - 0.03, y, z + 0.04), [0.82, 0.86, 0.86]);
+        z += 0.15;
+      } else if (kind < 0.88 && room > 0.4) { // книги корешками, последняя завалилась
+        const n = 5 + Math.floor(br() * 5), BK = [[0.35, 0.05, 0.04], [0.06, 0.18, 0.1], [0.05, 0.08, 0.25], [0.32, 0.2, 0.08], [0.55, 0.45, 0.3]];
+        for (let i = 0; i < n; i++) { const t = 0.03 + br() * 0.025, h = 0.19 + br() * 0.08, last = i === n - 1; put('inPaint', new THREE.BoxGeometry(0.16, h, t).translate(0, h / 2, 0).toNonIndexed(), M(sx, y, z + t / 2 + (last ? 0.06 : 0), 0, last ? -0.45 : 0), BK[Math.floor(br() * BK.length)]); z += t + 0.003; }
+        z += 0.22;
+      } else if (room > 0.5) { // ящик с бутылками или бочонок
+        if (br() < 0.5) { box('inWood', sx - 0.13, y, z, sx + 0.13, y + 0.2, z + 0.42, [0.7, 0.5, 0.35]); for (let i = 0; i < 4; i++) put('bottles', cyl(0.014, 0.013, 0.09, 0.2).toNonIndexed(), M(sx + (i % 2 ? 0.06 : -0.06), y, z + 0.1 + (i >> 1) * 0.22), GLASS.wine[i % 3]); z += 0.55; }
+        else { put('inWood', cyl(0.13, 0.13, 0.3, 0, 16).toNonIndexed(), M(sx, y, z + 0.16), [0.62, 0.42, 0.28]); for (const h of [0.05, 0.25]) put('inPaint', cyl(0.135, 0.135, 0.025, h, 16).toNonIndexed(), M(sx, y, z + 0.16), [0.12, 0.11, 0.1]); z += 0.42; }
+      } else z += 0.3;
+    }
+  };
+  shelf(1.35, cz0 + 0.08, cz1 - 0.08); shelf(1.75, cz0 + 0.08, cz1 - 0.08); shelf(2.15, cz0 + 0.5, cz1 - 1.6); // верхняя полка наполовину пустая
+  // На шкафу: бочонок на подставке, поднос со стаканами.
+  put('inWood', cyl(0.17, 0.17, 0.42, 0, 16).toNonIndexed(), M(IN.x1 - 0.06, 1.18, cz1 - 0.45, 0, 0, Math.PI / 2), [0.62, 0.42, 0.28]); // лёжа, дном к стене
+  for (const p of [0.06, 0.335]) put('inPaint', cyl(0.175, 0.175, 0.025, 0, 16).toNonIndexed(), M(IN.x1 - 0.06 - p, 1.18, cz1 - 0.45, 0, 0, Math.PI / 2), [0.12, 0.11, 0.1]);
+  box('inWood', IN.x1 - 0.45, 1.0, cz1 - 0.65, IN.x1 - 0.15, 1.04, cz1 - 0.25, DARK);
+  for (let i = 0; i < 6; i++) put('bottles', tumbler.clone(), M(IN.x1 - 0.38 + (i % 3) * 0.08, 1.0, cz0 + 0.5 + (i / 3 | 0) * 0.08), [0.82, 0.86, 0.86]);
   // Табуреты у стойки, столики со стульями.
   for (const z of STOOLS) { // табурет: круглое сиденье, четыре ножки, подножка
     put('inWood', boxUV(new THREE.CylinderGeometry(0.19, 0.17, 0.07, 16).toNonIndexed(), 0.8), M(cx - 0.45, FL + 0.72, z), OAK);
@@ -356,6 +457,33 @@ function doorLeaf(wood, paint) {
   return pivot;
 }
 
+// ---------- Игроки в зале ----------
+// У игроков свои материалы: свет зала (шейдер ламп) их не видит, а небо и окружение светят как на улице — Лёва в
+// зале выходил светлее комнаты. indoor(x, z): 0 снаружи, 1 в зале, через проём двери нарастает за 1,2 м.
+export function indoor(x, z) {
+  if (x < X0 - 0.2 || x > IN.x1 || z < IN.z0 || z > IN.z1) return 0;
+  return Math.min(1, (x - X0 + 0.2) / 1.2);
+}
+// Игроков в зале — тусклее и теплее (цвет материалов), отражения неба слабее. players — Player (pos, wrap, racket);
+// материалы трогаем, только когда доля «внутри» поменялась. Крючок — в draw() main.js.
+const WARM = new THREE.Color(0.6, 0.48, 0.38);
+export function shadeIndoors(players) {
+  for (const p of players) {
+    if (!p?.wrap) continue;
+    const f = indoor(p.pos.x, p.pos.z);
+    if (p.indoorF === f) continue;
+    p.indoorF = f;
+    for (const root of [p.wrap, p.racket]) root?.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of [].concat(o.material)) {
+        const u = (m.userData.outdoor ??= { color: m.color?.clone(), env: m.envMapIntensity ?? 1 });
+        if (u.color) m.color.copy(u.color).lerp(u.color.clone().multiply(WARM), f);
+        m.envMapIntensity = u.env * (1 - 0.65 * f);
+      }
+    });
+  }
+}
+
 // Стены и мебель для столкновений (формат pushOut из club.js): прямоугольники [x0, z0, x1, z1], круги [x, z, r],
 // отрезки [ax, az, bx, bz] (створка), пол зала [x0, z0, x1, z1, y]. Стены первого этажа — с проёмом двери.
 export const HOUSE = {
@@ -379,9 +507,10 @@ export function buildHouse() {
     stone, plaster, wood, roof, paint, glass: glassMat(),
     curtain: new THREE.MeshLambertMaterial({ map: curtainTexture(), vertexColors: true }),
     rail: new THREE.MeshStandardMaterial({ map: railTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 }),
-    flowers: new THREE.MeshLambertMaterial({ vertexColors: true }),
+    gerLeaf: cardMat(gerLeafTex()), gerFlower: cardMat(gerFlowerTex()), gerTrail: cardMat(gerTrailTex(false)), gerTrailF: cardMat(gerTrailTex(true)),
     inPlaster: inside(plaster.clone()), inWood: inside(wood.clone()), inStone: inside(stone.clone()),
     bottles: inside(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.15 })),
+    inPaint: inside(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 })),
     glow: new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
   };
   const g = new THREE.Group(); g.name = 'house';
