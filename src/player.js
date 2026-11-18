@@ -524,7 +524,7 @@ export class Player {
     const back = st && !/^(v|oh)/.test(st.type) ? (/^fh/.test(st.type) ? this.feet.Right : this.feet.Left) : null;
     const toe = back ? smooth(now - st.tContact, -0.05, 0.12) * (1 - smooth(now - st.tContact, 0.55, 0.85)) : 0;
     const pivot = (f) => (f === back ? toe * deg(18) * f.sign : 0);
-    const fl = (f) => ({ pos: f.pos, yaw: f.yaw - this.bodyTurn + pivot(f), lift: f.lift + jump, toe: f === back ? toe : 0 }); // поворот ступни на корте — от лица тела (в ±π: на прогулке корпус крутится кругом)
+    const fl = (f) => ({ pos: f.pos, yaw: wrapAngle(f.yaw - this.bodyTurn) + pivot(f), lift: f.lift + jump, toe: f === back ? toe : 0 }); // поворот ступни на корте — от лица тела (в ±π: на прогулке корпус крутится кругом)
     this.wrap.position.copy(this.pos).add(this.lunge);
     this.lastPose = K;
     // Прогулка и скамейка (club.js): идёт — прямее в коленях; сидя ступни перед сиденьем, таз на высоте сиденья.
