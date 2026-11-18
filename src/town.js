@@ -497,10 +497,12 @@ export class Town {
     const mats = materials();
     this.road = buildRoad(this.terrain);
     roadMeshes(this.road, this.terrain, this.group, this.obs);
-    street(this.group, this.obs, this.rooms, mats);
-    houses(this.group, this.obs, this.rooms, this.doors, mats);
-    interiorProps(this.group, mats);
-    props(this.group, this.obs);
+    // Улица с домами — своей группой: пока Лёва у корта, её не рисуем и не перебираем (на матче ~190 мешей меньше).
+    this.street = new THREE.Group(); this.street.userData.town = true; this.street.visible = false; this.group.add(this.street);
+    street(this.street, this.obs, this.rooms, mats);
+    houses(this.street, this.obs, this.rooms, this.doors, mats);
+    interiorProps(this.street, mats);
+    props(this.street, this.obs);
     scene.add(this.group);
     this.scene = scene;
     this.clear(); // деревья, камни и дома долины на дороге и улице прячем; лес и деревья догружаются — повторяем
@@ -549,6 +551,7 @@ export class Town {
   }
   // Каждый кадр прогулки: двери открываются перед Лёвой, тень солнца едет за ним, когда он далеко от корта.
   update(dt, pos) {
+    this.street.visible = pos.x > 40; // со стоянки и дальше
     for (const d of this.doors) {
       const want = Math.hypot(pos.x - d.x, pos.z - d.z) < 2.6 ? 1 : 0;
       d.a += (want - d.a) * Math.min(1, dt * 4); d.pivot.rotation.y = d.base + 1.7 * d.a; // створка уходит внутрь дома
