@@ -11,7 +11,7 @@ import { buildClub, pathGap, WIND } from './env-club.js';
 import { buildValley } from './env-valley.js';
 export { SUN, HAZE, AIR_DENSITY, outdoorEnv } from './env-sky.js';
 export { groundAt } from './env-mountains.js'; // высота газона с буграми: по ней ходят
-export { door, HOUSE } from './env-house.js'; // дверь клубного дома и его стены для столкновений
+export { door, HOUSE, indoor, shadeIndoors } from './env-house.js'; // дверь клубного дома, стены для столкновений, игроки в зале
 export const HORIZON = HAZE; // старое имя цвета дымки
 
 const rng = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);

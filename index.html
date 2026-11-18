@@ -116,6 +116,7 @@
     #start .touch-only { display: block; }
     #start .keys-only, #cbar kbd { display: none; }
     #hint { bottom: calc(232px + env(safe-area-inset-bottom)); } /* выше кнопок ударов */
+    body.serving #hint { bottom: auto; top: calc(118px + env(safe-area-inset-top)); } /* подача: Лёва стоит внизу у линии, подсказка под табло */
     body.practice #lesson { bottom: auto; top: calc(66px + env(safe-area-inset-top)); } /* на телефоне внизу кнопки и сам Лёва: урок сверху */
   }
 </style>

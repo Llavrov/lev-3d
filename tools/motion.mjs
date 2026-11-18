@@ -36,7 +36,7 @@ const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--ena
 const page = await browser.newPage({ viewport: { width: 480, height: 600 } });
 page.on('pageerror', (e) => console.error('ОШИБКА СТРАНИЦЫ:', e.message));
 async function load() {
-  await page.goto(`${opt('url', 'http://localhost:3952')}/?debug&noao&nolog${opt('q', '')}`); // --url — свой сервер-снимок, если другие правят код
+  await page.goto(`${opt('url', 'http://localhost:3952')}/?debug&noao&nolog${opt('q', '')}`, { timeout: 180000 }); // --url — свой сервер-снимок, если другие правят код
   await page.waitForFunction(() => window.__lev?.game?.lev?.contactPt && !document.getElementById('play').disabled, null, { timeout: 120000 });
   await page.addStyleTag({ content: 'body > :not(canvas) { display: none !important }' });
   await page.evaluate(() => { document.getElementById('play').click(); window.__pause = true; window.__noDraw = true; });

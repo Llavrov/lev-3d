@@ -12,12 +12,13 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildCourt, COURT, CourtMarks, ClayDust } from './court.js';
-import { HAZE, AIR_DENSITY, SUN, outdoorEnv } from './env.js';
+import { HAZE, AIR_DENSITY, SUN, outdoorEnv, shadeIndoors } from './env.js';
 import { buildBall } from './ball.js';
 import { fitRacketModel, dressRacket } from './racket.js';
 import { Player, POWER, holdOf, powerOf } from './player.js';
 import { Game, AI } from './game.js';
 import { Club } from './club.js';
+import { ROSTER, setOpponent, rivalPicker } from './rivals.js';
 import { Practice } from './practice.js';
 import { Girls } from './girls.js';
 import { STROKES, sample } from './swing.js';
@@ -237,7 +238,7 @@ scene.add(ballMesh);
 const $ = (id) => document.getElementById(id);
 const hud = {
   score(g) {
-    const [a, b] = g.call();
+    const [a, b] = g.ended ? ['', ''] : g.call(); // матч кончился: очков последнего гейма на табло нет
     $('pl').textContent = a; $('po').textContent = b; $('nl').textContent = g.lev.human ? 'Лёва' : 'Замена';
     $('gl').textContent = g.games.get(g.lev); $('go').textContent = g.games.get(g.opp);
     $('sets').textContent = g.sets.map(([a, b]) => `${a}:${b}`).join(' · '); // прошлые сеты, счёт Лёвы первым
@@ -470,7 +471,7 @@ const dressAll = () => {
   if (!game) return;
   const oppRacket = RACKETS.find((r) => r !== myRacket && racketModels[r]) ?? null;
   const subRacket = RACKETS.find((r) => r !== myRacket && r !== oppRacket && racketModels[r]) ?? oppRacket; // у замены третья
-  for (const [p, name] of [[club?.lev ?? game.lev, myRacket], [game.opp, oppRacket], [sub, subRacket]]) {
+  for (const [p, name] of [[club?.lev ?? game.lev, myRacket], [game.opp, game.opp.rival?.racket ?? oppRacket], [sub, subRacket]]) {
     if (!p) continue;
     if (name && racketModels[name]) dressRacket(p.racket, racketModels[name].clone(true));
   }
@@ -513,8 +514,11 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
     sub.wrap.visible = sub.racket.visible = false; sub.measure(); dressAll();
     return sub;
   });
-  dressAll();
   game.now = 0;
+  const rival = ROSTER.find((r) => r.id === Q.get('rival')); // ?rival=gh|ch|jp|ru — соперник из rivals.js; ждём после клуба и часов: кадры идут и во время загрузки
+  if (rival) await setOpponent(game, rival);
+  if (Q.has('debug')) rivalPicker(game, dressAll); // выбор соперника на стартовом экране
+  dressAll();
   if (Q.has('auto')) { game.autoLev = new AI(lev, game); start(); }
   hud.score(game);
   $('loader').classList.add('done'); window.__ready = true; // заставка index.html больше не покажет «не запустилась»
@@ -575,7 +579,7 @@ if (!matchMedia('(pointer: coarse)').matches && !Q.has('noao')) {
   composer.addPass(ao);
   composer.addPass(new OutputPass());
 }
-const draw = () => (composer ? composer.render() : renderer.render(scene, camera));
+const draw = () => { shadeIndoors([club?.lev, game?.opp, sub]); return composer ? composer.render() : renderer.render(scene, camera); }; // в зале дома игроки тусклее и теплее (env-house.js)
 
 function resize() {
   const w = innerWidth, h = innerHeight;
