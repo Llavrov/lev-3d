@@ -83,7 +83,7 @@ test('соперник учится по журналу: чем Лёва выи�
     { type: 'serve', who: 'lev' }, { type: 'shot', who: 'lev', serve: 0, drop: true, kind: 'drop', stroke: 'bh' }, pt('lev', 'Не достал'),
     { type: 'serve', who: 'lev' }, { type: 'shot', who: 'lev', serve: 0, kind: 'angle', stroke: 'fh-top' }, pt('lev'),
     { type: 'serve', who: 'lev' }, { type: 'shot', who: 'lev', serve: 0, kind: 'power', power: 0.9, stroke: 'fh' }, pt('opp', 'Аут'), // ошибка соперника не в счёт
-    { type: 'serve', who: 'opp' }, { type: 'shot', who: 'lev', serve: 0, kind: 'base', stroke: 'fh', net: true }, pt('lev'), // обводка
+    { type: 'serve', who: 'opp' }, { type: 'shot', who: 'lev', serve: 0, kind: 'base', stroke: 'fh', opp: [1, -5] }, pt('lev'), // обводка: соперник у сетки
   ];
   assert.deepEqual(winsBy(ev), { drop: 2, net: 0, angle: 1, power: 0, pass: 1 });
   const r = freshState().rivals.base;

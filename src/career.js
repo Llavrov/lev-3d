@@ -84,8 +84,8 @@ export function newDay(s, { slept = true, fatigue = 0, today = null, rnd = Math.
 
 // ---------- Журнал матча ----------
 // Каким ударом Лёва выиграл очко: последний его удар в розыгрыше, который он закончил сам (виннер, соперник не достал).
-// net в событии удара — соперник был у сетки: значит, обводка.
-const kindOf = (e) => (e.net ? 'pass' : e.drop ? 'drop' : /^(v|oh)/.test(e.stroke) ? 'net' : e.kind === 'angle' ? 'angle' : e.power > 0.5 ? 'power' : null);
+// Соперник в момент удара ближе 7 м к сетке (opp в событии удара) — обводка.
+const kindOf = (e) => (Math.abs(e.opp?.[1] ?? 99) < 7 ? 'pass' : e.drop ? 'drop' : /^(v|oh)/.test(e.stroke) ? 'net' : e.kind === 'angle' ? 'angle' : e.power > 0.5 ? 'power' : null);
 export function winsBy(events) {
   const n = Object.fromEntries(KINDS.map((k) => [k, 0]));
   let last = null;
@@ -169,9 +169,9 @@ export function record(s, t, levWon, score, rnd = Math.random) {
 // Каждая снимает 20 % штрафа плохого дня (до 60 % за матч) и поднимает настрой; после неё Лёва стоит прямее.
 export const REST = { T: 2.7, relief: 0.2, max: 0.6 };
 const V = (x, y, z) => new THREE.Vector3(-x, y, z).normalize(); // оси скелета, x вправо (как в swing.js)
-// Струны: ракетка перед правым плечом головкой вверх, струнами к левой руке; взгляд на струны.
-const STRINGS = { lh: -1, lean: 8, nod: 20, look: -16, rUp: V(0.22, -0.9, 0.3), rFo: V(-0.12, 0.6, 0.79), rk: V(-0.08, 0.97, 0.22), face: V(-1, 0, 0.12),
-  lUp: V(-0.2, -0.88, 0.42), lFo: V(0.6, 0.3, 0.75) };
+// Струны: ракетка перед грудью головкой вверх-вперёд (45°), струнами к левой руке; взгляд на струны.
+const STRINGS = { lh: -1, lean: 8, nod: 26, look: -8, rUp: V(0.16, -0.97, 0.18), rFo: V(-0.32, 0.12, 0.94), rk: V(-0.12, 0.72, 0.68), face: V(-1, 0, 0),
+  lUp: V(-0.25, -0.88, 0.4), lFo: V(0.65, 0.2, 0.73) };
 const LOOSE = { lh: -1, rUp: WALK.rUp, rFo: WALK.rFo, rk: WALK.rk, face: WALK.face, lUp: WALK.lUp, lFo: WALK.lFo }; // руки вдоль тела
 const SAG = { lh: -1, rUp: V(0.1, -1, 0.08), rFo: V(-0.1, -0.85, 0.5), lUp: V(-0.1, -1, 0.08), lFo: V(0.05, -0.95, 0.3), rk: V(-0.1, -0.55, 0.85) }; // руки висят (как DOWN в player.js)
 
@@ -208,7 +208,7 @@ export class Rest {
     const e = rk.matrixWorld.elements, Y = new THREE.Vector3(e[4], e[5], e[6]).normalize(), Z = new THREE.Vector3(e[8], e[9], e[10]).normalize();
     const c = rig.sweet(), sh = rig.b.LeftArm.getWorldPosition(new THREE.Vector3());
     const n = Z.multiplyScalar(Math.sign(sh.sub(c).dot(Z)) || 1); // сторона струн к левому плечу
-    const T = c.clone().addScaledVector(n, 0.03).addScaledVector(Y, -0.03 + 0.035 * Math.sin(now * 9));
+    const T = c.clone().addScaledVector(n, 0.03).addScaledVector(Y, -0.07 + 0.03 * Math.sin(now * 9)); // нижняя половина струн
     for (let it = 0; it < 2; it++) {
       const wrist = rig.b.LeftHand.getWorldPosition(new THREE.Vector3()), W = T.clone().sub(rig.palm('Left').sub(wrist));
       rig.armTo('Left', wrist.lerp(W, str));
@@ -261,7 +261,7 @@ export function initCareer(ctx) {
   if (Q.has('debug')) { // ?form=-1|0|1 — форма Лёвы на эту игру (не сохраняется), ?oppform= — соперника
     if (Q.has('form')) M.formOverride = clamp(Math.round(+Q.get('form')), -1, 1);
     if (Q.has('oppform')) M.oppForm = clamp(Math.round(+Q.get('oppform')), -1, 1);
-    window.__career = { get S() { return S; }, M, rest, startRest, openTour, closeTour, enter, startTourMatch, save, newDay: (o) => { newDay(S, o); save(); }, canRest };
+    window.__career = { get S() { return S; }, M, rest, startRest, openTour, closeTour, enter, startTourMatch, save, record, newDay: (o) => { newDay(S, o); save(); }, canRest };
   }
 }
 
@@ -317,7 +317,7 @@ function canRest() {
 }
 function startRest() {
   const g = C.game, L = C.lev, now = g.now;
-  rest.start(now); rest.tall = 1;
+  rest.start(now); rest.tall = 1; M.resting = true;
   L.relief = Math.min(REST.max, (L.relief ?? 0) + REST.relief);
   L.mood = clamp(L.mood + 0.3, -1, 1); L.gest = null; stats.cheer(0.02);
   g.holdUntil = now + REST.T + 0.6; // соперник ждёт, подача не уходит
@@ -333,6 +333,10 @@ export function tick(dt, now) {
   op.form = id ? M.oppForm ?? S.rivals[id].form : 0;
   op.adapt = id ? S.rivals[id].adapt : null;
   rest.update(now, dt);
+  if (M.resting && !rest.active(now)) { // передышка кончилась, подаёт Лёва — подсказка подачи обратно
+    M.resting = false;
+    if (g.state === 'serve' && g.server === g.lev && !g.autoLev) g.hud.hint(g.tip || g.hud.serveHint);
+  }
   if (M.restore && $('end').hidden && $('tour').hidden) { M.restore = false; endTourMatch(); }
   const between = canRest();
   if (between !== M.between) { M.between = between; $('brest').hidden = !between || !C.touch; }
@@ -427,11 +431,10 @@ const CSS = `
 #tour .sc { font-weight: 600; font-variant-numeric: tabular-nums; }
 #tour .next { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .12); font-size: 15px; line-height: 1.5; }
 #tour .next em { font-style: normal; color: var(--accent, #d6ef3c); }
-#tour .acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
-#tour .acts button { min-height: 48px; border: 1px solid rgba(255, 255, 255, .3); border-radius: 12px; background: transparent; color: #fff; font: 600 16px/1.2 system-ui, -apple-system, sans-serif; cursor: pointer; }
-#tour .acts button.go { border-color: transparent; background: var(--accent, #d6ef3c); color: #18210c; }
-#tour .acts button:only-child { grid-column: 1 / -1; }
-#tour .acts button:disabled { opacity: .45; cursor: default; }
+#tour .go { width: 100%; min-height: 52px; margin-top: 16px; border: 0; border-radius: 14px; background: var(--accent, #d6ef3c); color: #18210c; font: 700 17px/1.2 system-ui, -apple-system, sans-serif; cursor: pointer; }
+#tour .go:disabled { opacity: .45; cursor: default; }
+#pad #brest { grid-column: span 2; width: 100%; min-height: 44px; border-radius: 22px; font-size: 14px; }
+#pad #brest[hidden] { display: none; }
 #end .fought { margin: -6px 0 0; font-size: 15px; line-height: 1.5; opacity: .92; text-shadow: var(--shade); font-variant-numeric: tabular-nums; }
 #end .fought:empty { display: none; }
 @media (max-width: 640px) { #tour { align-items: flex-end; } #tour .sheet { border-radius: 16px 16px 0 0; } }
@@ -445,9 +448,10 @@ function ui(ctx) {
     <div id="tourBody"></div></div></div>`);
   $('tour').addEventListener('click', (e) => { if (e.target.id === 'tour' || e.target.closest('.x')) closeTour(); });
   if (!$('endF')) $('endS')?.insertAdjacentHTML('afterend', '<p class="fought" id="endF"></p>');
-  const b = document.createElement('button'); b.id = 'brest'; b.type = 'button'; b.hidden = true; b.innerHTML = 'Передышка<kbd>B</kbd>';
+  // Телефон: «Передышка» над кнопками ударов, только между очками (на ноутбуке — B).
+  const b = document.createElement('button'); b.id = 'brest'; b.type = 'button'; b.hidden = true; b.textContent = 'Передышка';
   b.addEventListener('click', (e) => { e.currentTarget.blur(); if (canRest()) startRest(); });
-  $('cbar')?.append(b);
+  $('pad')?.prepend(b);
   const stand = buildStand();
   (ctx.court ?? ctx.scene).add(stand);
   ctx.interact?.register({ pos: new THREE.Vector3(STAND.x - 0.95, 0, STAND.z), r: 1.3, y: 1.3,
@@ -478,11 +482,10 @@ function renderTour() {
   if (!live) {
     const can = wallet.can(FEE);
     next += `<p class="next">Взнос ${fmtCHF(FEE)}, призы ${PRIZES.slice(0, 3).join(', ').replace(/, (\d+)$/, ` и${NB}$1`)}${NB}CHF</p>`;
-    acts = `<button class="go" data-a="enter"${can ? '' : ' disabled'}>${can ? `Записаться за${NB}${fmtCHF(FEE)}` : `Не${NB}хватает денег`}</button><button data-a="close">Закрыть</button>`;
+    acts = `<button class="go" data-a="enter"${can ? '' : ' disabled'}>${can ? `Записаться за${NB}${fmtCHF(FEE)}` : `Не${NB}хватает денег`}</button>`;
   } else if (t.place) {
     next = `<p class="next">${t.place}-е место${t.prize ? `, приз ${fmtCHF(t.prize)}` : ''}. Рейтинг ${t.r0}${NB}→ ${S.rating}<br>Следующий турнир${NB}— завтра</p>`;
-    acts = '<button data-a="close">Закрыть</button>';
-  } else acts = `<button class="go" data-a="play">На${NB}матч</button><button data-a="later">Позже</button>`;
-  $('tourBody').innerHTML = `<ol>${rows}</ol>${next}<div class="acts">${acts}</div>`;
-  for (const b of $('tourBody').querySelectorAll('button')) b.addEventListener('click', () => ({ enter, close: closeTour, play: startTourMatch, later: closeTour })[b.dataset.a]?.());
+  } else acts = `<button class="go" data-a="play">На${NB}матч</button>`; // закрыть и «позже» — крестик: отдохнуть, поесть, вернуться к стенду
+  $('tourBody').innerHTML = `<ol>${rows}</ol>${next}${acts}`;
+  for (const b of $('tourBody').querySelectorAll('button')) b.addEventListener('click', () => ({ enter, play: startTourMatch })[b.dataset.a]?.());
 }
