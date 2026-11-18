@@ -29,11 +29,12 @@ export class Stats {
   emit(what) { this.save(); for (const fn of this.listeners) fn(what); }
 
   // Опыт в уровень: прибавка 0,01 за единицу опыта на первом уровне и меньше к десятому. Усталость режет пользу тренировки.
-  train(stat, xp) {
+  // quiet — без сохранения (в матче опыт капает каждый кадр, сохраняет вызывающий раз в несколько секунд).
+  train(stat, xp, quiet = false) {
     if (!STATS.includes(stat) || !(xp > 0)) return 0;
     const before = this.lvl[stat];
     this.lvl[stat] = Math.min(MAX, before + xp * 0.01 * ((MAX - before) / (MAX - 1)) * (1 - 0.6 * this.tired));
-    this.emit('train');
+    if (!quiet) this.emit('train');
     return this.lvl[stat] - before;
   }
   tire(n) { this.fatigue = clamp(this.fatigue + n, 0, 100); }

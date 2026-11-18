@@ -1,0 +1,82 @@
+/* HUD сил и кошелька, панель характеристик, магазин и зал (profile.js, shop.js, gym.js). Тот же тёмный полупрозрачный
+   фон с размытием, что у счёта, белый текст, салатовый акцент. */
+#me { position: fixed; z-index: 2; top: calc(10px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right)); display: grid; grid-template-columns: auto auto; gap: 4px 10px;
+  align-items: center; min-width: 150px; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 12px; background: rgba(16, 24, 20, .55); color: #fff; text-align: left; cursor: pointer;
+  font: 600 15px/1.2 system-ui, -apple-system, sans-serif; font-variant-numeric: tabular-nums; -webkit-tap-highlight-color: transparent; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+#me:active { background: rgba(40, 52, 44, .7); }
+#me kbd { justify-self: end; min-width: 20px; height: 20px; padding: 0 5px; margin: 0; font-size: 11px; border-radius: 5px; box-shadow: 0 1px 0 #8f9690; }
+#me .row { grid-column: 1 / -1; display: grid; grid-template-columns: 66px 1fr; align-items: center; gap: 8px; }
+#me small { font-size: 12px; font-weight: 500; opacity: .75; }
+#me i, #panel dd i { display: block; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, .16); overflow: hidden; }
+#me i b, #panel dd i b { display: block; height: 100%; background: rgba(255, 255, 255, .8); transform-origin: left; transition: transform .3s; }
+#me #meSta.low b { background: #f0a45c; }
+#me #meFat b { background: #f0c45c; }
+#me #meFat.high b { background: #f07a4c; }
+body.menu #me { display: none; }
+@media (pointer: coarse) { #me kbd { display: none; } #me { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { #me { top: calc(64px + env(safe-area-inset-top)); min-width: 140px; } } /* под счётом, справа от кнопок прогулки */
+
+/* Панель и магазин: один лист поверх игры. Телефон — снизу во всю ширину, компьютер — справа. */
+#panel, #shop { position: fixed; inset: 0; z-index: 5; display: flex; justify-content: flex-end; align-items: stretch; }
+#panel[hidden], #shop[hidden], #gym[hidden] { display: none; }
+#panel { align-items: center; justify-content: center; background: rgba(8, 12, 10, .35); }
+.sheet { width: min(420px, 100%); max-height: 100%; overflow-y: auto; box-sizing: border-box; padding: 16px 18px calc(18px + env(safe-area-inset-bottom)); background: rgba(16, 24, 20, .86);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); color: #fff; }
+#panel .sheet { border-radius: 16px; }
+.sheet .head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.sheet .head b { flex: 1; font-size: 20px; }
+.sheet .x { width: 44px; height: 44px; margin: -6px -10px -6px 0; border: 0; border-radius: 50%; background: transparent; color: #fff; display: grid; place-items: center; cursor: pointer; }
+.sheet .x:active { background: rgba(255, 255, 255, .12); }
+.sheet .x svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+#panel dl { display: grid; grid-template-columns: auto 1fr; gap: 12px 16px; margin: 0; align-items: center; }
+#panel dt { font-size: 15px; opacity: .8; }
+#panel dd { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; font-variant-numeric: tabular-nums; }
+#panel dd span { min-width: 40px; text-align: right; font-weight: 600; white-space: nowrap; }
+#panel dd.txt { display: block; text-align: right; font-weight: 600; }
+#panel dd i { height: 4px; }
+#panel .worn { margin: 16px 0 0; font-size: 14px; line-height: 1.5; opacity: .85; }
+@media (max-width: 640px) { #panel { align-items: flex-end; } #panel .sheet { border-radius: 16px 16px 0 0; } }
+
+#shop { pointer-events: none; }
+#shop .sheet { pointer-events: auto; display: flex; flex-direction: column; height: 100%; padding-top: calc(16px + env(safe-area-inset-top)); }
+#shop .cash { font-weight: 600; font-variant-numeric: tabular-nums; opacity: .9; }
+#shop nav { display: flex; gap: 2px; margin: 0 -6px 8px; overflow-x: auto; scrollbar-width: none; }
+#shop nav button { flex: none; min-height: 40px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: rgba(255, 255, 255, .7); font: 600 15px/1 system-ui, -apple-system, sans-serif; cursor: pointer; }
+#shop nav button[aria-selected="true"] { background: rgba(255, 255, 255, .14); color: #fff; }
+#shop ul { list-style: none; margin: 0 -18px; padding: 0 18px; overflow-y: auto; flex: 1; }
+#shop li { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: center; min-height: 56px; border-top: 1px solid rgba(255, 255, 255, .08); }
+#shop li:first-child { border-top: 0; }
+#shop .sw { width: 26px; height: 26px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .35); }
+#shop .sw.stripe { background: repeating-linear-gradient(90deg, #8fb4de 0 3px, #f2f4f6 3px 6px); }
+#shop .nm { display: grid; gap: 2px; font-size: 15px; }
+#shop .nm small { font-size: 13px; opacity: .7; }
+#shop .act { display: flex; align-items: center; gap: 10px; font-variant-numeric: tabular-nums; }
+#shop .price { font-size: 14px; opacity: .85; white-space: nowrap; }
+#shop .act button { min-width: 92px; min-height: 40px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, .3); border-radius: 10px; background: transparent; color: #fff; font: 600 14px/1 system-ui, -apple-system, sans-serif; cursor: pointer; }
+#shop .act button.buy { border-color: transparent; background: var(--accent, #d6ef3c); color: #18210c; }
+#shop .act button:disabled { opacity: .45; cursor: default; }
+#shop .act .on { min-width: 92px; text-align: center; font-size: 14px; color: var(--accent, #d6ef3c); font-weight: 600; }
+@media (max-width: 640px) {
+  #shop nav button { font-size: 14px; }
+  #shop { align-items: flex-end; }
+  #shop .sheet { height: 58%; border-radius: 16px 16px 0 0; padding-top: 14px; }
+}
+body.busy #cbar, body.busy #hint, body.busy #pad, body.busy #me, body.busy #hud { visibility: hidden; } /* магазин и зал — своим экраном */
+
+/* Зал: сверху «Закончить» и название станции, снизу кольцо такта (на телефоне это кнопка) и счёт повторов. */
+#gym { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #fff; text-shadow: 0 1px 8px rgba(0, 0, 0, .45); }
+#gym .top { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); right: 12px; display: flex; align-items: center; gap: 14px; }
+#gym .top b { font-size: 20px; }
+#gym button { pointer-events: auto; min-height: 44px; padding: 0 16px; border: 1px solid rgba(255, 255, 255, .25); border-radius: 12px; background: rgba(16, 24, 20, .55); color: #fff; font: 600 15px/1 system-ui, -apple-system, sans-serif;
+  cursor: pointer; text-shadow: none; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+#gym button.go { background: var(--accent, #d6ef3c); color: #18210c; border-color: transparent; }
+#gym .bottom { position: absolute; left: 16px; right: 16px; bottom: calc(24px + env(safe-area-inset-bottom)); display: grid; justify-items: center; gap: 10px; text-align: center; }
+#gym .beat { pointer-events: auto; position: relative; width: 84px; height: 84px; border: 0; padding: 0; border-radius: 50%; background: rgba(16, 24, 20, .45); -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+#gym .beat i { position: absolute; inset: 14px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .9); }
+#gym .beat em { position: absolute; inset: 14px; border-radius: 50%; border: 2px solid var(--accent, #d6ef3c); transform-origin: center; }
+#gym .beat.good i { border-color: var(--accent, #d6ef3c); background: rgba(214, 239, 60, .25); }
+#gym .beat.miss i { border-color: #f07a4c; background: rgba(240, 122, 76, .2); }
+#gym .cnt { margin: 0; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#gym .tip { margin: 0; font-size: 15px; opacity: .85; }
+#gym .done { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+#gym .done[hidden], #gym .beat[hidden] { display: none; }
