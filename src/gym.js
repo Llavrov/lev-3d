@@ -123,7 +123,6 @@ export function closeGym() {
   S.rope?.removeFromParent(); S.handles?.forEach((h) => h.removeFromParent());
   if (S.station.group.userData.idle) S.station.group.userData.idle.visible = true;
   L.racket.visible = true; L.wrap.rotation.set(0, L.netYaw + L.bodyTurn, 0); L.wrap.position.copy(L.pos);
-  C.camRelease?.();
   S = null; $('gym').hidden = true;
 }
 function startSet() {
@@ -193,7 +192,7 @@ export function gymTick(dt) {
 }
 
 // ---------- Позы ----------
-const _v = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+const UP = new THREE.Vector3(0, 1, 0);
 const w = (L, n) => L.rig.b[n].getWorldPosition(new THREE.Vector3());
 const local = (st, x, y, z) => new THREE.Vector3(x, y, z).applyAxisAngle(UP, st.yaw).add(st.pos);
 // Ладони на точки грифа: запястье туда, где ладонь ляжет на гриф, кисть по грифу (R — к другой руке), пальцы в кулак.
@@ -292,14 +291,13 @@ const POSE = {
       S.handles[i].position.copy(p); S.handles[i].quaternion.setFromUnitVectors(UP, dir);
       return p.addScaledVector(dir, 0.075);
     });
-    const ctr = ends[0].clone().add(ends[1]).multiplyScalar(0.5), dirTh = UP.clone().multiplyScalar(Math.cos(th)).addScaledVector(fwd, Math.sin(th));
+    const dirTh = UP.clone().multiplyScalar(Math.cos(th)).addScaledVector(fwd, Math.sin(th));
     const pts = [];
     for (let i = 0; i <= 40; i++) {
       const s = i / 40, p = ends[0].clone().lerp(ends[1], s).addScaledVector(dirTh, 1.02 * Math.pow(Math.sin(Math.PI * s), 0.6));
       p.y = Math.max(0.012, p.y); pts.push(p);
     }
     S.rope.geometry.dispose(); S.rope.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 60, 0.005, 5);
-    void ctr;
   },
 };
 

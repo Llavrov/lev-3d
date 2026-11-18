@@ -30,6 +30,15 @@ const walkOut = (page) => page.evaluate(() => { document.getElementById('cexit')
 // ---------- HUD, панель, магазин на 1440 и 390 ----------
 if (ONLY.includes('ui')) for (const [w, h] of [[1440, 900], [390, 844]]) {
   const page = await open(w, h), tag = `${w}`;
+  // Стартовый экран: выбор ракетки только из купленных — одна стартовая, выбора нет; купил вторую — стрелки есть.
+  await page.waitForFunction(() => document.getElementById('rkName').textContent === 'Красная', null, { timeout: 60000 });
+  const rk0 = await page.evaluate(() => document.getElementById('rk').hidden);
+  const rk1 = await page.evaluate(() => { __eco.outfit.give('neon'); return document.getElementById('rk').hidden; });
+  await page.keyboard.press('ArrowRight');
+  const rkName = await page.evaluate(() => document.getElementById('rkName').textContent);
+  await page.screenshot({ path: join(OUT, `menu-${tag}.png`) });
+  check(rk0 && !rk1 && rkName === 'Неон', `${tag}: на старте ракетки только купленные (одна — без выбора, две — стрелки, выбрана ${rkName})`);
+  await page.evaluate(() => { __eco.outfit.wear('red'); localStorage.clear(); });
   await page.evaluate(() => { document.getElementById('play').click(); window.__pause = true; window.__noDraw = true; });
   // Розыгрыш: дождаться ударов, чтобы силы ушли.
   await page.evaluate(() => { const g = __lev.game; if (g.server === g.lev) g.serve(g.lev, g.now); g.autoLev = new g.ai.constructor(g.lev, g); for (let i = 0; i < 300 && g.rally < 4; i++) __lev.step(0.05); g.autoLev = null; });

@@ -56,10 +56,10 @@ export function tick(dt, now) {
     // Расход и восстановление выносливости — через множители уровня и усталости, потолок — уставшее тело.
     const d = L.stamina - P.sta0;
     L.stamina = Math.min(m.cap, P.sta0 + d * (d < 0 ? m.drain : m.recover));
-    if (d < 0) { stats.tire(-d * m.drain * 6); stats.train('stamina', -d * m.drain * 3, true); }
-    if (g.state === 'rally') stats.tire(dt * 0.02);
+    if (d < 0) { stats.tire(-d * m.drain * 3); stats.train('stamina', -d * m.drain * 3, true); } // сет ~10 минут — около 25 усталости
+    if (g.state === 'rally') stats.tire(dt * 0.01);
     if (L.idle) L.mood += 0.12 * stats.mood * dt; // между очками настрой тянется к своему, а не к нулю
-    if (g.rally !== P.rally) { if (g.lastHitter === L && g.rally > P.rally) stats.train('technique', 0.15, true); P.rally = g.rally; } // попал по мячу — техника
+    if (g.rally !== P.rally) { if (g.lastHitter === L && g.rally > P.rally) stats.train('technique', 0.1, true); P.rally = g.rally; } // попал по мячу — техника
     // Геймы: настрой и живые мячи.
     const sum = g.games.get(L) + g.games.get(g.opp), won = g.games.get(L);
     if (sum > P.games) { stats.cheer(won > P.won ? 0.06 : -0.04); outfit.useBalls(); }
@@ -78,9 +78,11 @@ export function tick(dt, now) {
 }
 
 // Без сил на прогулке не бежит, в магазине и зале стоит.
+// Усталость видно и на прогулке: от 70 Лёва идёт медленнее (к 100 — на треть).
 export function input(a) {
   if (busy()) return { x: 0, y: 0, run: false };
-  return stats.fatigue > 85 || C?.lev.stamina < 0.15 ? { ...a, run: false } : a;
+  const k = 1 - 0.35 * Math.min(1, Math.max(0, (stats.fatigue - 70) / 30));
+  return { ...a, x: a.x * k, y: a.y * k, run: a.run && stats.fatigue <= 85 && C?.lev.stamina >= 0.15 };
 }
 export const busy = () => shopOpen() || gymOpen();
 
