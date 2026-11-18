@@ -102,8 +102,8 @@ export class Club {
   ground(x, z) { let y = groundAt(x, z); for (const [x0, z0, x1, z1, top] of this.obs.floors) if (x >= x0 && x <= x1 && z >= z0 && z <= z1) y = Math.max(y, top); return y; }
   free(p) {
     p.free = true; p.idle = false; p.gest = null; p.stroke = null; p.split = null; p.sliding = 0;
-    p.bounds = (pos) => pushOut(pos, R, this.obs);
-    p.ground = (x, z) => this.ground(x, z);
+    p.bounds = (pos) => (this.world ? this.world.bounds(pos, R, this.obs) : pushOut(pos, R, this.obs)); // world — дорога и городок (town.js)
+    p.ground = (x, z) => this.world?.ground(x, z) ?? this.ground(x, z);
   }
 
   // Уйти с корта: текущий розыгрыш не в счёт, на место Лёвы встаёт замена (ИИ) и идёт с дорожки на заднюю линию,
@@ -123,6 +123,7 @@ export class Club {
   // Вернуться на корт: замена уходит (прячем), Лёва на своей задней линии, следующее очко с того же счёта.
   back(now, auto = false) {
     const g = this.game, L = this.lev, sub = this.sub;
+    this.ride?.leave(); // с велосипеда или из машины (vehicle.js), издалека — через затемнение
     if (sub) { sub.wrap.visible = sub.racket.visible = false; sub.free = false; sub.stroke = null; }
     L.free = false; L.seat = null; L.onStep = null; L.stamina = 1; L.mood = 0; // отдохнул на скамейке
     L.place(L.home);
@@ -133,6 +134,7 @@ export class Club {
   }
   // Сесть на ближнюю скамейку: подойти к месту перед ней, развернуться и сесть.
   sit() {
+    if (this.mode === 'walk' && this.ride?.use()) return; // E у велосипеда или машины — сесть или слезть (vehicle.js)
     const s = this.near;
     if (this.mode === 'walk' && !s && this.nearDoor) { door.toggle(); this.set('walk'); return; } // дверь дома; shortcut: до interact.js E знает только скамейки и дверь
     if (this.mode !== 'walk' || !s || this.lev.seat) return;
@@ -155,6 +157,7 @@ export class Club {
   update(dt, now, input) {
     if (!this.active) return;
     const L = this.lev, g = this.game;
+    if (this.ride?.update(dt, now, input)) input = { x: 0, y: 0 }; // Лёва на велосипеде или в машине: ведёт vehicle.js
     let move = new THREE.Vector3();
     if (this.path) {
       const m = this.steer(L, this.path, this.mode === 'exit' ? 1.25 : 1);
@@ -180,7 +183,7 @@ export class Club {
     if (ml > 0.1 && (this.path || move.dot(V(Math.sin(this.camYaw), Math.cos(this.camYaw))) > -0.25 * ml)) {
       this.camYaw += clamp(wrap(Math.atan2(move.x, move.z) - this.camYaw), -1.6 * dt, 1.6 * dt) * Math.min(1, ml);
     }
-    L.update(dt, now, move, L.seat ? g.b : null); // сидя голова следит за мячом
+    if (!this.ride?.active) L.update(dt, now, move, L.seat ? g.b : null); // сидя голова следит за мячом
     // Замена: ждёт на дорожке, пока Лёва не выйдет, потом идёт на заднюю линию; там игра продолжается.
     const sub = this.sub;
     if (sub && g.state === 'away') {
@@ -199,6 +202,7 @@ export class Club {
     const L = this.lev, k = 1 - Math.exp(-dt * 4);
     let eye, look;
     if (this.mode === 'sit' && this.view === 'close') { follow(dt); return false; }
+    if (this.ride?.active) { this.ride.camera(dt, camera); return true; }
     if (this.mode === 'sit' && this.view === 'tv') { // ТВ: высоко из-за задней линии замены, весь корт в кадре
       const portrait = innerWidth / innerHeight < 0.8;
       eye = portrait ? V(0, 33).setY(15) : V(0, 28).setY(9.5); look = V(0, portrait ? 0 : 0.5).setY(0);
@@ -212,6 +216,7 @@ export class Club {
       const f = V(Math.sin(this.camYaw), Math.cos(this.camYaw));
       eye = L.pos.clone().addScaledVector(f, -4.2).setY(L.pos.y + 2.3);
       look = L.pos.clone().addScaledVector(f, 1.8).setY(L.pos.y + 0.95);
+      this.world?.camClamp(eye, L.pos); // в доме — не дальше стен
     }
     if (this.fresh) { this.fresh = false; this.look.copy(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(8).add(camera.position)); } // с камеры матча без рывка
     camera.position.lerp(eye, k); this.look.lerp(look, k);
