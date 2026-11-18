@@ -6,7 +6,9 @@
 // стенки весь мир (группа court: корт, клуб, горы, терраса) сдвигается на −O — полукорт встаёт ровно туда, где в
 // координатах корта стоит сетка, и физика, камера матча, подсказки работают без единой правки. Ориентация та же, что
 // у корта 1 (стенка на −z, взгляд на большую гору), поэтому солнце и запечённый свет гор не расходятся.
-// Объекты мира вне группы court (например, свои модели в scene) на время стенки надо сдвигать так же: userData.world.
+// Сдвигается всё в сцене, кроме того, что было в ней до полукорта и живёт в осях корта (свет, игроки, мяч, следы,
+// подсказки): так едут и группа court, и то, что модули мира добавили в сцену позже (транспорт, городок). То, что
+// каждый кадр ставит себя заново в мировых осях (девушки корта 2), на время стенки прячем: hide() из main.js.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { COURT, clayMaterial, lineMaterial } from './court.js';
@@ -97,6 +99,7 @@ export class HalfCourt {
   constructor(ctx) {
     Object.assign(this, ctx);
     this.O = V(HALF.x, 0, HALF.z); this.on = false;
+    this.fixed = new Set(this.scene.children); this.fixed.delete(this.court); // в осях корта: не двигаем
     const g = this.group = new THREE.Group(); g.name = 'halfcourt'; g.position.copy(this.O);
     const clay = clayMaterial(), plane = new THREE.PlaneGeometry(HALF.w * 2, HALF.back + 0.3); plane.rotateX(-Math.PI / 2); plane.translate(0, 0, (HALF.back - 0.3) / 2);
     const p = plane.attributes.position, uv = plane.attributes.uv;
@@ -126,7 +129,7 @@ export class HalfCourt {
     if (sub) { sub.free = false; sub.stroke = null; sub.place(sub.home); sub.wrap.visible = sub.racket.visible = false; }
     club.subPath = null; club.path = null;
     this.server = g.server;
-    g.swapLev(L, false);
+    g.swapLev(L, false); g.court = 1; // подача в стенку справа, как в «Стенке» из меню: с «ад» мяч от стенки уходил от Лёвы (матч считает сторону сам)
     const at = L.pos.clone().sub(this.O).setY(0);
     at.x = THREE.MathUtils.clamp(at.x, -HALF.w + 0.4, HALF.w - 0.4); at.z = THREE.MathUtils.clamp(at.z, 1, HALF.back - 0.4);
     L.free = false; L.seat = null; L.place(at);
@@ -154,7 +157,9 @@ export class HalfCourt {
   shift(dir) {
     const d = this.O.clone().multiplyScalar(dir);
     this.court.position.add(d); this.court.updateMatrixWorld(true);
-    for (const o of this.scene.children) if (o.userData.world) { o.position.add(d); o.updateMatrixWorld(true); }
+    for (const o of this.scene.children) if (!this.fixed.has(o)) { o.position.add(d); o.updateMatrixWorld(true); }
+    if (dir < 0) { this.hidden = (this.hide?.() ?? []).filter((o) => o.visible); for (const o of this.hidden) o.visible = false; }
+    else { for (const o of this.hidden ?? []) o.visible = true; this.hidden = null; }
   }
   // Держим Лёву внутри забора полукорта (в координатах корта): гасим скорость наружу заранее, до шага игры.
   keep(L) {

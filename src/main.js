@@ -542,6 +542,7 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
     label: (st) => (half.inside(lev.pos) && !st.held && !st.chair && !st.seated ? 'бить об\u00a0стенку' : null), act: (st, now) => wallEnter(now) });
   registerSurface(interact, hands, half.bench);
   girls = new Girls({ scene, game, club, camera, sound, loader });
+  half.fixed.add(girls.stage); half.hide = () => [girls.stage, ...girls.girls.filter((g) => g.where === 'world').flatMap((g) => [g.p.wrap, g.p.racket])]; // ставят себя в мире каждый кадр
   // Разговор: с кем — решает girls.near() (калитка корта 2, девушка рядом, она за столиком), E — girls.act().
   interact.register({ r: 1, pri: 0.6, get pos() { return girls.target ? interact.ahead() : FAR; },
     label: (st) => (girls.target && !girls.dlg && !st.chair ? 'поговорить' : null), act: () => girls.act() });
