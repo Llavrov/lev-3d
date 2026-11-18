@@ -266,6 +266,7 @@ export function initCareer(ctx) {
 }
 
 function onEvent(type, e) {
+  if (document.body.classList.contains('job')) return; // урок и спарринг (jobs.js) не в счёт матча и роста соперников
   const g = C.game;
   if (type === 'newmatch' || type === 'mode') {
     Object.assign(M, { ev: [], pts: 0, errs: 0, tipLeft: 0, tipShown: false, over: null });
