@@ -2,6 +2,7 @@
 // панель характеристик (C или кнопка), магазин и зал. main.js зовёт: initProfile при загрузке, tick после шага игры
 // и прогулки, view после камеры, key на нажатие, input — ввод прогулки (в магазине и зале Лёва стоит).
 import './profile.css';
+import * as THREE from 'three';
 import { stats, STATS, STAT_NAMES, Stats } from './stats.js';
 import { wallet, fmtCHF, earn, spend } from './economy.js';
 import { outfit, ITEM, dress, showBag } from './outfit.js';
@@ -139,30 +140,30 @@ function fillPanel() {
   $('panelWorn').innerHTML = 'Надето: ' + items.join(' · ').replace(/ (в|и|с|на|к) /g, ' $1&nbsp;');
 }
 // ---------- Точки города: прилавок, кафе, кровать, станции зала (town.js) ----------
-// Своя маленькая система «E — действие» до общей interact.js: точки в формате её register({ pos, r, label(state), act(state, now) }),
-// при слиянии — заменить spot на register одной строкой и убрать кнопку #cact.
+// Действия — в общую систему «E — действие» (interact.js, club.interact.register). Без неё (тесты старых веток) — своя
+// кнопка #cact с тем же форматом точки: { pos, r, label(state), act(state, now) }.
 const SPOTS = [], TOWN_GYM = [];
-const spot = (d) => SPOTS.push(d);
+const spot = (d) => { SPOTS.push(d); C.club.interact?.register({ ...d, pos: new THREE.Vector3(...d.pos), y: 1 }); };
 let near = null, actBtn = null;
 const CAFE = 9; // кофе с булочкой, CHF
 function townSpots(town) {
   const { shop, cafe, bed, gymStations } = town.points ?? {};
   if (!gymStations) return;
   TOWN_GYM.push(...placeTown(gymStations, C.scene, town.obs));
-  spot({ pos: shop.pos, r: shop.r, label: () => 'Магазин', act: () => openShop() });
-  spot({ pos: cafe.pos, r: cafe.r, label: () => `Перекусить · ${fmtCHF(CAFE)}`, act: () => {
+  spot({ pos: shop.pos, r: shop.r, label: () => 'купить вещи', act: () => openShop() });
+  spot({ pos: cafe.pos, r: cafe.r, label: () => `перекусить за\u00a0${fmtCHF(CAFE)}`, act: () => {
     if (!wallet.spend(CAFE, 'Кафе: кофе и булочка')) return C.game.hud.flash('Не хватает денег', false);
     stats.eat('coffee'); stats.eat('food'); C.game.hud.flash('Кофе и булочка: усталость −37', true);
   } });
-  spot({ pos: bed.stand, r: bed.r, label: () => 'Спать', act: () => { stats.sleep(); C.lev.stamina = 1; C.game.hud.flash('Выспался: усталости нет', true); } });
-  for (const s of TOWN_GYM) spot({ pos: s.pos.toArray(), r: 1.3, label: () => STATIONS[s.kind].name, act: () => openGym(s) });
+  spot({ pos: bed.stand, r: bed.r, label: () => 'лечь спать', act: () => { stats.sleep(); C.lev.stamina = 1; C.game.hud.flash('Выспался: усталости нет', true); } });
+  for (const s of TOWN_GYM) spot({ pos: s.pos.toArray(), r: 1.3, label: () => STATIONS[s.kind].name.toLowerCase(), act: () => openGym(s) });
 }
 // Ближайшая точка в радиусе — только на прогулке, не сидя и не в магазине или зале.
 function nearSpot() {
-  const L = C.lev, ok = C.club.mode === 'walk' && !L.seat && !busy();
+  const L = C.lev, ok = !C.club.interact && C.club.mode === 'walk' && !L.seat && !busy(); // есть interact.js — подсказку показывает он
   let best = null, bd = Infinity;
   if (ok) for (const s of SPOTS) { const d = Math.hypot(L.pos.x - s.pos[0], L.pos.z - s.pos[2]); if (d < s.r && Math.abs(L.pos.y - s.pos[1]) < 1.5 && d < bd) { best = s; bd = d; } }
-  if (best !== near) { near = best; actBtn.hidden = !near; if (near) actBtn.firstChild.textContent = near.label(); }
+  if (best !== near) { near = best; actBtn.hidden = !near; if (near) { const t = near.label(); actBtn.firstChild.textContent = t[0].toUpperCase() + t.slice(1); } }
 }
 function act() { const s = near; near = null; actBtn.hidden = true; s?.act(C.game.state, C.game.now); }
 function makeActButton() {

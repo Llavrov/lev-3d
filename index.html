@@ -90,6 +90,13 @@
   #cbar button[hidden] { display: none; }
   #cbar kbd { min-width: 20px; height: 20px; padding: 0 5px; margin: 0; font-size: 11px; border-radius: 5px; box-shadow: 0 1px 0 #8f9690; }
   body.club #pad, body.club #hint { display: none !important; }
+  /* Действие с предметом (interact.js): на ноутбуке строка внизу «E взять кофе», на телефоне кнопки справа внизу */
+  #act { display: none; position: fixed; left: 16px; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); justify-content: center; gap: 22px; pointer-events: none; }
+  body.club #act { display: flex; }
+  #act button { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 6px; border: 0; background: none; color: #fff; font-size: 17px; font-weight: 600; text-shadow: var(--shade); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  #act button[hidden] { display: none; }
+  #act kbd { margin: 0; text-shadow: none; }
+  #pbar kbd { min-width: 20px; height: 20px; padding: 0 5px; margin: 0 0 0 8px; font-size: 11px; border-radius: 5px; box-shadow: 0 1px 0 #8f9690; vertical-align: 1px; }
   @media (max-width: 640px) { #cbar { top: calc(64px + env(safe-area-inset-top)); } } /* под счётом */
   body.menu #pad, body.menu #joy { display: none !important; } /* кнопки ударов на телефоне — только в игре */
 
@@ -114,7 +121,11 @@
   @media (pointer: coarse) {
     #pad { display: grid; }
     #start .touch-only { display: block; }
-    #start .keys-only, #cbar kbd { display: none; }
+    #start .keys-only, #cbar kbd, #pbar kbd, #act kbd { display: none; }
+    #act { left: auto; right: calc(12px + env(safe-area-inset-right)); bottom: calc(24px + env(safe-area-inset-bottom)); flex-direction: column; align-items: flex-end; gap: 10px; }
+    #act button { min-height: 52px; padding: 0 22px; border-radius: 26px; background: rgba(16, 24, 20, .62); font-size: 16px; text-shadow: none; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+    #act button:active { background: rgba(255, 255, 255, .2); }
+    body.ride #act { bottom: calc(108px + env(safe-area-inset-bottom)); } /* в езде внизу руль, газ и тормоз (vehicle.js) */
     #hint { bottom: calc(232px + env(safe-area-inset-bottom)); } /* выше кнопок ударов */
     body.serving #hint { bottom: auto; top: calc(118px + env(safe-area-inset-top)); } /* подача: Лёва стоит внизу у линии, подсказка под табло */
     body.practice #lesson { bottom: auto; top: calc(66px + env(safe-area-inset-top)); } /* на телефоне внизу кнопки и сам Лёва: урок сверху */
@@ -132,7 +143,8 @@
 <div id="msg"></div>
 <div id="lesson" aria-live="polite"><p id="ltext"></p><span id="ldots"></span></div>
 <div id="pbar"><button id="pexit">Выйти</button><button id="pnext">Дальше</button></div>
-<div id="cbar"><button id="cexit">Выйти с&nbsp;корта<kbd>Q</kbd></button><button id="csit" hidden>Сесть<kbd>E</kbd></button><button id="cview" hidden>Вид<kbd>V</kbd></button><button id="cback" hidden>На&nbsp;корт<kbd>R</kbd></button></div>
+<div id="cbar"><button id="cexit">Выйти с&nbsp;корта<kbd>Q</kbd></button><button id="cview" hidden>Вид<kbd>V</kbd></button><button id="cback" hidden>На&nbsp;корт<kbd>R</kbd></button></div>
+<div id="act" aria-live="polite"><button id="actE" hidden><kbd>E</kbd><span></span></button><button id="actF" hidden><kbd>F</kbd><span></span></button></div>
 <div id="hint"></div>
 
 <div id="pad">

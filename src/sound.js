@@ -1,7 +1,7 @@
 // Звуки корта синтезом (файлов нет): удар — щелчок, звон струн и «пок» мяча; отскок — глухой «тук» по грунту с песком;
 // сетка, свист ракетки на замахе, шаги и шорох скольжения по грунту. Лёгкое эхо от ограждения, панорама по месту на корте.
 export function makeSound() {
-  let ctx = null, out = null, noise = null, slideGain = null, chargeOsc = null, chargeGain = null;
+  let ctx = null, out = null, noise = null, slideGain = null, chargeOsc = null, chargeGain = null, squeal = null;
   const ready = () => {
     if (!ctx) {
       ctx = new AudioContext();
@@ -79,6 +79,19 @@ export function makeSound() {
     }),
     step: on(({ vol = 1, pan = 0 } = {}) =>hiss(bus(pan), 'bandpass', 1300 + Math.random() * 500, 0.9, 0.07 * vol, 0.05)),
     slide: on((level) => slideGain.gain.setTargetAtTime(0.22 * level, ctx.currentTime, 0.05)),
+    // Визг шин в заносе: дрожащий тон поверх узкого шума, громкость по силе скольжения.
+    screech: on((level) => {
+      if (!squeal) {
+        squeal = ctx.createGain(); squeal.gain.value = 0; squeal.connect(out);
+        const src = ctx.createBufferSource(); src.buffer = noise; src.loop = true;
+        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2300; bp.Q.value = 7;
+        const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 1150;
+        const lfo = ctx.createOscillator(), depth = ctx.createGain(); lfo.frequency.value = 11; depth.gain.value = 45; lfo.connect(depth).connect(o.frequency);
+        const ob = ctx.createBiquadFilter(); ob.type = 'bandpass'; ob.frequency.value = 1200; ob.Q.value = 4; const og = ctx.createGain(); og.gain.value = 0.35;
+        src.connect(bp).connect(squeal); o.connect(ob).connect(og).connect(squeal); src.start(); o.start(); lfo.start();
+      }
+      squeal.gain.setTargetAtTime(0.16 * level, ctx.currentTime, level > 0 ? 0.05 : 0.12);
+    }),
     charge: on((level) => { // level < 0 — не копит
       chargeGain.gain.setTargetAtTime(level < 0 ? 0 : 0.012 + 0.03 * level, ctx.currentTime, 0.05);
       chargeOsc.frequency.setTargetAtTime(160 + 200 * Math.max(0, level), ctx.currentTime, 0.06);

@@ -43,7 +43,7 @@ function wickerTex() {
 // ---------- Общее: положение, ход по земле, столкновения ----------
 // Местные оси: z — вперёд, y — вверх, x — влево (смотрим по +z: правая сторона в −x). yaw: вперёд = (sin yaw, cos yaw).
 class Vehicle {
-  constructor(scene) { this.root = new THREE.Group(); scene.add(this.root); this.pos = new THREE.Vector3(); this.yaw = 0; this.v = 0; this.steer = 0; this.pitch = 0; this.roll = 0; this.vel = new THREE.Vector2(); this.spin = 0; }
+  constructor(scene) { this.root = new THREE.Group(); scene.add(this.root); this.pos = new THREE.Vector3(); this.yaw = 0; this.v = 0; this.steer = 0; this.pitch = 0; this.roll = 0; this.vel = new THREE.Vector2(); this.spin = 0; this.drift = 0; this.slip = 0; }
   get fwd() { return new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)); }
   get left() { return new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); }
   park(x, z, yaw, world) { this.pos.set(x, world?.ground(x, z) ?? 0, z); this.yaw = yaw; this.v = 0; this.vel.set(0, 0); this.pitch = this.roll = 0; this.ground(world, 1); this.place(); }
@@ -79,19 +79,28 @@ class Vehicle {
   }
   // Аркадная езда: газ до vmax, тормоз, назад, руль сильнее на малой скорости, занос — боковая скорость гаснет не сразу.
   drive(dt, inp, world) {
-    const C = this.cfg, gas = clamp(inp.y, -1, 1);
+    const C = this.cfg, gas = clamp(inp.y, -1, 1), hb = !!inp.hb && !!C.drift;
     let a = 0;
     if (gas > 0.1) a = this.v < -0.2 ? C.brake : C.accel * gas * (1 - Math.max(0, this.v) / C.vmax);
     else if (gas < -0.1) a = this.v > 0.2 ? -C.brake : -C.accel * 0.6 * (1 - Math.max(0, -this.v) / C.vback);
     else a = -Math.sign(this.v) * Math.min(Math.abs(this.v) / dt, C.roll + 0.015 * this.v * this.v);
     a -= 9.8 * Math.sin(this.pitch) * C.hill; // в горку тяжелее, под горку катится
+    if (hb) a -= Math.sign(this.v) * C.drift.hb; // ручник: задние колёса встали
     this.v += a * dt;
     if (Math.abs(this.v) < 0.03 && Math.abs(gas) < 0.1) this.v = 0;
     const want = clamp(inp.x, -1, 1) * C.steer / (1 + (this.v * this.v) / C.steerFall);
     this.steer += clamp(want - this.steer, -C.steerRate * dt, C.steerRate * dt);
     this.yawRate = -(this.v / C.wb) * Math.tan(this.steer); // руль вправо (+) — поворот вправо (yaw убывает)
+    // Дрифт (Лёва 19.11): ручник на скорости срывает зад, дальше занос держат газ и руль, контрруль его выравнивает.
+    if (C.drift) {
+      const sp = Math.abs(this.v), l = this.left; this.slip = Math.abs(this.vel.x * l.x + this.vel.y * l.z); // боковая скорость
+      const keep = gas > 0.3 && this.slip > 1.5 && sp > 4;
+      this.drift = clamp(this.drift + dt * (hb && sp > 4 ? 4 : keep ? 0 : -1.6), 0, 1);
+      this.yawRate -= clamp(inp.x, -1, 1) * this.drift * C.drift.yaw * Math.min(1, sp / 10) * Math.sign(this.v);
+      this.v -= Math.sign(this.v) * Math.min(Math.abs(this.v), this.slip * C.drift.scrub * dt); // боком машина тормозит
+    }
     this.yaw = wrap(this.yaw + this.yawRate * dt);
-    const f = this.fwd, grip = C.grip / (1 + Math.abs(this.yawRate * this.v) * C.slide); // резкий поворот на скорости — мягкий занос
+    const f = this.fwd, grip = C.grip / (1 + Math.abs(this.yawRate * this.v) * C.slide) * (1 - 0.85 * this.drift); // резкий поворот на скорости — мягкий занос, в дрифте зад скользит
     this.vel.lerp(new THREE.Vector2(f.x * this.v, f.z * this.v), 1 - Math.exp(-dt * grip));
     this.pos.x += this.vel.x * dt; this.pos.z += this.vel.y * dt;
     this.collide(world);
@@ -242,7 +251,7 @@ export class Car extends Vehicle {
   constructor(scene) {
     super(scene);
     this.kind = 'car'; this.name = 'машина';
-    this.cfg = { vmax: 17, vback: 5, accel: 5.5, brake: 11, roll: 0.6, hill: 0.6, steer: 0.6, steerFall: 70, steerRate: 2.2, wb: 2.25, grip: 7, slide: 0.012 };
+    this.cfg = { vmax: 17, vback: 5, accel: 5.5, brake: 11, roll: 0.6, hill: 0.6, steer: 0.6, steerFall: 70, steerRate: 2.2, wb: 2.25, grip: 7, slide: 0.012, drift: { hb: 4, yaw: 1.5, scrub: 0.3 } };
     this.axles = AX; this.track = 1.3; this.wheelR = 0.3; this.circles = [1.25, 0, -1.25]; this.r = 0.8; this.half = SHOULDER - 0.4;
     const paint = new THREE.MeshPhysicalMaterial({ vertexColors: true, metalness: 0.1, roughness: 0.4, clearcoat: 1, clearcoatRoughness: 0.06, side: THREE.DoubleSide });
     const chrome = S4({ color: '#eef1f4', metalness: 1, roughness: 0.12 }), cream = new THREE.MeshPhysicalMaterial({ color: '#e9dec6', roughness: 0.55, sheen: 0.4 });
@@ -317,7 +326,7 @@ export class Car extends Vehicle {
     this.root.traverse((o) => { if (o.isMesh && !o.material.transparent) { o.castShadow = true; o.receiveShadow = true; } });
   }
   update(dt, inp, world, riding) {
-    if (riding) this.drive(dt, inp, world);
+    if (riding || this.v !== 0 || this.vel.lengthSq() > 1e-4) this.drive(dt, inp, world); // без водителя катится, пока не встанет
     this.roll += ((this.slope ?? 0) + clamp(this.v * (this.yawRate ?? 0) * 0.012, -0.05, 0.05) - this.roll) * (1 - Math.exp(-dt * 8)); // кузов кренится наружу поворота
     this.place();
     for (const w of this.wheels) { w.spinG.rotation.x = this.spin; if (w.front) w.steerG.rotation.y = -this.steer; }
@@ -366,6 +375,46 @@ function seatLev(L, veh, w, dt, from) {
   veh.stowRacket(L.racket); L.racket.updateMatrixWorld(true);
 }
 
+// ---------- Занос: следы шин и дым ----------
+// Тёмные полосы под задними колёсами (кольцо из 900 отрезков, старые затираются новыми) и клубы дыма.
+class Skid {
+  constructor(scene) {
+    this.N = 900; this.i = 0; this.last = [null, null]; this.acc = 0; this.k = 0;
+    const mat = new THREE.MeshBasicMaterial({ color: 0x141210, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+    this.marks = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mat, this.N);
+    this.marks.count = 0; this.marks.frustumCulled = false; scene.add(this.marks);
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+    const map = new THREE.CanvasTexture(c);
+    this.puffs = Array.from({ length: 48 }, () => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map, color: 0xf2f0ec, transparent: true, depthWrite: false })); s.visible = false; scene.add(s); return { s, life: 0, v: new THREE.Vector3() }; });
+  }
+  // wheels — точки касания задних колёс, level 0..1 — сила скольжения.
+  update(dt, wheels, level) {
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+    wheels.forEach((p, w) => {
+      const a = this.last[w];
+      if (level < 0.2) { this.last[w] = null; return; }
+      if (!a) { this.last[w] = p.clone(); return; }
+      const d = p.distanceTo(a); if (d < 0.3) return;
+      m.compose(p.clone().add(a).multiplyScalar(0.5).setY((p.y + a.y) / 2 + 0.03), q.setFromAxisAngle(UP, Math.atan2(p.x - a.x, p.z - a.z)), new THREE.Vector3(0.2, 1, d + 0.05));
+      this.marks.setMatrixAt(this.i, m); this.i = (this.i + 1) % this.N; this.marks.count = Math.min(this.N, this.marks.count + 1);
+      this.marks.instanceMatrix.needsUpdate = true; this.last[w] = p.clone();
+    });
+    for (this.acc += dt * level * 26; this.acc > 1; this.acc--) {
+      const f = this.puffs[this.k = (this.k + 1) % this.puffs.length], p = wheels[this.k % 2];
+      f.life = 1; f.s.visible = true; f.s.position.copy(p).add(new THREE.Vector3(Math.random() - 0.5, 0.25, Math.random() - 0.5).multiplyScalar(0.4));
+      f.v.set(Math.random() - 0.5, 0.7 + Math.random() * 0.5, Math.random() - 0.5);
+    }
+    for (const f of this.puffs) {
+      if (!f.s.visible) continue;
+      f.life -= dt / 1.4; if (f.life <= 0) { f.s.visible = false; continue; }
+      f.s.position.addScaledVector(f.v, dt); const t = 1 - f.life;
+      f.s.scale.setScalar(0.8 + 3 * t); f.s.material.opacity = 0.6 * f.life * Math.min(1, t * 6);
+    }
+  }
+}
+
 // ---------- Всё вместе: посадка, езда, камера, кнопки ----------
 const BIKE_SPOT = [10.0, -10.5, 0], CAR_SPOT = [51.3, 27.5, 0]; // велосипед у забора (где стоял из Meshy) левым боком к дорожке, машина на стоянке носом к выезду
 export class Rides {
@@ -388,7 +437,7 @@ export class Rides {
     drop(0);
     // Стоящий транспорт — препятствие для прогулки (крючок town.bounds → extra).
     town.extra = (p, r) => pushOut(p, r, { circles: this.list.filter((v) => v !== this.active).flatMap((v) => v.circles.map((z) => { const c = v.pos.clone().addScaledVector(v.fwd, z); return [c.x, c.z, v.r * 0.9]; })) });
-    this.active = null; this.w = 0; this.near = null; this.btn = { l: 0, r: 0, g: 0, b: 0 };
+    this.active = null; this.w = 0; this.near = null; this.btn = { l: 0, r: 0, g: 0, b: 0, h: 0 }; this.skid = new Skid(scene);
     this.eye = new THREE.Vector3(); this.look = new THREE.Vector3(); this.camYaw = 0; this.fresh = true;
     this.ui();
   }
@@ -401,7 +450,8 @@ export class Rides {
   }
   // E: сесть на ближний транспорт или слезть. true — нажатие наше (скамейку не трогаем).
   use() {
-    if (this.active) { this.wantOff = true; return true; } // на ходу сперва тормозит, потом слезает (update)
+    if (this.active?.kind === 'car' && Math.abs(this.active.v) > 1.5) return this.jump(), true; // из машины на ходу — выпрыгнуть
+    if (this.active) { this.wantOff = true; return true; } // велосипед и медленная машина: сперва тормозит, потом слезает (update)
     const v = this.nearest(); if (!v) return false;
     const L = this.lev;
     this.from = { pos: L.wrap.position.clone(), q: L.wrap.quaternion.clone(), key: L.lastPose ?? READY, feet: { Left: L.feet.Left.pos.clone().setY(L.feet.Left.pos.y + L.rig.ankleH), Right: L.feet.Right.pos.clone().setY(L.feet.Right.pos.y + L.rig.ankleH) } };
@@ -426,6 +476,14 @@ export class Rides {
     this.active = null; this.leaving = this.wantOff = false; this.w = 0;
     this.sync();
   }
+  // Выпрыгнуть на ходу (Лёва 19.11): сразу у водительской двери, Лёва выбегает по инерции, машина катится дальше сама.
+  jump() {
+    const v = this.active, L = this.lev, p = v.local(1.2, 0, -0.3); this.world.bounds(p, 0.28); p.y = this.world.ground(p.x, p.z);
+    L.place(p); L.bodyTurn = wrap(v.yaw - L.netYaw); L.wrap.rotation.set(0, v.yaw, 0);
+    L.vel.set(v.vel.x, 0, v.vel.y).multiplyScalar(0.45).addScaledVector(v.left, 2).clampLength(0, 5.5);
+    this.club.camYaw = v.yaw; this.active = null; this.leaving = this.wantOff = false; this.w = 0;
+    this.sync();
+  }
   // «На корт» (club.back): с транспорта снимаем, тень солнца — назад к корту; издалека — через затемнение.
   leave() {
     const far = this.lev.pos.length() > 60;
@@ -433,11 +491,14 @@ export class Rides {
     this.town.update(0, new THREE.Vector3());
     if (far) { const f = this.fader; f.style.transition = 'none'; f.style.opacity = '1'; requestAnimationFrame(() => requestAnimationFrame(() => { f.style.transition = 'opacity .6s'; f.style.opacity = '0'; })); }
   }
-  input(inp) { const b = this.btn; return { x: clamp((inp?.x ?? 0) + b.r - b.l, -1, 1), y: clamp((inp?.y ?? 0) + b.g - b.b, -1, 1) }; }
+  input(inp) { const b = this.btn; return { x: clamp((inp?.x ?? 0) + b.r - b.l, -1, 1), y: clamp((inp?.y ?? 0) + b.g - b.b, -1, 1), hb: !!inp?.hb || !!b.h }; }
   // Кадр. true — Лёву ведёт транспорт (club.js не двигает его сам).
   update(dt, now, inp) {
     const L = this.lev, v = this.active;
     for (const o of this.list) if (o !== v) o.update(dt, { x: 0, y: 0 }, this.world, false);
+    const c = this.car, lvl = clamp((c.slip - 1.2) / 3, 0, 1) * clamp(c.vel.length() / 3, 0, 1); // занос и ручник — следы, дым, визг
+    this.skid.update(dt, [c.local(0.66, 0, AX[1]), c.local(-0.66, 0, AX[1])], lvl);
+    this.club.sound?.screech(lvl);
     if (!v) { const n = this.nearest(); if (n !== this.near) { this.near = n; this.sync(); } this.town.update(dt, L.pos); return false; }
     const i = this.wantOff ? { x: 0, y: Math.abs(v.v) > 0.1 ? -Math.sign(v.v) : 0 } : this.input(inp);
     v.update(dt, i, this.world, true);
@@ -462,34 +523,31 @@ export class Rides {
     camera.position.lerp(eye, k); this.look.lerp(look, k); camera.lookAt(this.look);
   }
 
-  // Кнопки: «Сесть»/«Слезть» рядом с «На корт»; на телефоне в езде — руль слева, газ и тормоз справа (зона от 56 px).
+  // Кнопки езды на телефоне: руль слева, газ и тормоз справа (зона от 56 px). Сесть и слезть — E и кнопка действия.
   ui() {
     const css = document.createElement('style');
     css.textContent = `#vpad { display: none; position: fixed; inset: auto 0 0 0; padding: 0 calc(14px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)); justify-content: space-between; pointer-events: none; }
       body.ride #vpad { display: flex; } @media (pointer: fine) { body.ride #vpad { display: none; } }
       #vpad div { display: flex; gap: 12px; } #vpad button { pointer-events: auto; width: 68px; height: 68px; border-radius: 50%; border: 1px solid rgba(255,255,255,.2); background: rgba(16,24,20,.55); color: #fff; font: 700 14px/1 system-ui, sans-serif; touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+      #vpad .r { display: grid; grid-template-columns: 68px 68px; align-items: end; } #vpad .hb { grid-column: 1 / 3; width: auto; height: 44px; border-radius: 22px; }
       #vpad button.on { background: rgba(255,255,255,.3); } #vpad svg { width: 26px; height: 26px; }
       body.ride #joy { display: none !important; }
       #vfade { position: fixed; inset: 0; background: #0b100d; opacity: 0; pointer-events: none; z-index: 3; }`;
     document.head.append(css);
     const chev = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
     const pad = document.createElement('div'); pad.id = 'vpad';
-    pad.innerHTML = `<div><button data-k="l" aria-label="Руль влево">${chev('M15 5l-7 7 7 7')}</button><button data-k="r" aria-label="Руль вправо">${chev('M9 5l7 7-7 7')}</button></div><div><button data-k="b">Тормоз</button><button data-k="g">Газ</button></div>`;
+    pad.innerHTML = `<div><button data-k="l" aria-label="Руль влево">${chev('M15 5l-7 7 7 7')}</button><button data-k="r" aria-label="Руль вправо">${chev('M9 5l7 7-7 7')}</button></div><div class="r"><button data-k="h" class="hb" hidden>Ручник</button><button data-k="b">Тормоз</button><button data-k="g">Газ</button></div>`;
     for (const b of pad.querySelectorAll('button')) {
       const set = (on) => (e) => { e.preventDefault(); this.btn[b.dataset.k] = on ? 1 : 0; b.classList.toggle('on', on); };
       b.addEventListener('pointerdown', set(true)); for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, set(false));
     }
     this.fader = document.createElement('div'); this.fader.id = 'vfade';
     document.body.append(pad, this.fader);
-    this.button = document.createElement('button'); this.button.id = 'vride'; this.button.hidden = true;
-    this.button.addEventListener('click', (e) => { e.currentTarget.blur(); this.use(); });
-    const bar = document.getElementById('cbar'); (bar ?? document.body).insertBefore(this.button, document.getElementById('cback'));
   }
   sync() {
-    const v = this.active ?? this.near, ride = !!this.active;
+    const ride = !!this.active; // «Сесть на велосипед», «Слезть» — подсказка и кнопка действия из interact.js (main.js)
     document.body.classList.toggle('ride', ride);
-    this.button.hidden = !v;
-    if (v) this.button.innerHTML = (ride ? (v.kind === 'car' ? 'Выйти' : 'Слезть') : v.kind === 'car' ? 'Сесть в&nbsp;машину' : 'Сесть на&nbsp;велосипед') + '<kbd>E</kbd>';
-    if (!ride) Object.assign(this.btn, { l: 0, r: 0, g: 0, b: 0 });
+    this.hbBtn ??= document.querySelector('#vpad .hb'); this.hbBtn.hidden = !(ride && this.active.kind === 'car');
+    if (!ride) Object.assign(this.btn, { l: 0, r: 0, g: 0, b: 0, h: 0 });
   }
 }
