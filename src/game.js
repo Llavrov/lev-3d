@@ -93,7 +93,7 @@ export class Game {
     if (lob != null) { target.set(target.x * 0.6, 0, -p.side * (8.6 + 2.2 * lob)); return { target, speed: 0, spin: p.human ? -60 : 80, lob, kind: 'lob' }; }
     const angle = Math.abs(target.x) > 3.6 && Math.abs(target.z) < 7; // острый короткий угол к боковой
     if (st.drop) target.z = -p.side * 3;
-    const k = 1 + 0.2 * power, second = this.serving && this.serveNo === 2;
+    const k = (1 + 0.2 * power) * (p.powerScale ?? 1), second = this.serving && this.serveNo === 2; // powerScale — сила и ракетка (profile.js)
     let speed = (top ? 25.5 : oh ? 31 : cut ? 21 : 27.5) * (0.82 + 0.18 * q) * (this.serving ? (p.human ? 0.75 : second ? 0.62 : 0.85) : 1) * k;
     let spin = (second ? 220 : top ? 260 : oh ? 30 : cut ? -260 : 50) * k; // вторая подача — крученая, надёжная; резаный плывёт и стелется
     if (st.drop) { speed = 12 + 2 * q; spin = -170; } // укороченный: медленно, с подрезкой, мяч зависает и гаснет, но добежать можно
@@ -147,6 +147,7 @@ export class Game {
     const shot = this.shotFor(p, st, q, power), { target } = shot, aim = target.clone();
     if (st.drop && shot.lob == null) { target.z = -p.side * rnd(2.2, 3.8); err *= 0.5; }
     if (shot.angle) err = (err + 0.35) * (shot.spin > 150 ? 0.6 : shot.spin < -150 ? 1.4 : 1); // острый угол у самой боковой: кручёный ныряет в корт, плоский и резаный рискуют
+    err *= p.errScale ?? 1; // техника, усталость и контроль ракетки (profile.js)
     target.x += rnd(-1, 1) * err; target.z += rnd(-1, 1) * err * 0.7;
     if (miss && shot.lob == null && !st.drop) { if (Math.random() < 0.5) target.x = Math.sign(target.x || 1) * rnd(4.4, 5.2); else target.z = -p.side * rnd(12.2, 13); }
     const speed = shot.speed * pace * (st.aiPace ?? 1), served = this.serving ? this.serveNo : 0;

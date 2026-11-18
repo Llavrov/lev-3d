@@ -18,6 +18,8 @@ import { Player, POWER, holdOf, powerOf } from './player.js';
 import { Game, AI } from './game.js';
 import { Club } from './club.js';
 import { Practice } from './practice.js';
+import * as profile from './profile.js'; // характеристики, усталость, вещи, магазин и зал
+import { outfit, racketModel, ITEM } from './outfit.js';
 import { STROKES, sample } from './swing.js';
 import { makeSound } from './sound.js';
 import { solveShot, step as ballStep } from './physics.js';
@@ -315,7 +317,7 @@ const log = (() => {
 
 // kind 'auto' — форхенд или бэкхенд по стороне, где будет мяч (укороченный, кручёный I, резаный U). spin — 'top' | 'cut'.
 function hit(kind, drop = false, key = '', spin = null) {
-  if (!game || !started || club?.active) return;
+  if (!game || !started || club?.active || profile.busy()) return;
   sound.unlock();
   if (game.state === 'serve' && game.server === game.lev) return game.serve(game.lev, game.now);
   if (key === 'Space') return; // пробел только подаёт: раньше в розыгрыше он бил форхендом и перебивал нажатый бэкхенд
@@ -333,6 +335,7 @@ function hit(kind, drop = false, key = '', spin = null) {
 addEventListener('keydown', (e) => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'AltLeft', 'AltRight'].includes(e.code)) e.preventDefault(); // Alt без меню браузера
   if (e.repeat) return;
+  if (profile.key(e)) return; // C — характеристики; в магазине и зале клавиши их
   keys.add(e.code);
   if (!started && (e.code === 'Space' || e.code === 'Enter')) return start();
   if (!started && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) return switchRacket(e.code === 'ArrowLeft' ? -1 : 1);
@@ -426,36 +429,35 @@ $('pexit').addEventListener('click', () => location.reload()); // shortcut: вы
 // ---------- Модели ----------
 const bar = document.querySelector('#loader b');
 // Модели: Лёва, соперник из Meshy (если файла нет — Лёва в тёмной форме) и ракетки из Meshy (если нет — ракетка кодом).
-const RACKETS = ['red', 'white', 'neon'];
-let myRacket = (() => { try { return localStorage.getItem('racket'); } catch { return null; } })();
-if (!RACKETS.includes(myRacket)) myRacket = 'red';
+const RACKETS = ['red', 'white', 'neon']; // модели Meshy; перекрасы, что куплено и надето — outfit.js
+let myRacket = outfit.worn.racket;
 const racketModels = {};
 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 const loadOpt = (url) => loader.loadAsync(url).catch(() => null);
 const dressAll = () => {
   if (!game) return;
-  const oppRacket = RACKETS.find((r) => r !== myRacket && racketModels[r]) ?? null;
-  const subRacket = RACKETS.find((r) => r !== myRacket && r !== oppRacket && racketModels[r]) ?? oppRacket; // у замены третья
+  myRacket = outfit.worn.racket;
+  const mine = ITEM[myRacket].base, oppRacket = RACKETS.find((r) => r !== mine && racketModels[r]) ?? null;
+  const subRacket = RACKETS.find((r) => r !== mine && r !== oppRacket && racketModels[r]) ?? oppRacket; // у замены третья
   for (const [p, name] of [[club?.lev ?? game.lev, myRacket], [game.opp, oppRacket], [sub, subRacket]]) {
     if (!p) continue;
-    if (name && racketModels[name]) dressRacket(p.racket, racketModels[name].clone(true));
+    const m = name && racketModel(name, racketModels);
+    if (m) dressRacket(p.racket, m);
   }
-  $('rkName').textContent = RACKET_NAMES[myRacket];
+  $('rkName').textContent = ITEM[myRacket].name;
+  $('rk').hidden = outfit.rackets().filter((r) => racketModels[ITEM[r].base]).length < 2; // выбор — только из купленных
 };
-// Ракетка выбирается на стартовом экране стрелками: меняется прямо в руке у Лёвы, он ею тут же машет.
-const RACKET_NAMES = { red: 'Красная', white: 'Бело-синяя', neon: 'Неон' };
+// Ракетка выбирается на стартовом экране стрелками из купленных: меняется прямо в руке у Лёвы, он ею тут же машет.
 function switchRacket(dir) {
-  const have = RACKETS.filter((r) => racketModels[r]);
-  if (!have.length || started) return;
-  myRacket = have[(have.indexOf(myRacket) + dir + have.length) % have.length];
-  try { localStorage.setItem('racket', myRacket); } catch { /* без памяти — только на эту игру */ }
-  dressAll();
+  const have = outfit.rackets().filter((r) => racketModels[ITEM[r].base]);
+  if (have.length < 2 || started) return;
+  outfit.wear(have[(have.indexOf(myRacket) + dir + have.length) % have.length]); // dressAll — по outfit.on в profile.js
   game?.lev.press(Math.random() < 0.5 ? 'fh' : 'bh', game.now, null); // показать ракетку в деле
 }
 $('rkPrev').addEventListener('click', () => switchRacket(-1));
 $('rkNext').addEventListener('click', () => switchRacket(1));
 Promise.all(RACKETS.map((r) => loadOpt(`/models/racket-${r}.glb`).then((g) => { if (g) racketModels[r] = fitRacketModel(g.scene); })))
-  .then(() => { document.getElementById('rk').hidden = !Object.keys(racketModels).length; dressAll(); });
+  .then(() => dressAll());
 
 // lev.glb и opp.glb — веса почищены, скелет со скрутками рук (копия -v2, собирает tools/rig-build.sh);
 // ?rig=1 — сырые веса Meshy для сравнения, ?rig=<имя> — любой собранный вариант <модель>-v<имя>.glb.
@@ -471,6 +473,7 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
   opp.measure();
   log('start', { reach: lev.measure(), opp: !!oppGltf, racket: myRacket, w: innerWidth, h: innerHeight, touch: matchMedia('(pointer: coarse)').matches });
   club = new Club({ game, lev, court, sound, onMode: clubUi });
+  profile.initProfile({ game, lev, club, scene, onRacket: dressAll });
   // Замена (club.js): модель из Meshy грузится после старта, без неё — соперник в голубом.
   subReady = loadOpt('/models/sub.glb').then((g) => {
     sub = new Player(scene, g ?? oppGltf ?? gltf, { side: 1, height: 1.8, racketColor: '#2f7d4f', cloth: g ? null : '#86bfe6' });
@@ -568,7 +571,8 @@ renderer.setAnimationLoop(() => {
     if (started) {
       const a = axes();
       game.update(dt, game.now, levMove());
-      club.update(dt, game.now, walkInput());
+      club.update(dt, game.now, profile.input(walkInput()));
+      profile.tick(dt, game.now);
       powerFx.track(game.now);
       if (game.state === 'rally' && game.now >= (game.nextSample ?? 0)) {
         game.nextSample = game.now + 0.2;
@@ -582,6 +586,7 @@ renderer.setAnimationLoop(() => {
       game.opp.update(dt, game.now, new THREE.Vector3(), game.b);
     }
     if (club.active) clubCam(dt); else if (started) follow(dt); else menuCam(dt);
+    profile.view(dt, camera); // магазин и зал ставят свою камеру
     showLanding(game.now); showSpot(game.now, dt);
     aimGuide.update(dt, game.now);
     powerFx.update(dt, game.now);
@@ -593,10 +598,10 @@ if (Q.has('debug')) window.__lev = {
   scene, camera, get game() { return game; },
   // Пошаговая проверка: __pause = true, потом step(секунды, движение {x, y}) — игра идёт ровно на заданное время.
   step(sec, a = null, h = window.__dt ?? 1 / 120) { // без a — бег от зажатых клавиш, как в игре; __dt — шаг кадра (проверка на 30–60 кадрах)
-    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, a ?? walkInput()); powerFx.track(game.now); }
+    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, profile.input(a ?? walkInput())); profile.tick(h, game.now); powerFx.track(game.now); }
   },
   get club() { return club; },
-  render() { window.__camHold = false; if (club.active) { club.snap(camera, follow); clubCam(0); } else follow(1); showLanding(game.now); showSpot(game.now, 1); aimGuide.update(0.2, game.now); powerFx.update(0, game.now); draw(); }, // кадр сразу, не дожидаясь requestAnimationFrame
+  render() { window.__camHold = false; if (club.active) { club.snap(camera, follow); clubCam(0); } else follow(1); showLanding(game.now); showSpot(game.now, 1); aimGuide.update(0.2, game.now); powerFx.update(0, game.now); profile.view(0, camera); draw(); }, // кадр сразу, не дожидаясь requestAnimationFrame
   shot(eye, at) { window.__camHold = true; camera.position.fromArray(eye); camera.lookAt(new THREE.Vector3(...at)); draw(); }, // кадр с любой точки — смотреть соперника и ракетки
   // Поза удара в момент s (с от удара) на месте, без игры: смотреть руки, кисти, ноги крупно.
   pose(type, s, who = 'lev') { const p = game[who], [A, B, u] = sample(STROKES[type], s); const r = p.rig.pose(A, B, u, { Left: p.feet.Left, Right: p.feet.Right, crouch: 0.07 }); p.rig.placeRacket(r.rk, r.face); },

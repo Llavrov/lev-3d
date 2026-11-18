@@ -15,7 +15,7 @@ export const inSingles = (p) => Math.abs(p.x) <= HALF_SINGLE + BALL_R && Math.ab
 
 // bounces — сколько раз мяч уже отскочил после последнего удара (ведёт игра).
 export const makeBall = () => ({ pos: new THREE.Vector3(), vel: new THREE.Vector3(), spin: 0, live: false, bounces: 0 });
-export const copyBall = (b) => ({ pos: b.pos.clone(), vel: b.vel.clone(), spin: b.spin, live: b.live, bounces: b.bounces ?? 0 });
+export const copyBall = (b) => ({ pos: b.pos.clone(), vel: b.vel.clone(), spin: b.spin, live: b.live, bounces: b.bounces ?? 0, lively: b.lively });
 
 const UP = new THREE.Vector3(0, 1, 0), acc = new THREE.Vector3(), w = new THREE.Vector3(), hor = new THREE.Vector3();
 
@@ -56,11 +56,12 @@ export function step(b, dt) {
     hor.set(v.x, 0, v.z);
     const sp = hor.length(), dir = sp > 1e-6 ? hor.divideScalar(sp) : hor.set(0, 0, 0);
     // Проскальзывание точки касания: скорость мяча минус скорость нижней точки от вращения.
-    const slip = sp - b.spin * BALL_R, jn = (1 + BOUNCE) * Math.abs(v.y);
+    const e = BOUNCE * (b.lively ?? 1); // lively — новые мячи прыгают живее (outfit.js)
+    const slip = sp - b.spin * BALL_R, jn = (1 + e) * Math.abs(v.y);
     const f = -Math.sign(slip) * Math.min(FRICTION * jn, 0.4 * Math.abs(slip)); // 0.4 — до качения у полого мяча
     const sp2 = Math.max(0, sp + f);
     b.spin -= 1.5 * f / BALL_R;
-    const vy = Math.abs(v.y) < 0.6 ? 0 : -v.y * BOUNCE;
+    const vy = Math.abs(v.y) < 0.6 ? 0 : -v.y * e;
     v.set(dir.x * sp2, vy, dir.z * sp2);
     ev = { type: 'bounce', pos: b.pos.clone() };
   }
