@@ -276,7 +276,11 @@ async function startLesson(pending) {
   G.drill = { update: (t) => { const dt = clamp(t - S.t, 0, 0.1); S.t = t; G.opp.update(dt, t, G.ai.update(t), G.b); }, afterStep() {}, bounce: lessonBounce, miss: () => lessonDone(false) };
   G.state = 'drill'; G.b.live = false; G.ballMesh.visible = false;
   // Ученик иногда мажет и по удобному мячу: в сетку или за заднюю линию Лёвы.
-  p.onContact = (pp, st) => { G.contact(pp, st); if (G.lastHitter === pp && Math.random() < (S.feed?.good ? 0.12 : 0.3)) { const b = G.b; b.vel.copy(solveShot(b.pos, V(b.pos.x * 0.5, 0, Math.random() < 0.6 ? -0.4 : 13.2), b.vel.length() * 0.85, b.spin)); } };
+  p.onContact = (pp, st) => {
+    const before = G.lastHitter; G.contact(pp, st);
+    if (before === pp || G.lastHitter !== pp || Math.random() > (S.feed?.good ? 0.12 : 0.3)) return;
+    const b = G.b; b.vel.copy(solveShot(b.pos, V(b.pos.x * 0.5, 0, Math.random() < 0.6 ? -0.4 : 13.2), b.vel.length() * 0.85, b.spin)); G.markLanding();
+  };
   const zone = S.zone = zoneMesh(), ring = S.ring = ringMesh(), basket = C.court.getObjectByName('balls')?.clone();
   zone.position.set(S.zx, 0.013, ZONE.z); ring.visible = false;
   S.props = [zone, ring];
