@@ -401,8 +401,7 @@ export class Rides {
   }
   // E: сесть на ближний транспорт или слезть. true — нажатие наше (скамейку не трогаем).
   use() {
-    if (this.leaving) return true;
-    if (this.active) { if (this.w > 0.95 && Math.abs(this.active.v) < 2.5) { this.leaving = true; this.from = this.exitPose(this.active); } return true; }
+    if (this.active) { this.wantOff = true; return true; } // на ходу сперва тормозит, потом слезает (update)
     const v = this.nearest(); if (!v) return false;
     const L = this.lev;
     this.from = { pos: L.wrap.position.clone(), q: L.wrap.quaternion.clone(), key: L.lastPose ?? READY, feet: { Left: L.feet.Left.pos.clone().setY(L.feet.Left.pos.y + L.rig.ankleH), Right: L.feet.Right.pos.clone().setY(L.feet.Right.pos.y + L.rig.ankleH) } };
@@ -424,7 +423,7 @@ export class Rides {
     const p = this.leaving ? this.from.pos.clone() : this.exitPose(v).pos;
     L.place(p); L.bodyTurn = wrap(v.yaw - L.netYaw); L.wrap.rotation.set(0, v.yaw, 0); L.vel.set(0, 0, 0);
     this.club.camYaw = v.yaw; v.v = 0; v.vel.set(0, 0); v.steer = 0;
-    this.active = null; this.leaving = false; this.w = 0;
+    this.active = null; this.leaving = this.wantOff = false; this.w = 0;
     this.sync();
   }
   // «На корт» (club.back): с транспорта снимаем, тень солнца — назад к корту; издалека — через затемнение.
@@ -440,8 +439,9 @@ export class Rides {
     const L = this.lev, v = this.active;
     for (const o of this.list) if (o !== v) o.update(dt, { x: 0, y: 0 }, this.world, false);
     if (!v) { const n = this.nearest(); if (n !== this.near) { this.near = n; this.sync(); } this.town.update(dt, L.pos); return false; }
-    const i = this.leaving ? { x: 0, y: -Math.sign(v.v) } : this.input(inp);
+    const i = this.wantOff ? { x: 0, y: Math.abs(v.v) > 0.1 ? -Math.sign(v.v) : 0 } : this.input(inp);
     v.update(dt, i, this.world, true);
+    if (this.wantOff && !this.leaving && this.w > 0.95 && Math.abs(v.v) < 0.8) { this.leaving = true; this.from = this.exitPose(v); }
     this.w = clamp(this.w + (this.leaving ? -dt : dt) / 0.45, 0, 1);
     if (this.leaving && this.w === 0) { this.getOff(); this.town.update(dt, L.pos); return true; }
     seatLev(L, v, this.w, dt, this.from);

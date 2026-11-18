@@ -81,10 +81,12 @@ for (const [w, h] of [[1440, 900], [390, 844]].filter(([w]) => !ONLY || String(w
   // К стоянке: по дорожке ко входу (PATHS в env-club.js).
   const r2 = await driveTo([[11.4, 15.8], [15.5, 25.6], [26, 28.8], [38, 30.2], [48, 30.4]], 5, 60);
   check(Math.hypot(r2.x - 48, r2.z - 30.4) < 3, `${tag}: доехал на велосипеде до стоянки ${JSON.stringify(r2)}`);
-  await page.evaluate(() => { for (let i = 0; i < 40 && Math.abs(__lev.club.ride.active.v) > 0.05; i++) __lev.step(0.1, { x: 0, y: -1 }, 1 / 60); });
+  await page.evaluate(() => { for (let i = 0; i < 40 && Math.abs(__lev.club.ride.active.v) > 0.3; i++) __lev.step(0.1, { x: 0, y: -Math.sign(__lev.club.ride.active.v) }, 1 / 60); });
   await act('e', 'vride');
+  const midOff = await page.evaluate(() => { __lev.step(0.22, { x: 0, y: 0 }, 1 / 60); const r = __lev.club.ride, L = __lev.club.lev; return +L.wrap.position.distanceTo(r.bike.pos).toFixed(2); }); // посередине слезания тело между седлом и землёй рядом
   await page.evaluate(() => __lev.step(1, { x: 0, y: 0 }, 1 / 60));
-  check((await st()).ride === null, `${tag}: слез с велосипеда`);
+  const offBike = await page.evaluate(() => { const r = __lev.club.ride, L = __lev.club.lev; return { ride: r.active, d: +L.pos.distanceTo(r.bike.pos).toFixed(2) }; });
+  check(offBike.ride === null && offBike.d < 1.2 && midOff < 1.3, `${tag}: слез с велосипеда рядом с ним (${offBike.d} м, посередине ${midOff} м)`);
   // К машине: к водительской двери.
   const door = await page.evaluate(() => __lev.club.ride.car.mountAt().toArray());
   await walkTo([[door[0], door[2]]]);
@@ -97,6 +99,13 @@ for (const [w, h] of [[1440, 900], [390, 844]].filter(([w]) => !ONLY || String(w
   check(!ac.bad, `${tag}: поза за рулём без нарушений ${JSON.stringify(ac.a)}`);
   const carView = async (name, side, back, hgt) => { await page.evaluate(([side, back, hgt]) => { const v = __lev.club.ride.active, l = v.left, f = v.fwd; const at = v.pos.clone().addScaledVector(l, 0.33).addScaledVector(f, -0.3).setY(v.pos.y + 0.9); __lev.shot([at.x + l.x * side - f.x * back, at.y + hgt, at.z + l.z * side - f.z * back], [at.x, at.y, at.z]); }, [side, back, hgt]); await page.screenshot({ path: join(OUT, `${name}-${tag}.png`) }); };
   await carView('car-window', 2.6, 0.3, 0.25); await carView('car-front', -0.6, -4.2, 0.6); await carView('car-back34', 3.2, 4.2, 1.2);
+  if (phone) { // кнопки руля и газа: видны, зона от 44 px, «Газ» везёт, «Тормоз» останавливает
+    const pad = await page.evaluate(() => [...document.querySelectorAll('#vpad button')].map((b) => { const r = b.getBoundingClientRect(); return [b.dataset.k, Math.round(r.width), Math.round(r.height), r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight]; }));
+    const hold = (k, sec) => page.evaluate(([k, sec]) => { const b = document.querySelector(`#vpad [data-k="${k}"]`); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); __lev.step(sec, null, 1 / 60); b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); return +__lev.club.ride.active.v.toFixed(2); }, [k, sec]);
+    const vg = await hold('g', 1), vb = await hold('b', 1.5);
+    check(pad.length === 4 && pad.every(([, w, h, ok]) => w >= 44 && h >= 44 && ok) && vg > 1 && vb < 0.3, `${tag}: кнопки езды ${JSON.stringify(pad)}, газ → ${vg} м/с, тормоз → ${vb} м/с`);
+    await shot('car-buttons');
+  }
   // По серпантину до улицы: точки оси дороги через 8 м.
   const road = await page.evaluate(() => __lev.club.world.road.filter((_, i) => i % 8 === 0).map((s) => [s.x, s.z]));
   const leg1 = await driveTo(road.slice(0, Math.floor(road.length * 0.45)), 13, 90);
@@ -105,16 +114,20 @@ for (const [w, h] of [[1440, 900], [390, 844]].filter(([w]) => !ONLY || String(w
   await page.screenshot({ path: join(OUT, `car-serpentine-side-${tag}.png`) });
   const leg2 = await driveTo([...road.slice(Math.floor(road.length * 0.45)), [200, 60], [212, 58.5]], 13, 120);
   check(leg2.x > 205 && leg1.jumps + leg2.jumps === 0 && Math.min(leg1.minDy, leg2.minDy) > -0.1 && Math.max(leg1.maxDy, leg2.maxDy) < 0.15, `${tag}: доехал до улицы без провалов и прыжков ${JSON.stringify({ leg1, leg2 })}`);
-  await page.evaluate(() => { for (let i = 0; i < 60 && Math.abs(__lev.club.ride.active.v) > 0.05; i++) __lev.step(0.1, { x: 0, y: -1 }, 1 / 60); });
+  await page.evaluate(() => { for (let i = 0; i < 60 && Math.abs(__lev.club.ride.active.v) > 0.3; i++) __lev.step(0.1, { x: 0, y: -Math.sign(__lev.club.ride.active.v) }, 1 / 60); });
   await shot('car-town');
   await act('e', 'vride');
   await page.evaluate(() => __lev.step(1, { x: 0, y: 0 }, 1 / 60));
   const outCar = await st();
-  check(outCar.ride === null && outCar.y > -18 && outCar.y < -17.4, `${tag}: вышел из машины на улице (${outCar.x}, ${outCar.y}, ${outCar.z})`);
+  const dCar = await page.evaluate(() => +__lev.club.lev.pos.distanceTo(__lev.club.ride.car.pos).toFixed(2));
+  check(outCar.ride === null && outCar.y > -18 && outCar.y < -17.4 && dCar < 2, `${tag}: вышел из машины на улице у двери (${outCar.x}, ${outCar.y}, ${outCar.z}; до машины ${dCar} м)`);
   await shot('town-walk');
   // В магазин: к двери, внутрь к прилавку; дверь открылась.
-  const shop = await page.evaluate(async () => { const m = await import('/src/town.js'); return { shop: m.shop.pos, door: [m.shop.pos[0] - 3, m.shop.pos[2] + 5.2] }; });
-  await walkTo([[shop.door[0], shop.door[1] + 2.2], [shop.door[0], shop.door[1] - 1.0], [shop.shop[0], shop.shop[2]]]);
+  const shop = await page.evaluate(() => { const m = __lev.club.world.points; return { shop: m.shop.pos, door: [m.shop.pos[0] - 3, m.shop.pos[2] + 5.2] }; });
+  await walkTo([[shop.door[0], shop.door[1] + 2.2], [shop.door[0], shop.door[1] + 1.2]]);
+  await page.evaluate(() => __lev.step(0.6, { x: 0, y: 0 }, 1 / 60)); // дверь успевает открыться
+  await shot('shop-door');
+  await walkTo([[shop.door[0], shop.door[1] - 1.0], [shop.shop[0], shop.shop[2]]]);
   const inShop = await page.evaluate(([x, z]) => { const L = __lev.club.lev, d = __lev.club.world.doors.reduce((b, d) => (Math.hypot(d.x - x, d.z - z) < Math.hypot(b.x - x, b.z - z) ? d : b)); return { d: Math.hypot(L.pos.x - x, L.pos.z - z), y: L.pos.y, room: __lev.club.world.room(L.pos.x, L.pos.z)?.kind, door: d.a }; }, [shop.shop[0], shop.shop[2]]);
   check(inShop.room === 'shop' && inShop.d < 0.6, `${tag}: зашёл в магазин к прилавку ${JSON.stringify(inShop)}`);
   await shot('shop-inside');
@@ -123,9 +136,12 @@ for (const [w, h] of [[1440, 900], [390, 844]].filter(([w]) => !ONLY || String(w
   check(outShop.z > 55, `${tag}: вышел из магазина на улицу (${outShop.x}, ${outShop.z})`);
   // Двери остальных домов — кадр у входа и внутри.
   for (const kind of ['cafe', 'gym', 'home']) {
-    const p = await page.evaluate(async (kind) => { const m = await import('/src/town.js'); const t = kind === 'gym' ? m.gymStations[1] : m[kind === 'home' ? 'bed' : kind]; const r = __lev.club.world.rooms.find((r) => r.kind === kind).rect; return { pos: kind === 'home' ? m.bed.stand : t.pos, rect: r }; }, kind);
+    const p = await page.evaluate((kind) => { const m = __lev.club.world.points; const t = kind === 'gym' ? m.gymStations[1] : m[kind === 'home' ? 'bed' : kind]; const r = __lev.club.world.rooms.find((r) => r.kind === kind).rect; return { pos: kind === 'home' ? m.bed.stand : t.pos, rect: r }; }, kind);
     const [a, b, c, d] = p.rect, cx = (a + c) / 2, front = b < 60 ? d + 0.6 : b - 0.6, inside = b < 60 ? d - 1.5 : b + 1.5;
-    await walkTo([[cx, front + (b < 60 ? 1.5 : -1.5)], [cx, inside], [p.pos[0], p.pos[2]]]);
+    await walkTo([[cx, front + (b < 60 ? 1.5 : -1.5)], [cx, front + (b < 60 ? 0.6 : -0.6)]]);
+    await page.evaluate(() => __lev.step(0.6, { x: 0, y: 0 }, 1 / 60));
+    await shot(`${kind}-door`);
+    await walkTo([[cx, inside], [p.pos[0], p.pos[2]]]);
     const room = await page.evaluate(() => __lev.club.world.room(__lev.club.lev.pos.x, __lev.club.lev.pos.z)?.kind);
     check(room === kind, `${tag}: зашёл в ${kind}`);
     await shot(`${kind}-inside`);
