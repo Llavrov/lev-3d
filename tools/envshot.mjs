@@ -14,7 +14,7 @@ import { join } from 'node:path';
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf('--' + k); return i < 0 ? d : argv[i + 1]; };
 const OUT = opt('out', 'test-out/env'), ONLY = opt('only', '')?.split(',').filter(Boolean), Q = opt('q', '');
-const PERF = argv.includes('--perf'), GPU = argv.includes('--gpu'), EVAL = opt('eval', ''), DIST = opt('dist', '');
+const PERF = argv.includes('--perf'), GPU = argv.includes('--gpu'), EVAL = opt('eval', ''), DIST = opt('dist', ''), URL = opt('url', 'http://localhost:3952'); // --url — свой dev-сервер
 mkdirSync(OUT, { recursive: true });
 
 // Ракурсы [глаз, цель]: корт z от −11.885 до +11.885, Лёва у z ≈ +12.7.
@@ -50,7 +50,7 @@ for (const [w, h, tag] of [[1440, 900, 'd'], ...(argv.includes('--desk') ? [] : 
   // Без горячей перезагрузки: рядом правят код другие агенты, и Vite перезагружал страницу посреди съёмки.
   await page.route('**/@vite/client', (r) => r.fulfill({ contentType: 'application/javascript', body: 'const h = () => ({ accept() {}, dispose() {}, prune() {}, invalidate() {}, on() {}, data: {} }); export const createHotContext = h, injectQuery = (u) => u, updateStyle = () => {}, removeStyle = () => {}; export class ErrorOverlay {}' }));
   if (DIST) await page.route('http://dist.test/**', (r) => { const f = join(DIST, new URL(r.request().url()).pathname.replace(/\/$/, '/index.html')); r.fulfill(existsSync(f) ? { path: f } : { status: 404 }); });
-  await page.goto(`${DIST ? 'http://dist.test' : 'http://localhost:3952'}/?debug&nolog${argv.includes('--ao') ? '' : '&noao'}${Q ? '&' + Q : ''}`); // --ao: с затенением GTAO, как на компьютере
+  await page.goto(`${DIST ? 'http://dist.test' : URL}/?debug&nolog${argv.includes('--ao') ? '' : '&noao'}${Q ? '&' + Q : ''}`); // --ao: с затенением GTAO, как на компьютере
   await page.waitForFunction(() => window.__lev?.game && !document.getElementById('play').disabled, null, { timeout: 180000 });
   await page.waitForTimeout(2500); // текстуры и меню-камера успевают встать
   if (EVAL) await page.evaluate(EVAL);
