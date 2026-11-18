@@ -292,7 +292,7 @@ export class Player {
     const speed = this.vel.length(), run = runOf(speed);
     const bodyRight = this.right.clone().applyAxisAngle(UP, this.bodyTurn);
     const half = STANCE * (1 - 0.5 * run) * (this.free ? 0.5 : 1) + (this.split ? (Math.abs(this.pos.z) < 7 ? 0.1 : 0.05) : 0) + this.sliding * 0.12; // у сетки сплит шире
-    const ideal = (f, t) => this.pos.clone().addScaledVector(this.vel, t + 0.04).addScaledVector(bodyRight, f.sign * half);
+    const ideal = (f, t) => this.onGround(this.pos.clone().addScaledVector(this.vel, t + 0.04).addScaledVector(bodyRight, f.sign * half));
     const F = Object.values(this.feet);
 
     if (this.split) { // прыжок: обе ступни вверх и приземление пошире
@@ -412,7 +412,7 @@ export class Player {
         let go; // путь тела за t: разгон не дальше желаемой скорости, торможение не дальше остановки
         if (a < 0 && sp + a * t < 0) go = (sp * sp) / (-2 * a);
         else { const top = Math.max(sp, this.wantV ?? sp), v1 = Math.min(sp + a * t, top), ta = a > 0 ? Math.min(t, (v1 - sp) / a) : t; go = sp * ta + 0.5 * a * ta * ta + v1 * (t - ta); }
-        return this.pos.clone().addScaledVector(u.divideScalar(Math.max(sp, 1e-3)), go + P.ahead + this.hipFwd).addScaledVector(bodyRight, f.sign * P.half);
+        return this.onGround(this.pos.clone().addScaledVector(u.divideScalar(Math.max(sp, 1e-3)), go + P.ahead + this.hipFwd).addScaledVector(bodyRight, f.sign * P.half));
       };
       const dur = Math.max(0.12, Math.min(1 - P.duty, left) * P.T), k0 = this.legFK(f, P, 0, dt);
       f.step = { t0: now, dur, from: f.pos.clone(), to: apart(f, aim(dur)), aim, P, c0: f.pos.clone().sub(k0.pos), l0: k0.lift - 0.07 * (f.heel ?? 0), heel: f.heel ?? 0, yaw: head };
@@ -420,6 +420,9 @@ export class Player {
     }
     return true;
   }
+
+  // Точка ступни на земле: на прогулке по буграм и настилу — высота грунта под ней, а не под тазом (club.ground).
+  onGround(p) { if (this.ground) p.y = this.ground(p.x, p.z); return p; }
 
   // Ступня в махе по мокапу: от тазобедренного сустава (прошлый кадр плюс сдвиг тела) бедром и голенью клипа (swingLeg),
   // в мире: pos — на земле под щиколоткой, lift — щиколотка над стойкой.

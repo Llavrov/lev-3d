@@ -22,6 +22,9 @@ const SC = {
   turn90: { mode: 'free', at: [0, 10], dur: 2.6, what: 'стоя, поворот направо и шаг', script: `(t) => (t > 0.3 && t < 2.2 ? { x: 1, y: 0 } : { x: 0, y: 0 })` },
   stop: { mode: 'free', at: [0, 14], dur: 3, what: 'трусца и резкая остановка', script: `(t) => (t > 0.1 && t < 1.6 ? { x: 0, y: 1.6 } : { x: 0, y: 0 })` },
   'court-run': { mode: 'court', at: [-6, 12.5], dur: 2.6, what: 'корт: рывок вправо 1,3 с и торможение', cam: 'top', script: `(t) => (t > 0.2 && t < 1.5 ? { x: 1, y: 0 } : { x: 0, y: 0 })` },
+  // По буграм газона клуба (рельеф groundAt): шаг и трусца по пути из world-check, ступни должны стоять на земле.
+  hill: { mode: 'club', at: [14, 6], dur: 7, what: 'по буграм газона: шаг, потом трусца', path: [[18, 9], [22, 4], [18, -4], [14, 6], [18, 9]],
+    script: `(t, P, path) => { const p = path[0]; if (!p) return { x: 0, y: 0 }; const dx = p[0] - P.pos.x, dz = p[1] - P.pos.z, d = Math.hypot(dx, dz); if (d < 0.4) path.shift(); const k = t < 3.5 ? 1 : 1.6; return { x: (dx / d) * k, y: (-dz / d) * k }; }` },
   'court-back': { mode: 'court', at: [0, 8], dur: 2.4, what: 'корт: бег назад к задней линии и стоп', cam: 'top', script: `(t) => (t > 0.2 && t < 1.4 ? { x: 0.3, y: -1 } : { x: 0, y: 0 })` },
 };
 
@@ -49,7 +52,7 @@ async function load() {
   await page.addStyleTag({ content: 'body > :not(canvas) { display: none !important }' });
   await page.evaluate(() => { document.getElementById('play').click(); window.__pause = true; window.__noDraw = true; });
   // Без окружения (горы, лес, клуб): кадр в программном рендере в разы быстрее, фигура на чистом корте видна лучше.
-  await page.evaluate(() => {
+  if (!argv.includes('--keep-env')) await page.evaluate(() => {
     const S = __lev.scene, court = S.children.find((o) => o.getObjectByName?.('fence-near'));
     for (const o of S.children) if ((o.isMesh && o.name !== 'ball') || o.isPoints || (o.isGroup && o !== court && o.children.length !== 1)) o.visible = false;
     for (const n of ['court2', 'fence']) { const o = court?.getObjectByName(n); if (o) o.visible = false; }
@@ -74,19 +77,22 @@ for (const [name, c] of Object.entries(SC)) {
 }
 async function capture(name, c, dir) {
   await page.evaluate(([c, BONES, WHO]) => {
-    const g = __lev.game, b = g.b, P = WHO === 'sub' ? __lev.club.sub : g[WHO], V = P.pos.constructor;
+    const g = __lev.game, b = g.b, V = g.lev.pos.constructor, c0 = __lev.club;
+    if (c.mode === 'club' && !c0.active) { c0.exit(g.opp, g.now); for (let i = 0; i < 300 && c0.mode === 'exit'; i++) __lev.step(0.1); } // Лёва вышел с корта: рельеф и препятствия клуба
+    const P = c.mode === 'club' ? c0.lev : WHO === 'sub' ? __lev.club.sub : g[WHO];
     for (const p of [g.lev, g.opp]) p.stroke = null;
     g.state = 'test'; b.live = false; g.ballMesh.visible = false;
     const s = P.side; // соперник смотрит в другую сторону: сценарий в его осях
-    if (c.mode === 'free') { P.free = true; P.seat = null; P.bounds = null; P.ground = null; P.idle = false; P.wrap.visible = P.racket.visible = true; }
+    if (c.mode === 'club') { P.place(new V(c.at[0], P.ground(c.at[0], c.at[1]), c.at[1])); P.bodyTurn = 0; P.turnVel = 0; }
+    else if (c.mode === 'free') { P.free = true; P.seat = null; P.bounds = null; P.ground = null; P.idle = false; P.wrap.visible = P.racket.visible = true; }
     else { P.free = false; }
-    P.place(new V(c.at[0] * s, 0, c.at[1] * s)); P.bodyTurn = 0; P.turnVel = 0;
+    if (c.mode !== 'club') { P.place(new V(c.at[0] * s, 0, c.at[1] * s)); P.bodyTurn = 0; P.turnVel = 0; }
     for (const p of [g.lev, g.opp, __lev.club.sub].filter((p) => p && p !== P)) { p.wrap.visible = p.racket.visible = false; }
-    const script = eval(c.script), t0 = g.now, h = 1 / 120;
+    const script = eval(c.script), t0 = g.now, h = 1 / 120, path = (c.path ?? []).map((p) => [...p]);
     const tip = new V(), Y = new V();
     window.__mo = {
       tick() {
-        const m = script(g.now - t0), mv = new V(m.x * s, 0, -m.y * s);
+        const m = script(g.now - t0, P, path), mv = new V(m.x * s, 0, -m.y * s);
         if (c.mode === 'court' && P === g.lev) return __lev.step(h, { x: m.x, y: m.y }, h); // сам двигает время и игру
         g.now += h; P.update(h, g.now, mv, null);
       },
@@ -98,14 +104,14 @@ async function capture(name, c, dir) {
         return { t: +(g.now - t0).toFixed(4), pos: P.pos.toArray(), vel: P.vel.toArray(), turn: P.bodyTurn, bones: B, rk,
           right: new V(1, 0, 0).applyQuaternion(P.wrap.quaternion).toArray(),
           feet: Object.fromEntries(Object.entries(P.feet).map(([k, f]) => [k, { pos: f.pos.toArray(), lift: f.lift, step: !!f.step }])),
-          sliding: P.sliding, kneeBack: a.Left.kneeBack || a.Right.kneeBack, elbowBack: a.Left.elbowBack || a.Right.elbowBack, grip: a.gripGap };
+          sliding: P.sliding, toeGround: P.ground ? ['Left', 'Right'].map((k) => { const q = B[k + 'ToeBase']; return q[1] - P.ground(q[0], q[2]); }) : null, kneeBack: a.Left.kneeBack || a.Right.kneeBack, elbowBack: a.Left.elbowBack || a.Right.elbowBack, grip: a.gripGap };
       },
       cam(view, i) {
         const p = P.pos, f = Math.sin(P.netYaw) < 0 ? -1 : 1;
         if (c.cam === 'top') return view === 'top' ? __lev.shot([p.x, 5.5, p.z + 1.2 * s], [p.x, 0.3, p.z]) : __lev.shot([p.x, 2.6, p.z + 4.8 * s], [p.x, 0.8, p.z - 0.4 * s]); // сверху и как камера игры
         const C = c.cam === 'fixed' ? new V(c.at[0] * s, 0, c.at[1] * s) : p;
-        if (view === 'back') __lev.shot([C.x, 1.5, C.z + 4.4 * s], [C.x, 0.85, C.z - 0.5 * s]);
-        else __lev.shot([C.x + 4.6 * s, 1.1, C.z], [C.x, 0.85, C.z]);
+        if (view === 'back') __lev.shot([C.x, 1.5 + p.y, C.z + 4.4 * s], [C.x, 0.85 + p.y, C.z - 0.5 * s]);
+        else __lev.shot([C.x + 4.6 * s, 1.1 + p.y, C.z], [C.x, 0.85 + p.y, C.z]);
       },
     };
   }, [c, BONES, WHO]);
@@ -155,6 +161,10 @@ function metrics(F) {
   const seg = (p, a, b) => { const ab = b.map((v, i) => v - a[i]), t = Math.max(0, Math.min(1, p.reduce((x, v, i) => x + (v - a[i]) * ab[i], 0) / ab.reduce((x, v) => x + v * v, 0))); return Math.hypot(...p.map((v, i) => v - a[i] - ab[i] * t)); };
   out.racketLegMinCm = Math.round(Math.min(...F.map((f) => Math.min(...f.rk.slice(1).flatMap((p) => ['Left', 'Right'].flatMap((s) => [seg(p, f.bones[s + 'UpLeg'], f.bones[s + 'Leg']) - 0.085, seg(p, f.bones[s + 'Leg'], f.bones[s + 'Foot']) - 0.06]))))) * 100);
   out.vMax = +Math.max(...F.map((f) => Math.hypot(f.vel[0], f.vel[2]))).toFixed(2);
+  // На рельефе: подушечка опорной ступни над грунтом под ней (в покое ~3–4 см — кость внутри кроссовка): разброс = ступня
+  // висит или утонула.
+  const tg = F.filter((f) => f.toeGround).flatMap((f) => ['Left', 'Right'].map((k, i) => (!f.feet[k].step && f.feet[k].lift < 0.003 ? f.toeGround[i] : null))).filter((v) => v != null);
+  if (tg.length) { out.toeGroundMinCm = +(Math.min(...tg) * 100).toFixed(1); out.toeGroundMaxCm = +(Math.max(...tg) * 100).toFixed(1); }
   out.gripMax = +Math.max(...F.map((f) => f.grip ?? 0)).toFixed(3);
   return out;
 }
