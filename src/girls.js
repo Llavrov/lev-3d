@@ -6,7 +6,8 @@
 // Разговор: «E — поговорить» у калитки корта 2 или рядом с девушкой в паузе, диалог внизу экрана (1–3 или нажатие),
 // память в localStorage. «Сыграем?» — матч с ней на корте 1 вместо соперника до двух геймов; «Кофе» — она идёт
 // на террасу к точке MEET и садится.
-// При слиянии с interact.js: каждую точку из this.spots — в register({ pos, r, label, act }), свою кнопку убрать.
+// При слиянии с interact.js: near() ищет, с кем говорить (калитка корта 2, девушка рядом, столик) — заменить на
+// register({ pos, r, label: () => 'Поговорить', act: () => this.act() }) для калитки и каждой девушки, кнопку #ctalk убрать.
 import * as THREE from 'three';
 import { Player } from './player.js';
 import { Game, AI } from './game.js';
@@ -22,10 +23,10 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const GZ = (GATE.z0 + GATE.z1) / 2;
 const Q = new URLSearchParams(typeof location !== 'undefined' ? location.search : ''); // в node (тесты) адреса нет
 
-// Кофе на террасе: где она сидит (у столика PLACES.table в env.js, x 11,7, z −26,2, настил 0,15 м), куда лицом
-// (как netYaw: лицом в (sin yaw, 0, cos yaw)) и высота сиденья над настилом. Стулья переделывает «жизнь клуба» —
-// при слиянии поставить сюда место стула.
-export const MEET = { pos: [10.95, 0.15, -25.55], yaw: Math.atan2(0.75, -0.65), h: 0.45 };
+// Кофе на террасе: стул у столика (PLACES.table в env.js, 11,7; −26,2): середина сиденья на настиле 0,15 м, куда лицом
+// (как netYaw: лицом в (sin yaw, 0, cos yaw), к столу) и высота сиденья над настилом. Замер по модели столика со стульями;
+// стулья переделывает «жизнь клуба» — при слиянии поставить сюда место стула. lev — второй стул, напротив.
+export const MEET = { pos: [11.97, 0.15, -25.68], yaw: -2.66, h: 0.49, lev: { pos: [11.54, 0.15, -26.76], yaw: 0.28 } };
 // С калитки корта 2 на террасу по дорожкам клуба (PATHS в env-club.js), мир.
 const TO_TERRACE = [[-28.7, 3.99], [-26.8, 3.99], [-25.6, 14], [-23, 23.6], [-12, 25.3], [-2, 25.7], [6, 24.7], [10.3, 21.6], [11.4, 15.8], [10.85, 10.2], [10.85, -19.3], [10.6, -23.8]].map(([x, z]) => V(x, z));
 
@@ -153,7 +154,7 @@ export class Girls {
     Object.assign(this, { scene, game, club, camera, sound, loader });
     this.stage = new THREE.Group(); this.stage.name = 'girls'; scene.add(this.stage);
     this.mem = load();
-    this.girls = []; this.acc = 0; this.seen = true; this.shadows = null; this.dlg = null; this.match = null; this.spots = [];
+    this.girls = []; this.acc = 0; this.seen = true; this.shadows = null; this.dlg = null; this.match = null;
     this.sphere = new THREE.Sphere(V(COURT2_X, 0, 1), 21); this.fr = new THREE.Frustum(); this.m4 = new THREE.Matrix4();
     this.ui = makeUi();
     this.ui.btn.addEventListener('click', (e) => { e.currentTarget.blur(); this.act(); });
@@ -428,7 +429,7 @@ export class Girls {
     this.move(g, 'world', g.c.side, this.world(g));
     Object.assign(g.p, { free: true, idle: false, stroke: null, ground: (x, z) => (this.club.obs ? this.club.ground(x, z) : 0) });
     const [mx, , mz] = MEET.pos, f = V(Math.sin(MEET.yaw), Math.cos(MEET.yaw));
-    g.path = [V(COURT2_X + GATE.x - 0.6, GZ), V(COURT2_X + GATE.x + 0.8, GZ), ...TO_TERRACE, V(mx, mz).addScaledVector(f, 0.45)];
+    g.path = [V(COURT2_X + GATE.x - 0.6, GZ), V(COURT2_X + GATE.x + 0.8, GZ), ...TO_TERRACE, V(mx, mz).addScaledVector(f, 0.22)];
     g.wait = null; g.back = false;
     this.say(g, g.c.id === 'alina' ? 'Иду. Не опаздывай.' : 'Бегу! Займи столик.', 3);
   }
@@ -450,7 +451,7 @@ export class Girls {
           g.path = null;
           if (g.back) return this.home(g); // дошла до калитки корта 2
           const [mx, my, mz] = MEET.pos, f = V(Math.sin(MEET.yaw), Math.cos(MEET.yaw)), r = V(-Math.cos(MEET.yaw), Math.sin(MEET.yaw));
-          p.seat = { at: V(mx, mz, my), from: p.pos.clone(), yaw: MEET.yaw, h: MEET.h, w: 0, feet: [-1, 1].map((s) => V(mx, mz, my).addScaledVector(f, 0.42).addScaledVector(r, s * 0.15)) };
+          p.seat = { at: V(mx, mz, my), from: p.pos.clone(), yaw: MEET.yaw, h: MEET.h, w: 0, feet: [-1, 1].map((s) => V(mx, mz, my).addScaledVector(f, 0.3).addScaledVector(r, s * 0.13)) };
           g.wait = now + 240;
         } else move = d.divideScalar(Math.max(len, 1e-6)).multiplyScalar(g.path.length > 1 ? 1.25 : Math.min(1.25, len * 2.5 + 0.15));
       }

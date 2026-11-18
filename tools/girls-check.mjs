@@ -110,11 +110,23 @@ if (ONLY.some((k) => ['talk', 'match', 'coffee'].includes(k))) for (const [w, h]
     });
     check(m.match && m.opp && !m.club, `${tag}: матч с ней на корте 1 (${JSON.stringify(m)})`);
     await page.evaluate(() => { __lev.game.autoLev = new (__lev.game.ai.constructor)(__lev.game.lev, __lev.game); });
-    const res = await page.evaluate(() => { const G = __lev.girls; let n = 0; for (let i = 0; i < 6000 && G.match; i++) { __lev.step(0.05); } const g = __lev.game; return { done: !G.match, oppBack: g.opp !== G.girls[0].p && g.opp.wrap.visible, where: G.girls[0].where, say: document.querySelector('#gtalk .say').textContent, mem: G.girls[0].mem }; });
+    // Кадр матча с ней: камера матча за Лёвой, она на той стороне.
+    await page.evaluate(() => { const g = __lev.game; for (let i = 0; i < 400 && !(g.state === 'rally' && g.rally >= 2); i++) __lev.step(0.05); });
+    await page.evaluate(() => __lev.render());
+    await page.screenshot({ path: join(OUT, `match-${tag}.png`) });
+    const P = await page.evaluate(() => __lev.game.opp.pos.toArray());
+    await shot(page, `match-her-${tag}`, [P[0] + 2.6, 1.5, P[2] + 2.2], [P[0], 0.95, P[2]]);
+    const res = await page.evaluate(() => { const G = __lev.girls, g = __lev.game, shots = () => window.__events.filter((e) => e.type === 'shot' && e.who === 'opp').length, hits = () => window.__events.filter((e) => e.type === 'contact' && e.who === 'opp'), n0 = shots(), h0 = hits().length;
+      let last = null; for (let i = 0; i < 16000 && G.match; i++) { __lev.step(0.05); if (G.match) last = [g.games.get(g.lev), g.games.get(g.opp), g.pts.get(g.lev), g.pts.get(g.opp)]; }
+      const c = hits().slice(h0); return { done: !G.match, last, herShots: shots() - n0, herHit: c.length ? +(c.filter((e) => e.hit).length / c.length).toFixed(2) : null, oppBack: g.opp !== G.girls[0].p && g.opp.wrap.visible, where: G.girls[0].where, say: document.querySelector('#gtalk .say').textContent, mem: G.girls[0].mem }; });
     check(res.done && res.oppBack && res.where === 'court', `${tag}: матч доигран, соперник вернулся (${JSON.stringify(res)})`);
   }
   if (ONLY.includes('coffee') && !phone) {
     // Кофе: Соня идёт с корта 2 на террасу и садится у столика; Лёва подходит — разговор за столиком.
+    // Лёва снова на прогулке (после матча мог остаться на корте).
+    await page.evaluate(() => { const G = __lev.girls; if (G.match) G.endMatch('left', __lev.game.now); G.close(); });
+    if (!(await page.evaluate(() => __lev.club.active))) { await page.keyboard.press('q'); await page.waitForFunction(() => __lev.club.mode === 'exit', null, { timeout: 30000 }); }
+    await page.evaluate(() => { for (let i = 0; i < 300 && __lev.club.mode !== 'walk'; i++) __lev.step(0.1); });
     const c = await page.evaluate(() => {
       const G = __lev.girls, g = G.girls[1]; G.close(); G.startCoffee(g);
       let t = 0; for (; t < 240 && !(g.p.seat?.w === 1); t += 0.25) __lev.step(0.25, { x: 0, y: 0 });
