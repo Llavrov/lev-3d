@@ -94,6 +94,10 @@
   #pad #btop, #pad #bcut, #pad #bdrop { min-width: 64px; min-height: 44px; border-radius: 22px; font-size: 13px; }
   #pad #btop.on, #pad #bcut.on { background: var(--accent); color: #18210c; }
   #pad #bdrop { grid-column: span 2; width: 100%; }
+  /* Подача Лёвы: «Форхенд» и «Бэкхенд» становятся «Сверху» и «Снизу», переключатели не нужны */
+  #pad .s, body.serving #pad .r { display: none; }
+  body.serving #pad .s { display: inline; }
+  body.serving #btop, body.serving #bcut, body.serving #bdrop { visibility: hidden; }
   #joy { position: fixed; left: 0; top: 0; width: 120px; height: 120px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .5); opacity: 0; pointer-events: none; transition: opacity .15s; }
   #joy.on { opacity: 1; }
   #knob { position: absolute; left: 36px; top: 36px; width: 48px; height: 48px; border-radius: 50%; background: rgba(255, 255, 255, .7); }
@@ -124,8 +128,8 @@
   <button id="btop" aria-pressed="false">Кручёный</button>
   <button id="bcut" aria-pressed="false">Резаный</button>
   <button id="bdrop">Укороч.</button>
-  <button id="bbh">Бэкхенд</button>
-  <button id="bfh">Форхенд</button>
+  <button id="bbh"><span class="r">Бэкхенд</span><span class="s">Снизу</span></button>
+  <button id="bfh"><span class="r">Форхенд</span><span class="s">Сверху</span></button>
 </div>
 <div id="joy"><div id="knob"></div></div>
 
@@ -144,7 +148,7 @@
       <span><kbd>L</kbd> укороченный</span>
       <span><kbd>I</kbd> кручёный</span>
       <span><kbd>U</kbd> резаный</span>
-      <span><kbd>Пробел</kbd> подача</span>
+      <span>подача: <kbd>K</kbd> сверху, <kbd>J</kbd> снизу</span>
     </div>
     <p class="touch-only">Слева ведёшь пальцем&nbsp;— бег, справа&nbsp;— удары</p>
     <button id="play" disabled>Играть</button>

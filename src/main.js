@@ -1,5 +1,6 @@
 // Теннис: Лёва против соперника на грунте. WASD/стрелки — бег, K — форхенд, J — бэкхенд, L — укороченный,
-// Shift + удар — кручёный, высокий мяч — смэш сам. Направление в момент удара — куда полетит мяч, Пробел — подача.
+// Shift + удар — кручёный, высокий мяч — смэш сам. Направление в момент удара — куда полетит мяч.
+// Подача: K или пробел — сверху (держишь — сильнее), J — снизу; стрелки — широко, в «T» или в тело.
 // На телефоне — джойстик и кнопки. В dev каждый розыгрыш пишется в logs/play-<дата>.jsonl (vite.config.js).
 // Проверка поз: ?pose=fh&s=-0.17&cam=1 (s — секунды от удара). ?auto — Лёвой играет ИИ.
 import * as THREE from 'three';
@@ -249,7 +250,7 @@ const hud = {
     }
   },
   hint(t) { $('hint').textContent = t; },
-  serveHint: matchMedia('(pointer: coarse)').matches ? 'Удар — подача' : 'Пробел — подача', // на телефоне пробела нет, подаёт любая кнопка удара
+  serveHint: matchMedia('(pointer: coarse)').matches ? 'Подача\u00a0— кнопкой «Сверху» или\u00a0«Снизу»' : 'K\u00a0— подача сверху, J\u00a0— снизу', // на телефоне кнопки ударов на подаче подписаны «Сверху» и «Снизу»
   flash(t, good) {
     const el = $('msg');
     el.textContent = t; el.className = good ? 'show good' : 'show';
@@ -295,7 +296,7 @@ function aimLev() {
   const z = a.y > 0.3 ? -10.6 : a.y < -0.3 ? -6.8 : -9.4;
   return new THREE.Vector3(x, 0, z);
 }
-let game = null, started = false;
+let game = null, started = false, servingUi = false;
 const sound = makeSound();
 
 // Журнал игры: нажатия, удары, промахи, очки и раз в 0,2 с положение и ввод. Читается для настройки управления.
@@ -317,7 +318,12 @@ const log = (() => {
 function hit(kind, drop = false, key = '', spin = null) {
   if (!game || !started || club?.active) return;
   sound.unlock();
-  if (game.state === 'serve' && game.server === game.lev) return game.serve(game.lev, game.now);
+  if (game.state === 'serve' && game.server === game.lev) { // J (бэкхенд) — снизу, остальное — сверху; держишь — копишь силу
+    game.serve(game.lev, game.now, kind === 'bh' ? 'under' : 'over');
+    const st = game.lev.stroke;
+    if (st?.serve === 'over' && game.serving === game.lev) Object.assign(st, { holdTo: null, holdKey: key || 'touch' });
+    return;
+  }
   if (key === 'Space') return; // пробел только подаёт: раньше в розыгрыше он бил форхендом и перебивал нажатый бэкхенд
   const lev = game.lev, cut = !drop && (spin === 'cut' || sliceMode || held('AltLeft', 'AltRight')), top = !drop && !cut && (spin === 'top' || topMode || held('ShiftLeft', 'ShiftRight'));
   if (kind === 'auto') {
@@ -466,7 +472,7 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
   const opp = oppGltf
     ? new Player(scene, oppGltf, { side: -1, height: 1.85, racketColor: '#1d4f91' })
     : new Player(scene, gltf, { side: -1, racketColor: '#1d4f91', cloth: '#22324a' });
-  game = new Game({ lev, opp, ballMesh, hud, sound, aimLev, log, marks, dust });
+  game = new Game({ lev, opp, ballMesh, hud, sound, aimLev, axes: () => axes(), log, marks, dust });
   game.onShot = (p, power, at) => powerFx.shot(p, power, at);
   opp.measure();
   log('start', { reach: lev.measure(), opp: !!oppGltf, racket: myRacket, w: innerWidth, h: innerHeight, touch: matchMedia('(pointer: coarse)').matches });
@@ -582,6 +588,8 @@ renderer.setAnimationLoop(() => {
       game.opp.update(dt, game.now, new THREE.Vector3(), game.b);
     }
     if (club.active) clubCam(dt); else if (started) follow(dt); else menuCam(dt);
+    const srv = started && game.state === 'serve' && game.server === game.lev && !game.autoLev && game.drill?.mode !== 'wall';
+    if (srv !== servingUi) { servingUi = srv; document.body.classList.toggle('serving', srv); } // кнопки ударов на подаче — «Сверху» и «Снизу»
     showLanding(game.now); showSpot(game.now, dt);
     aimGuide.update(dt, game.now);
     powerFx.update(dt, game.now);
