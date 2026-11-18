@@ -61,7 +61,7 @@ body.menu #me { display: none; }
   #shop { align-items: flex-end; }
   #shop .sheet { height: 58%; border-radius: 16px 16px 0 0; padding-top: 14px; }
 }
-body.busy #cbar, body.busy #hint, body.busy #pad, body.busy #me, body.busy #hud { visibility: hidden; } /* магазин и зал — своим экраном */
+body.busy #cbar, body.busy #hint, body.busy #pad, body.busy #me, body.busy #hud, body.busy #msg { visibility: hidden; } /* магазин и зал — своим экраном */
 
 /* Зал: сверху «Закончить» и название станции, снизу кольцо такта (на телефоне это кнопка) и счёт повторов. */
 #gym { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #fff; text-shadow: 0 1px 8px rgba(0, 0, 0, .45); }

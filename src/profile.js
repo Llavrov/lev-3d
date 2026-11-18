@@ -6,7 +6,7 @@ import { stats, STATS, STAT_NAMES, Stats } from './stats.js';
 import { wallet, fmtCHF, earn, spend } from './economy.js';
 import { outfit, ITEM, dress, showBag } from './outfit.js';
 import { initShop, openShop, shopOpen, closeShop } from './shop.js';
-import { initGym, openGym, gymOpen, gymKey, gymTick, DEBUG_GYM } from './gym.js';
+import { initGym, openGym, gymOpen, gymKey, gymTick, placeTown, STATIONS } from './gym.js';
 
 const $ = (id) => document.getElementById(id);
 const pct = (k) => `${k >= 1 ? '+' : '−'}${Math.round(Math.abs(k - 1) * 1000) / 10}%`.replace('.', ',');
@@ -22,7 +22,7 @@ export function initProfile(ctx) {
     if (Q.has('stats')) for (const k of STATS) stats.lvl[k] = Math.min(10, Math.max(1, +Q.get('stats') || 1));
     if (Q.has('fatigue')) stats.fatigue = Math.min(100, Math.max(0, +Q.get('fatigue') || 0));
     if (Q.has('stats') || Q.has('fatigue')) stats.save = () => {};
-    window.__eco = { stats, wallet, outfit, earn, spend, openShop, openGym, stations: DEBUG_GYM };
+    window.__eco = { stats, wallet, outfit, earn, spend, openShop, openGym, stations: TOWN_GYM, spots: SPOTS };
   }
   document.body.insertAdjacentHTML('beforeend', `
     <button id="me" type="button" aria-label="Характеристики Лёвы"><span class="cash" id="meCash"></span><kbd>C</kbd>
@@ -31,6 +31,7 @@ export function initProfile(ctx) {
       <div class="head"><b id="panelH">Лёва</b><button class="x" type="button" aria-label="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
       <dl id="panelStats"></dl><p class="worn" id="panelWorn"></p></div></div>`);
   $('me').addEventListener('click', (e) => { e.currentTarget.blur(); togglePanel(); });
+  makeActButton();
   $('panel').addEventListener('click', (e) => { if (e.target.id === 'panel' || e.target.closest('.x')) togglePanel(false); });
   dress(L);
   P.sta0 = L.stamina;
@@ -76,6 +77,7 @@ export function tick(dt, now) {
   if (g.lev !== L) [P.games, P.won] = played(g); // замена играет — не наши геймы
   P.state = g.state;
   if (now > P.saveAt) { P.saveAt = now + 3; stats.save(); }
+  if (C.club.world && !TOWN_GYM.length) townSpots(C.club.world);
   gymTick(dt);
 }
 
@@ -98,9 +100,10 @@ export function key(e) {
   if (shopOpen()) { if (e.code === 'Escape') closeShop(); return true; }
   if (e.code === 'KeyC' && !e.metaKey && !e.ctrlKey) { togglePanel(); return true; }
   if (P.panel && e.code === 'Escape') { togglePanel(false); return true; }
+  if (e.code === 'KeyE' && near) { act(); return true; }
   if (!window.__eco) return false;
   if (e.code === 'KeyB') { openShop(); return true; }
-  if (e.code === 'KeyG' && C.club.mode === 'walk') { const i = (P.gi = ((P.gi ?? -1) + 1) % DEBUG_GYM.length); openGym(DEBUG_GYM[i]); return true; }
+  if (e.code === 'KeyG' && C.club.mode === 'walk' && TOWN_GYM.length) { const i = (P.gi = ((P.gi ?? -1) + 1) % TOWN_GYM.length); openGym(TOWN_GYM[i]); return true; } // в зал города сразу
   return false;
 }
 
@@ -116,6 +119,7 @@ export function view(dt, camera) {
   if (s !== hud.sta) { hud.sta = s; $('meSta').firstChild.style.transform = `scaleX(${s})`; $('meSta').classList.toggle('low', s < 0.4); }
   if (f !== hud.fat) { hud.fat = f; $('meFat').firstChild.style.transform = `scaleX(${f / 100})`; $('meFat').classList.toggle('high', f > 70); }
   document.body.classList.toggle('busy', busy());
+  nearSpot();
 }
 
 function togglePanel(on = !P.panel) {
@@ -134,4 +138,37 @@ function fillPanel() {
   if (outfit.balls) items.push(`Новые мячи ещё ${outfit.balls}&nbsp;${plural(outfit.balls, 'матч', 'матча', 'матчей')}`);
   $('panelWorn').innerHTML = 'Надето: ' + items.join(' · ').replace(/ (в|и|с|на|к) /g, ' $1&nbsp;');
 }
+// ---------- Точки города: прилавок, кафе, кровать, станции зала (town.js) ----------
+// Своя маленькая система «E — действие» до общей interact.js: точки в формате её register({ pos, r, label(state), act(state, now) }),
+// при слиянии — заменить spot на register одной строкой и убрать кнопку #cact.
+const SPOTS = [], TOWN_GYM = [];
+const spot = (d) => SPOTS.push(d);
+let near = null, actBtn = null;
+const CAFE = 9; // кофе с булочкой, CHF
+function townSpots(town) {
+  const { shop, cafe, bed, gymStations } = town.points ?? {};
+  if (!gymStations) return;
+  TOWN_GYM.push(...placeTown(gymStations, C.scene, town.obs));
+  spot({ pos: shop.pos, r: shop.r, label: () => 'Магазин', act: () => openShop() });
+  spot({ pos: cafe.pos, r: cafe.r, label: () => `Перекусить · ${fmtCHF(CAFE)}`, act: () => {
+    if (!wallet.spend(CAFE, 'Кафе: кофе и булочка')) return C.game.hud.flash('Не хватает денег', false);
+    stats.eat('coffee'); stats.eat('food'); C.game.hud.flash('Кофе и булочка: усталость −37', true);
+  } });
+  spot({ pos: bed.stand, r: bed.r, label: () => 'Спать', act: () => { stats.sleep(); C.lev.stamina = 1; C.game.hud.flash('Выспался: усталости нет', true); } });
+  for (const s of TOWN_GYM) spot({ pos: s.pos.toArray(), r: 1.3, label: () => STATIONS[s.kind].name, act: () => openGym(s) });
+}
+// Ближайшая точка в радиусе — только на прогулке, не сидя и не в магазине или зале.
+function nearSpot() {
+  const L = C.lev, ok = C.club.mode === 'walk' && !L.seat && !busy();
+  let best = null, bd = Infinity;
+  if (ok) for (const s of SPOTS) { const d = Math.hypot(L.pos.x - s.pos[0], L.pos.z - s.pos[2]); if (d < s.r && Math.abs(L.pos.y - s.pos[1]) < 1.5 && d < bd) { best = s; bd = d; } }
+  if (best !== near) { near = best; actBtn.hidden = !near; if (near) actBtn.firstChild.textContent = near.label(); }
+}
+function act() { const s = near; near = null; actBtn.hidden = true; s?.act(C.game.state, C.game.now); }
+function makeActButton() {
+  actBtn = document.createElement('button'); actBtn.id = 'cact'; actBtn.type = 'button'; actBtn.hidden = true; actBtn.innerHTML = '<span></span><kbd>E</kbd>';
+  actBtn.addEventListener('click', (e) => { e.currentTarget.blur(); act(); });
+  $('cbar')?.append(actBtn);
+}
+
 export const plural = (n, one, few, many) => { const a = n % 10, b = n % 100; return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many; };

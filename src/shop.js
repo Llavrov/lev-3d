@@ -28,6 +28,7 @@ export const shopOpen = () => open;
 export function openShop() {
   if (!C || open) return;
   open = true; $('shop').hidden = false; last = null; render();
+  const L = C.lev; if (L.free && !L.seat) { L.bodyTurn += Math.PI; L.turnVel = 0; L.vel.set(0, 0, 0); } // у прилавка — спиной к нему: в кадре весь Лёва, а не прилавок
 }
 
 function act(what, id) {
@@ -66,7 +67,7 @@ function view(dt, camera) {
   cam = camera;
   const L = C.lev, P = L.pos, yaw = L.netYaw + L.bodyTurn, t = performance.now() / 1000;
   const W = innerWidth, H = innerHeight, phone = W <= 640, d = phone ? 4.9 : 3.1, a = yaw + 0.35 + 0.15 * Math.sin(t * 0.3);
-  eye.set(P.x + Math.sin(a) * d, P.y + 1.1, P.z + Math.cos(a) * d);
+  eye.set(P.x + Math.sin(a) * d, P.y + 1.1, P.z + Math.cos(a) * d); C.club?.world?.camClamp?.(eye, P); // в доме — не за стеной
   const k = !last || !dt ? 1 : 1 - Math.exp(-dt * 4);
   if (!last) { last = true; camera.position.copy(eye); }
   camera.position.lerp(eye, k); look.set(P.x, P.y + 0.92, P.z); camera.lookAt(look);

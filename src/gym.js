@@ -19,8 +19,10 @@ export const STATIONS = {
   squat: { name: 'Присед со\u00a0штангой', T: 1.8, xp: { speed: 0.7, power: 0.5 }, tire: 0.65 },
   rope: { name: 'Скакалка', T: 0.62, xp: { stamina: 0.9, speed: 0.35 }, tire: 0.35 },
 };
-// Временная площадка в клубе под ?debug (за спиной Лёвы, за забором): в городе станции ставит town.js.
-export const DEBUG_GYM = [['bench', -3, 25.5], ['pullup', 0, 25.5], ['squat', 3, 25.5], ['rope', 6, 25.5]].map(([kind, x, z]) => ({ kind, pos: new THREE.Vector3(x, 0, z), yaw: Math.PI }));
+// Зал в городе: площадки town.gymStations по порядку — жим, присед, турник, скакалка; пятая свободна (под будущий снаряд).
+const TOWN_KINDS = ['bench', 'squat', 'pullup', 'rope'];
+// Площадь, которую снаряд занимает на полу (в осях станции): x0, z0, x1, z1 — не пройти насквозь.
+const FOOT = { bench: [-0.65, -0.8, 0.65, 0.4], squat: [-0.75, -0.65, 0.75, -0.35], pullup: [-0.78, -0.2, 0.78, 0.3], rope: [-0.2, -0.2, 0.2, 0.2] };
 
 // ---------- Снаряды кодом ----------
 const metal = () => new THREE.MeshStandardMaterial({ color: '#b9bdc2', metalness: 0.85, roughness: 0.35 });
@@ -87,18 +89,31 @@ export function initGym(ctx) {
   $('gymMore').addEventListener('click', () => startSet());
   ctx.gymView = view;
   // Станции для ?debug — во временном углу клуба.
-  if (new URLSearchParams(location.search).has('debug')) { for (const s of DEBUG_GYM) place(s, ctx.scene); window.__gymS = () => S; window.__gymT = () => S?.t ?? 0; }
+  if (new URLSearchParams(location.search).has('debug')) { window.__gymS = () => S; window.__gymT = () => S?.t ?? 0; }
 }
 // Поставить станцию в сцену (город зовёт так же или ставит buildStation сам и передаёт { kind, pos, yaw, group }).
 // pos — Vector3, {x, z} или [x, z]; yaw — куда смотрит Лёва на станции (как netYaw), по умолчанию к +z.
 export function place(s, scene) {
-  const p = s.pos; if (!p?.isVector3) s.pos = Array.isArray(p) ? new THREE.Vector3(p[0], 0, p[1]) : new THREE.Vector3(p?.x ?? 0, 0, p?.z ?? 0);
+  const p = s.pos; if (!p?.isVector3) s.pos = Array.isArray(p) ? (p.length > 2 ? new THREE.Vector3(...p) : new THREE.Vector3(p[0], 0, p[1])) : new THREE.Vector3(p?.x ?? 0, p?.y ?? 0, p?.z ?? 0);
   s.yaw ??= 0;
   s.group ??= buildStation(s.kind);
   s.group.position.copy(s.pos); s.group.rotation.y = s.yaw;
   if (!s.group.parent) scene.add(s.group);
   return s;
 }
+
+// Снаряды в городской зал (town.js: gymStations — { pos: [x, y, z], yaw }) и их площадь — в препятствия города.
+export function placeTown(points, scene, obs) {
+  return TOWN_KINDS.map((kind, i) => {
+    const s = place({ kind, pos: points[i].pos, yaw: points[i].yaw }, scene), [a, b, c, d] = FOOT[kind];
+    const pts = [[a, b], [c, b], [a, d], [c, d]].map(([x, z]) => new THREE.Vector3(x, 0, z).applyAxisAngle(UP, s.yaw).add(s.pos));
+    obs?.boxes.push([Math.min(...pts.map((v) => v.x)), Math.min(...pts.map((v) => v.z)), Math.max(...pts.map((v) => v.x)), Math.max(...pts.map((v) => v.z))]);
+    return s;
+  });
+}
+
+// Где Лёва стоит у станции до и после подхода (вне снаряда): у скамьи сбоку, у турника сзади, у остальных — на месте.
+export const standOf = (s) => new THREE.Vector3(...(s.kind === 'bench' ? [-0.75, 0, 0.1] : [0, 0, s.kind === 'pullup' ? -0.6 : 0.35])).applyAxisAngle(UP, s.yaw).add(s.pos);
 
 // Открыть станцию: Лёва встаёт на неё (только на прогулке — в матче он на корте), ракетку кладёт.
 export function openGym(station) {
@@ -107,8 +122,7 @@ export function openGym(station) {
   const L = C.lev, st = STATIONS[station.kind];
   S = { station, st, kind: station.kind, t: 0, judged: [], stand: L.pos.clone() };
   // Где Лёва стоит после подхода: у скамьи сбоку, у остальных — на месте упражнения.
-  const loc = (x, z) => new THREE.Vector3(x, 0, z).applyAxisAngle(new THREE.Vector3(0, 1, 0), station.yaw).add(station.pos);
-  L.pos.copy(station.kind === 'bench' ? loc(-0.75, 0.1) : loc(0, station.kind === 'pullup' ? -0.6 : 0.35)); L.vel.set(0, 0, 0);
+  L.pos.copy(standOf(station)); L.vel.set(0, 0, 0);
   L.bodyTurn = Math.atan2(Math.sin(station.yaw - L.netYaw), Math.cos(station.yaw - L.netYaw)); L.turnVel = 0;
   L.racket.visible = false;
   if (station.group.userData.idle) station.group.userData.idle.visible = false;
@@ -295,7 +309,7 @@ const POSE = {
     const pts = [];
     for (let i = 0; i <= 40; i++) {
       const s = i / 40, p = ends[0].clone().lerp(ends[1], s).addScaledVector(dirTh, 1.02 * Math.pow(Math.sin(Math.PI * s), 0.6));
-      p.y = Math.max(0.012, p.y); pts.push(p);
+      p.y = Math.max(st.pos.y + 0.012, p.y); pts.push(p); // по полу, а не сквозь
     }
     S.rope.geometry.dispose(); S.rope.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 60, 0.005, 5);
   },
@@ -307,7 +321,7 @@ const eye = new THREE.Vector3(), look = new THREE.Vector3(), at = new THREE.Vect
 const CAM = { bench: [2.3, 1.35, 0.6, 0.75], pullup: [2.6, 1.8, 2.6, 1.7], squat: [2.4, 1.3, 2.4, 0.95], rope: [1.2, 1.3, 3.2, 0.95] };
 function view(dt, camera) {
   const s = S.station, [x, y, z, ly] = CAM[s.kind], phone = innerWidth / innerHeight < 0.8, k = phone ? 1.35 : 1;
-  eye.copy(local(s, x * k, y, z * k)); at.copy(local(s, 0, ly, s.kind === 'bench' ? -0.1 : 0));
+  eye.copy(local(s, x * k, y, z * k)); at.copy(local(s, 0, ly, s.kind === 'bench' ? -0.1 : 0)); C.club?.world?.camClamp?.(eye, s.pos); // в зале — не за стеной
   const a = !S.last || !dt ? 1 : 1 - Math.exp(-dt * 4);
   if (!S.last) { S.last = true; camera.position.copy(eye); look.copy(at); }
   camera.position.lerp(eye, a); look.lerp(at, a); camera.lookAt(look);

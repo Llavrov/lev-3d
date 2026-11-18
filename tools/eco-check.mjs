@@ -17,6 +17,7 @@ const check = (ok, what) => { report.push(`${ok ? 'ок ' : 'НЕТ'} ${what}`);
 async function open(w, h, q = '') {
   const phone = w < 500;
   const page = await browser.newPage({ viewport: { width: w, height: h }, ...(phone ? { isMobile: true, hasTouch: true } : {}) });
+  page.setDefaultTimeout(180000); // загруженная машина: кадр программной графикой бывает дольше 30 с
   page.errs = []; page.on('pageerror', (e) => page.errs.push(e.message));
   await page.goto(`${URL}/?debug&nolog&noao${q}`, { timeout: 120000 });
   await page.waitForFunction(() => window.__lev?.game?.lev?.contactPt && window.__eco && !document.getElementById('play').disabled, null, { timeout: 120000 });
@@ -38,9 +39,13 @@ if (ONLY.includes('ui')) for (const [w, h] of [[1440, 900], [390, 844]]) {
   const rkName = await page.evaluate(() => document.getElementById('rkName').textContent);
   await page.screenshot({ path: join(OUT, `menu-${tag}.png`) });
   check(rk0 && !rk1 && rkName === 'Неон', `${tag}: на старте ракетки только купленные (одна — без выбора, две — стрелки, выбрана ${rkName})`);
+  const menuHud = await page.evaluate(() => ['pad', 'me', 'hud'].map((id) => { const e = document.getElementById(id); return e ? [id, getComputedStyle(e).display, getComputedStyle(e).opacity] : [id, 'нет']; }));
+  check(menuHud.every(([id, d, o]) => d === 'none' || o === '0' || d === 'нет'), `${tag}: на стартовом экране кнопок ударов, сил и счёта нет ${JSON.stringify(menuHud)}`);
   await page.evaluate(() => { __eco.outfit.wear('red'); localStorage.clear(); });
   await page.evaluate(() => { document.getElementById('play').click(); window.__pause = true; window.__noDraw = true; });
-  await page.waitForTimeout(800); // стартовый экран гаснет за 0,4 с: иначе в кадре меню поверх игры
+  // Стартовый экран гаснет переходом 0,4 с, а безголовый Chromium с программной графикой под нагрузкой почти не
+  // продвигает переходы (кадр — секунды): в кадре оставалось меню поверх игры. В тесте гасим без перехода.
+  await page.evaluate(() => { const s = document.getElementById('start'); s.style.transition = 'none'; return getComputedStyle(s).opacity; });
   // Розыгрыш: за Лёву ИИ (он же подаёт), дождаться ударов, чтобы силы ушли.
   await page.evaluate(() => { const g = __lev.game; g.autoLev = new g.ai.constructor(g.lev, g); if (g.server === g.lev) g.serve(g.lev, g.now); for (let i = 0; i < 300 && g.rally < 4; i++) __lev.step(0.05); g.autoLev = null; });
   await page.shot(`match-${tag}`);
@@ -98,6 +103,15 @@ if (ONLY.includes('gym')) for (const [w, h] of [[1000, 1000], [390, 844]]) {
   const page = await open(w, h), tag = `${w}`;
   await page.evaluate(() => { document.getElementById('play').click(); window.__pause = true; window.__noDraw = true; });
   await walkOut(page);
+  // Зал в городе: город грузится отдельным куском после выхода с корта, станции встают, когда он готов.
+  for (let i = 0; i < 120 && !(await page.evaluate(() => { __lev.step(0.05); return __eco.stations.length; })); i++) await page.waitForTimeout(500);
+  check(await page.evaluate(() => __eco.stations.length === 4), `${tag}: станции зала стоят в городе`);
+  // Точки города: у прилавка, в кафе, у кровати и у станций — кнопка действия (E); в кафе E — кофе с булочкой.
+  const spots = await page.evaluate(() => __eco.spots.map((s) => { const L = __lev.club.lev; L.pos.set(...s.pos); L.vel.set(0, 0, 0); __lev.step(0.05, { x: 0, y: 0 }); __lev.render(); const b = document.getElementById('cact'); return b.hidden ? null : b.textContent; }));
+  check(spots.length === 7 && spots.every(Boolean), `${tag}: кнопки действий в городе: ${spots.join(' | ')}`);
+  const cafe = await page.evaluate(() => { const L = __lev.club.lev, s = __eco.spots[1]; L.pos.set(...s.pos); L.vel.set(0, 0, 0); __lev.step(0.05, { x: 0, y: 0 }); __lev.render(); __eco.stats.fatigue = 50; const m0 = __eco.wallet.balance; dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e' })); return { fat: __eco.stats.fatigue, paid: m0 - __eco.wallet.balance }; });
+  check(cafe.fat === 13 && cafe.paid === 9, `${tag}: в кафе E — перекус за 9 CHF, усталость 50 → ${cafe.fat}`);
+  if (w > 500) { await page.evaluate(() => { const s = __eco.spots[0], L = __lev.club.lev; L.pos.set(...s.pos); L.vel.set(0, 0, 0); __lev.step(0.6, { x: 0, y: 0 }); }); await page.shot(`town-shop-spot-${tag}`); await page.evaluate(() => dispatchEvent(new KeyboardEvent("keydown", { code: "KeyE", key: "e" }))); await page.shot(`town-shop-open-${tag}`); await page.evaluate(() => document.querySelector("#shop .x").click()); }
   for (const st of ['bench', 'pullup', 'squat', 'rope']) {
     const r = await page.evaluate((kind) => {
       const s = __eco.stations.find((x) => x.kind === kind);
@@ -130,7 +144,7 @@ if (ONLY.includes('gym')) for (const [w, h] of [[1000, 1000], [390, 844]]) {
       await page.evaluate(([eye, kind]) => {
         const s = __eco.stations.find((x) => x.kind === kind), y = s.yaw, f = [Math.sin(y), Math.cos(y)], r = [-Math.cos(y), Math.sin(y)], p = s.pos;
         const at = { bench: 0.75, pullup: 1.85, squat: 1.0, rope: 0.9 }[kind];
-        __lev.shot([p.x + f[0] * eye[2] + r[0] * eye[0], eye[1] + (kind === 'pullup' ? 0.6 : 0), p.z + f[1] * eye[2] + r[1] * eye[0]], [p.x, at, p.z]);
+        __lev.shot([p.x + f[0] * eye[2] + r[0] * eye[0], p.y + eye[1] + (kind === 'pullup' ? 0.6 : 0), p.z + f[1] * eye[2] + r[1] * eye[0]], [p.x, p.y + at, p.z]);
       }, [eye, st]);
       await page.screenshot({ path: join(OUT, `gym-${st}-close-${view}.png`) });
     }
