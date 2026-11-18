@@ -276,7 +276,8 @@ export class Car extends Vehicle {
     for (const sx of [-1, 1]) {
       const side = new THREE.Vector3(-sx, 0, 0), line = [];
       for (let z = -1.5; z <= 1.5; z += 0.06) { const h = onSkin(0, 0.47, z, side); if (Math.abs(h.p.x) > 0.5) line.push(h.p.addScaledVector(h.n, 0.008)); else line.push(null); }
-      for (let k = 1; k < line.length; k++) if (line[k] && line[k - 1] && line[k].distanceTo(line[k - 1]) < 0.12) this.body.add(new THREE.Mesh(tube(line[k - 1], line[k], 0.007), chrome));
+      const strip = []; for (let k = 1; k < line.length; k++) if (line[k] && line[k - 1] && line[k].distanceTo(line[k - 1]) < 0.12) strip.push(tube(line[k - 1], line[k], 0.007));
+      if (strip.length) this.body.add(new THREE.Mesh(merge(strip), chrome)); // молдинг одним мешем
       const dh = onSkin(0, 0.74, -0.75, side), hd = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.09, 4, 8).rotateX(Math.PI / 2), chrome);
       hd.position.copy(dh.p).addScaledVector(dh.n, 0.02); this.body.add(hd);
       const mir = new THREE.Group(); mir.position.set(sx * 0.72, 0.84, 0.4);
@@ -310,7 +311,7 @@ export class Car extends Vehicle {
       spinG.add(new THREE.Mesh(new THREE.TorusGeometry(0.215, 0.085, 14, 36).rotateY(Math.PI / 2), black));
       spinG.add(new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.155, 0.14, 28).rotateZ(Math.PI / 2), hub));
       spinG.add(new THREE.Mesh(new THREE.SphereGeometry(0.11, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2).rotateZ(-sx * Math.PI / 2).scale(0.45, 1, 1).translate(sx * 0.07, 0, 0), chrome));
-      for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; spinG.add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.02, 8).rotateZ(Math.PI / 2).translate(sx * 0.075, Math.cos(a) * 0.12, Math.sin(a) * 0.12), dark)); }
+      spinG.add(new THREE.Mesh(merge([0, 1, 2, 3, 4, 5].map((k) => new THREE.CylinderGeometry(0.012, 0.012, 0.02, 8).rotateZ(Math.PI / 2).translate(sx * 0.075, Math.cos(k * 1.047) * 0.12, Math.sin(k * 1.047) * 0.12))), dark)); // болты
       this.wheels.push({ steerG, spinG, front });
     }
     this.root.traverse((o) => { if (o.isMesh && !o.material.transparent) { o.castShadow = true; o.receiveShadow = true; } });
@@ -366,7 +367,7 @@ function seatLev(L, veh, w, dt, from) {
 }
 
 // ---------- Всё вместе: посадка, езда, камера, кнопки ----------
-const BIKE_SPOT = [10.0, -10.5, Math.PI], CAR_SPOT = [51.3, 27.5, 0]; // велосипед у забора (где стоял из Meshy), машина на стоянке носом к выезду
+const BIKE_SPOT = [10.0, -10.5, 0], CAR_SPOT = [51.3, 27.5, 0]; // велосипед у забора (где стоял из Meshy) левым боком к дорожке, машина на стоянке носом к выезду
 export class Rides {
   constructor({ scene, club, town }) {
     Object.assign(this, { scene, club, town, lev: club.lev });
@@ -378,8 +379,13 @@ export class Rides {
     this.bike.park(...BIKE_SPOT, this.world); this.car.park(...CAR_SPOT, this.world);
     this.bike.update(0, { x: 0, y: 0 }, this.world, false); this.car.update(0, { x: 0, y: 0 }, this.world, false);
     // Велосипед из Meshy (env.js PLACES.bike) убираем: на его месте этот, с крутящимися колёсами.
-    scene.getObjectByName('bike')?.removeFromParent();
-    if (club.obs) club.obs.boxes = club.obs.boxes.filter(([a, b, c, d]) => !(a < BIKE_SPOT[0] && c > BIKE_SPOT[0] && b < BIKE_SPOT[1] && d > BIKE_SPOT[1]));
+    // Модель могла ещё не догрузиться — ищем ещё несколько секунд.
+    const drop = (n) => {
+      const old = scene.getObjectByName('bike'); if (!old) { if (n < 10) setTimeout(() => drop(n + 1), 1000); return; }
+      old.removeFromParent();
+      if (club.obs) club.obs.boxes = club.obs.boxes.filter(([a, b, c, d]) => !(a < BIKE_SPOT[0] && c > BIKE_SPOT[0] && b < BIKE_SPOT[1] && d > BIKE_SPOT[1]));
+    };
+    drop(0);
     // Стоящий транспорт — препятствие для прогулки (крючок town.bounds → extra).
     town.extra = (p, r) => pushOut(p, r, { circles: this.list.filter((v) => v !== this.active).flatMap((v) => v.circles.map((z) => { const c = v.pos.clone().addScaledVector(v.fwd, z); return [c.x, c.z, v.r * 0.9]; })) });
     this.active = null; this.w = 0; this.near = null; this.btn = { l: 0, r: 0, g: 0, b: 0 };
@@ -396,7 +402,7 @@ export class Rides {
   // E: сесть на ближний транспорт или слезть. true — нажатие наше (скамейку не трогаем).
   use() {
     if (this.leaving) return true;
-    if (this.active) { if (this.w > 0.95 && Math.abs(this.active.v) < 2.5) this.leaving = true; return true; }
+    if (this.active) { if (this.w > 0.95 && Math.abs(this.active.v) < 2.5) { this.leaving = true; this.from = this.exitPose(this.active); } return true; }
     const v = this.nearest(); if (!v) return false;
     const L = this.lev;
     this.from = { pos: L.wrap.position.clone(), q: L.wrap.quaternion.clone(), key: L.lastPose ?? READY, feet: { Left: L.feet.Left.pos.clone().setY(L.feet.Left.pos.y + L.rig.ankleH), Right: L.feet.Right.pos.clone().setY(L.feet.Right.pos.y + L.rig.ankleH) } };
@@ -405,10 +411,17 @@ export class Rides {
     this.sync();
     return true;
   }
-  // Встать с транспорта: Лёва рядом слева (у машины — у водительской двери), лицом по ходу; прогулка продолжается.
+  // Куда встаёт Лёва, слезая: слева от велосипеда, у водительской двери машины, лицом по ходу. Посадка (seatLev) идёт
+  // назад от седла к этой точке, поэтому Лёва не уезжает туда, где садился.
+  exitPose(v) {
+    const p = v.mountAt(); this.world.bounds(p, 0.28); p.y = this.world.ground(p.x, p.z);
+    const l = v.left, a = this.lev.rig.ankleH, q = new THREE.Quaternion().setFromAxisAngle(UP, v.yaw);
+    return { pos: p, q, key: this.from.key, feet: { Left: p.clone().addScaledVector(l, 0.13).setY(p.y + a), Right: p.clone().addScaledVector(l, -0.13).setY(p.y + a) } };
+  }
+  // Встать с транспорта: прогулка продолжается с той же точки.
   getOff() {
     const v = this.active, L = this.lev; if (!v) return;
-    const p = v.mountAt(); this.world.bounds(p, 0.28); p.y = this.world.ground(p.x, p.z);
+    const p = this.leaving ? this.from.pos.clone() : this.exitPose(v).pos;
     L.place(p); L.bodyTurn = wrap(v.yaw - L.netYaw); L.wrap.rotation.set(0, v.yaw, 0); L.vel.set(0, 0, 0);
     this.club.camYaw = v.yaw; v.v = 0; v.vel.set(0, 0); v.steer = 0;
     this.active = null; this.leaving = false; this.w = 0;
@@ -431,7 +444,6 @@ export class Rides {
     v.update(dt, i, this.world, true);
     this.w = clamp(this.w + (this.leaving ? -dt : dt) / 0.45, 0, 1);
     if (this.leaving && this.w === 0) { this.getOff(); this.town.update(dt, L.pos); return true; }
-    if (this.leaving && !this.backFrom) this.backFrom = true;
     seatLev(L, v, this.w, dt, this.from);
     L.pos.copy(v.pos); // по Лёве камера, двери, тень, «На корт»
     this.town.update(dt, L.pos);
