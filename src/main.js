@@ -23,6 +23,7 @@ import { Interact, Hands, registerTerrace, registerBenches, registerSurface } fr
 import { HalfCourt } from './halfcourt.js';
 import { Practice } from './practice.js';
 import * as profile from './profile.js'; // характеристики, усталость, вещи, магазин и зал
+import * as career from './career.js'; // форма дня, передышка, рост соперников, турнир клуба
 import { outfit, racketModel, ITEM } from './outfit.js';
 import { Girls } from './girls.js';
 import { STROKES, sample } from './swing.js';
@@ -346,6 +347,7 @@ function hit(kind, drop = false, key = '', spin = null) {
 addEventListener('keydown', (e) => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'AltLeft', 'AltRight'].includes(e.code)) e.preventDefault(); // Alt без меню браузера
   if (e.repeat) return;
+  if (career.key(e)) return; // B — передышка между очками; экран турнира
   if (profile.key(e)) return; // C — характеристики; в магазине и зале клавиши их
   keys.add(e.code);
   if (!started && (e.code === 'Space' || e.code === 'Enter')) return start();
@@ -473,8 +475,9 @@ function endUi(w) {
   if (!w) return;
   $('endT').textContent = w === game.lev ? 'Лёва выиграл' : 'Соперник выиграл';
   $('endS').textContent = game.sets.map(([a, b]) => `${a}:${b}`).join(' · ');
+  career.end(w); // «боролся»: очки, длинный розыгрыш, передышки, брейк-поинты; в турнире — к сетке
 }
-const again = () => { endUi(null); game.newMatch(game.now); };
+const again = () => { endUi(null); if (!career.again()) game.newMatch(game.now); };
 $('again').addEventListener('click', again);
 $('toClub').addEventListener('click', () => { endUi(null); leave(); });
 $('play').addEventListener('click', () => start());
@@ -545,6 +548,7 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
     label: (st) => (half.inside(lev.pos) && !st.held && !st.chair && !st.seated ? 'бить об\u00a0стенку' : null), act: (st, now) => wallEnter(now) });
   registerSurface(interact, hands, half.bench);
   profile.initProfile({ game, lev, club, scene, onRacket: dressAll });
+  career.initCareer({ game, lev, club, court, interact, onRival: dressAll, touch: TOUCH });
   girls = new Girls({ scene, game, club, camera, sound, loader });
   half.fixed.add(girls.stage); half.hide = () => [girls.stage, ...girls.girls.filter((g) => g.where === 'world').flatMap((g) => [g.p.wrap, g.p.racket])]; // ставят себя в мире каждый кадр
   // Разговор: с кем — решает girls.near() (калитка корта 2, девушка рядом, она за столиком), E — girls.act().
@@ -652,6 +656,7 @@ renderer.setAnimationLoop(() => {
       game.update(dt, game.now, levMove());
       club.update(dt, game.now, profile.input(walkInput()));
       profile.tick(dt, game.now);
+      career.tick(dt, game.now);
       powerFx.track(game.now);
       if (game.state === 'rally' && game.now >= (game.nextSample ?? 0)) {
         game.nextSample = game.now + 0.2;
@@ -680,7 +685,7 @@ if (Q.has('debug')) window.__lev = {
   scene, camera, get game() { return game; },
   // Пошаговая проверка: __pause = true, потом step(секунды, движение {x, y}) — игра идёт ровно на заданное время.
   step(sec, a = null, h = window.__dt ?? 1 / 120) { // без a — бег от зажатых клавиш, как в игре; __dt — шаг кадра (проверка на 30–60 кадрах)
-    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, profile.input(a ?? walkInput())); profile.tick(h, game.now); girls?.update(h, game.now); powerFx.track(game.now); }
+    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, profile.input(a ?? walkInput())); profile.tick(h, game.now); career.tick(h, game.now); girls?.update(h, game.now); powerFx.track(game.now); }
   },
   get club() { return club; },
   get half() { return half; },

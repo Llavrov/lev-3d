@@ -564,6 +564,7 @@ export class Player {
     // На прогулке корпус поворачивается туда, куда тянет ввод (и стоя — разворот на месте), а не за скоростью: та при
     // смене направления на обратное сначала шла спиной, и тело крутилось столбом посреди хода.
     if (this.free) turnTarget = this.seat ? wrapAngle(this.seat.yaw - this.netYaw) : (this.wantV ?? 0) > 0.05 ? wrapAngle(Math.atan2(this.dir.x, this.dir.z) - this.netYaw) : speed > 0.3 ? wrapAngle(Math.atan2(this.vel.x, this.vel.z) - this.netYaw) : this.bodyTurn;
+    if (this.routine?.turn != null) turnTarget = this.routine.turn; // передышка между очками (career.js): к заднему забору и обратно
     // Разворот корпуса — пружина без перерегулирования (до 7 рад/с), а не ровная скорость 6 рад/с с места: та включалась
     // и выключалась мгновенно — рывок таза и плеч в начале и конце каждого разворота (до 10 000°/с²).
     this.turnVel = (this.turnVel ?? 0) + clamp(144 * wrapAngle(turnTarget - this.bodyTurn) - 24 * (this.turnVel ?? 0), -45, 45) * dt; // ускорение до 45 рад/с²
@@ -630,6 +631,7 @@ export class Player {
     // Стоя на прогулке тело покачивается с ноги на ногу (±1,2 см, ~4,5 с), ступни стоят.
     const idleW = this.free && !this.seat ? 1 - smooth(speed, 0.05, 0.4) : 0;
     if (idleW > 0) this.wrap.position.addScaledVector(this.right.clone().applyAxisAngle(UP, this.bodyTurn), 0.012 * Math.sin(now * 1.4) * idleW);
+    if (this.routine) K = this.routine.pose(K, now); // передышка и язык тела формы дня (career.js)
     if (this.hands) K = this.hands.pose(K); // предметы в руках на прогулке (interact.js)
     this.lastPose = K;
     // Прогулка и скамейка (club.js): идёт — прямее в коленях; сидя ступни перед сиденьем, таз на высоте сиденья.
@@ -639,6 +641,7 @@ export class Player {
     const { rk, face } = this.rig.pose(K, K, 0, { Left: foot(this.feet.Left), Right: foot(this.feet.Right), crouch: low, dt });
     this.rig.placeRacket(rk, face);
     this.hands?.place(now); // левая кисть держит предмет, предмет — в кисти (interact.js)
+    this.routine?.place?.(now); // левая кисть на струнах в передышке (career.js)
     this.sweetPrev = this.sweetNow ?? null; this.sweetNow = this.rig.sweet(); // центр струн в начале и в конце кадра — для касания
 
     if (st && !st.contacted && now >= st.tContact) { // кадр, внутри которого момент удара: касание ищем по всему кадру
