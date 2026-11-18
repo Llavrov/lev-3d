@@ -16,7 +16,7 @@ const REPS = 10, BAR_Y = 2.5; // турник: в висе ступни над �
 export const STATIONS = {
   bench: { name: 'Жим лёжа', T: 1.7, xp: { power: 1.2 }, tire: 0.55 },
   pullup: { name: 'Турник', T: 1.8, xp: { power: 0.8, stamina: 0.4 }, tire: 0.6 },
-  squat: { name: 'Присед со штангой', T: 1.8, xp: { speed: 0.7, power: 0.5 }, tire: 0.65 },
+  squat: { name: 'Присед со\u00a0штангой', T: 1.8, xp: { speed: 0.7, power: 0.5 }, tire: 0.65 },
   rope: { name: 'Скакалка', T: 0.62, xp: { stamina: 0.9, speed: 0.35 }, tire: 0.35 },
 };
 // Временная площадка в клубе под ?debug (за спиной Лёвы, за забором): в городе станции ставит town.js.
