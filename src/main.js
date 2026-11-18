@@ -237,7 +237,7 @@ scene.add(ballMesh);
 const $ = (id) => document.getElementById(id);
 const hud = {
   score(g) {
-    const [a, b] = g.call();
+    const [a, b] = g.ended ? ['', ''] : g.call(); // матч кончился: очков последнего гейма на табло нет
     $('pl').textContent = a; $('po').textContent = b; $('nl').textContent = g.lev.human ? 'Лёва' : 'Замена';
     $('gl').textContent = g.games.get(g.lev); $('go').textContent = g.games.get(g.opp);
     $('sets').textContent = g.sets.map(([a, b]) => `${a}:${b}`).join(' · '); // прошлые сеты, счёт Лёвы первым
