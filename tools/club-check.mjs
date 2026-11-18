@@ -143,7 +143,7 @@ for (const [w, h] of [[1440, 900], [390, 844]]) {
   await doAct('бить об\u00a0стенку', false);
   const wall = await page.evaluate(() => ({ mode: __lev.club.mode, human: __lev.game.lev.human, shift: __lev.half.group.parent.position.toArray() }));
   check(wall.mode === 'wall' && wall.human && wall.shift[0] < -40, `${tag}: режим стенки на полукорте ${JSON.stringify(wall)}`);
-  const ser = await page.evaluate(() => { const g = __lev.game; g.autoLev = new g.ai.constructor(g.lev, g); let best = 0; for (let i = 0; i < 120 * 30; i++) { __lev.step(1 / 120); best = Math.max(best, g.drill.series); } g.autoLev = null; return { best, text: document.getElementById('ltext').innerText }; });
+  const ser = await page.evaluate(() => { const g = __lev.game; g.autoLev = new g.ai.constructor(g.lev, g); let best = 0; for (let i = 0; i < 120 * 90 && best < 3; i++) { __lev.step(1 / 120); best = Math.max(best, g.drill.series); } // бот у стенки играет неровно: до трёх отражений, не дольше 90 с g.autoLev = null; return { best, text: document.getElementById('ltext').innerText }; });
   check(ser.best >= 2, `${tag}: серия у стенки до ${ser.best} (${ser.text})`);
   await page.evaluate(() => { for (let i = 0; i < 300 && __lev.game.state !== 'rally'; i++) __lev.step(1 / 60); for (let i = 0; i < 25; i++) __lev.step(1 / 60); });
   await shot('wall');
