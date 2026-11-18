@@ -380,7 +380,7 @@ const loadTown = () => (townReady ??= Promise.all([import('./town.js'), import('
   club.world = new Town(scene);
   club.ride = new Rides({ scene, club, town: club.world });
 }));
-const walkInput = () => { const a = axes(); return { x: a.x, y: a.y, run: held('ShiftLeft', 'ShiftRight') || stick.length() > 0.95 }; };
+const walkInput = () => { const a = axes(); return { x: a.x, y: a.y, run: held('ShiftLeft', 'ShiftRight') || stick.length() > 0.95, hb: held('Space') }; }; // hb — ручник в машине
 function clubUi(mode, canSit, view, act) {
   document.body.classList.toggle('club', !!mode);
   $('cexit').hidden = !!mode; $('cback').hidden = !mode; $('cview').hidden = mode !== 'sit';
