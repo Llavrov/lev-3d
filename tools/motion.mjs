@@ -36,7 +36,7 @@ const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--ena
 const page = await browser.newPage({ viewport: { width: 480, height: 600 } });
 page.on('pageerror', (e) => console.error('ОШИБКА СТРАНИЦЫ:', e.message));
 async function load() {
-  await page.goto(`http://localhost:3952/?debug&noao&nolog${opt('q', '')}`);
+  await page.goto(`${opt('url', 'http://localhost:3952')}/?debug&noao&nolog${opt('q', '')}`); // --url — свой сервер-снимок, если другие правят код
   await page.waitForFunction(() => window.__lev?.game?.lev?.contactPt && !document.getElementById('play').disabled, null, { timeout: 120000 });
   await page.addStyleTag({ content: 'body > :not(canvas) { display: none !important }' });
   await page.evaluate(() => { document.getElementById('play').click(); window.__pause = true; window.__noDraw = true; });
@@ -50,8 +50,8 @@ for (const [name, c] of Object.entries(SC)) {
   const dir = join(OUT, name); mkdirSync(dir, { recursive: true });
   // Другие агенты правят код — Vite перезагружает страницу посреди съёмки: тогда грузим заново и снимаем сценарий с начала.
   for (let attempt = 0; ; attempt++) try { await capture(name, c, dir); break; } catch (e) {
-    if (attempt > 3 || !/context was destroyed|navigation|Target closed|is not defined|reading/.test(e.message)) throw e;
-    console.log(name, 'страница перезагрузилась, снимаю заново'); await page.waitForTimeout(3000); await load();
+    if (attempt > 30 || !/context was destroyed|navigation|Target closed|is not defined|reading|Timeout/.test(e.message)) throw e;
+    console.log(name, 'страница перезагрузилась, снимаю заново'); await page.waitForTimeout(8000); await load().catch(() => {});
   }
 }
 async function capture(name, c, dir) {

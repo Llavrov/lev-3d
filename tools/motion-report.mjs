@@ -49,7 +49,7 @@ function loadSeries(s) {
       const P = Object.fromEntries(Object.entries(GAME).map(([k, b]) => [k, f.bones[b]]));
       const m = metrics(P, [0, 1, 0], [1, 0, 0]);
       const feet = ['Left', 'Right'].map((k) => f.feet[k]);
-      return { t: f.t - t0, ...m, anklePos: [f.bones.LeftFoot, f.bones.RightFoot], planted: feet.map((x) => !x.step && x.lift < 0.003), speed: Math.hypot(f.vel[0], f.vel[2]), stroke: f.stroke };
+      return { t: f.t - t0, ...m, hipY: f.bones.Hips[1], anklePos: [f.bones.LeftFoot, f.bones.RightFoot], planted: feet.map((x) => !x.step && x.lift < 0.003), speed: Math.hypot(f.vel[0], f.vel[2]), stroke: f.stroke };
     });
   } else {
     const d = JSON.parse(readFileSync(s.video, 'utf8')), fps = s.fps ?? 29.97;
@@ -94,6 +94,11 @@ const series = spec.map((s) => {
   sum.acc95 = Object.fromEntries(segs.map((k) => [k, Math.round(pct(acc[k], 0.95))]));
   sum.accMax = Object.fromEntries(segs.map((k) => { const i = acc[k].indexOf(Math.max(...acc[k])); return [k, [Math.round(acc[k][i]), +rows[i].t.toFixed(2)]]; }));
   if (slide) sum.slideMaxCm = +Math.max(...slide).toFixed(1);
+  // Таз по высоте над кортом (только игра): скачок за кадр и вторая разность — «таз прыгает».
+  if (rows[0].hipY != null) {
+    const y = rows.map((r) => r.hipY), d1 = y.slice(1).map((h, i) => Math.abs(h - y[i]) * 100), d2 = y.slice(2).map((h, i) => Math.abs(h - 2 * y[i + 1] + y[i]) * 100);
+    Object.assign(sum, { hipRangeCm: +((Math.max(...y) - Math.min(...y)) * 100).toFixed(1), hipJumpMaxCm: +Math.max(...d1).toFixed(1), hipJump95Cm: +pct(d1, 0.95).toFixed(1), hipD2MaxCm: +Math.max(...d2).toFixed(1) });
+  }
   return { ...s, rows, sm, w, acc, slide, sum };
 });
 writeFileSync(join(OUT, 'summary.json'), JSON.stringify(series.map((s) => s.sum), null, 1));
