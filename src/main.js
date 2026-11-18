@@ -25,6 +25,7 @@ import { Practice } from './practice.js';
 import * as profile from './profile.js'; // характеристики, усталость, вещи, магазин и зал
 import { outfit, racketModel, ITEM } from './outfit.js';
 import { Girls } from './girls.js';
+import * as jobs from './jobs.js'; // работа за деньги: доска у двери клубного дома, урок, бариста, спарринг
 import { STROKES, sample } from './swing.js';
 import { makeSound } from './sound.js';
 import { solveShot, step as ballStep } from './physics.js';
@@ -550,6 +551,7 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
   // Разговор: с кем — решает girls.near() (калитка корта 2, девушка рядом, она за столиком), E — girls.act().
   interact.register({ r: 1, pri: 0.6, get pos() { return girls.target ? interact.ahead() : FAR; },
     label: (st) => (girls.target && !girls.dlg && !st.chair ? 'поговорить' : null), act: () => girls.act() });
+  jobs.initJobs({ game, lev, club, scene, court, loader, interact, hands, terrace: T, axes: () => axes() });
   // Замена (club.js): модель из Meshy грузится после старта, без неё — соперник в голубом.
   subReady = loadOpt('/models/sub.glb').then((g) => {
     sub = new Player(scene, g ?? oppGltf ?? gltf, { side: 1, height: 1.8, racketColor: '#2f7d4f', cloth: g ? null : '#86bfe6' });
@@ -652,6 +654,7 @@ renderer.setAnimationLoop(() => {
       game.update(dt, game.now, levMove());
       club.update(dt, game.now, profile.input(walkInput()));
       profile.tick(dt, game.now);
+      jobs.update(dt, game.now);
       powerFx.track(game.now);
       if (game.state === 'rally' && game.now >= (game.nextSample ?? 0)) {
         game.nextSample = game.now + 0.2;
@@ -680,7 +683,7 @@ if (Q.has('debug')) window.__lev = {
   scene, camera, get game() { return game; },
   // Пошаговая проверка: __pause = true, потом step(секунды, движение {x, y}) — игра идёт ровно на заданное время.
   step(sec, a = null, h = window.__dt ?? 1 / 120) { // без a — бег от зажатых клавиш, как в игре; __dt — шаг кадра (проверка на 30–60 кадрах)
-    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, profile.input(a ?? walkInput())); profile.tick(h, game.now); girls?.update(h, game.now); powerFx.track(game.now); }
+    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, profile.input(a ?? walkInput())); profile.tick(h, game.now); jobs.update(h, game.now); girls?.update(h, game.now); powerFx.track(game.now); }
   },
   get club() { return club; },
   get half() { return half; },
