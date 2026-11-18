@@ -105,8 +105,18 @@ if (ONLY.some((k) => ['talk', 'match', 'coffee'].includes(k))) for (const [w, h]
   await page.evaluate(() => __lev.render());
   await page.screenshot({ path: join(OUT, `talk-meet-${tag}.png`) });
   // Крупно: она у калитки, Лёва снаружи.
-  const G = await page.evaluate(() => __lev.girls.world(__lev.girls.dlg.g).toArray());
-  await shot(page, `talk-pair-${tag}`, [G[0] + 1.2, 1.7, G[2] + 4.2], [G[0] + 0.6, 1.0, G[2]]);
+  // Пара сбоку: она подошла, оба лицом друг к другу (угол между взглядом и направлением на другого).
+  const pair = await page.evaluate(() => {
+    const G = __lev.girls, g = G.dlg.g, L = __lev.club.lev;
+    for (let i = 0; i < 300 && !(g.p.vel.length() < 0.05 && G.world(g).distanceTo(L.pos) < 2.6); i++) __lev.step(0.05, { x: 0, y: 0 }); // дошла
+    __lev.step(1.5, { x: 0, y: 0 }); // повернулись
+    const a = G.world(g), b = L.pos.clone(), V = b.constructor;
+    const look = (p, from, to) => { const f = p.wrap.getWorldDirection(new V()).setY(0).normalize(), d = to.clone().sub(from).setY(0).normalize(); return Math.round(Math.acos(Math.min(1, f.dot(d))) * 57.3); };
+    return { a: a.toArray(), b: b.toArray(), her: look(g.p, a, b), lev: look(L, b, a), dist: +a.distanceTo(b).toFixed(2) };
+  });
+  check(pair.her < 30 && pair.lev < 30, `${tag}: в разговоре лицом друг к другу (она ${pair.her}°, Лёва ${pair.lev}°, ${pair.dist} м)`);
+  { const [ax, , az] = pair.a, [bx, , bz] = pair.b, mx = (ax + bx) / 2, mz = (az + bz) / 2, dx = bx - ax, dz = bz - az, n = Math.hypot(dx, dz) || 1;
+    await shot(page, `talk-pair-${tag}`, [mx - (dz / n) * 4.2, 1.6, mz + (dx / n) * 4.2], [mx, 1.1, mz]); }
   if (ONLY.includes('match') && !phone) {
     // «Сыграем?» — пока не согласится (бывает отказ), потом матч на корте 1.
     const m = await page.evaluate(() => {
