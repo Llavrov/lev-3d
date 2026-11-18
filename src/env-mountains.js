@@ -80,14 +80,17 @@ function flatGap(x, z) {
   for (const [cx, cz, r] of FLAT.circles) d = Math.min(d, Math.hypot(x - cx, z - cz) - r);
   return d;
 }
-// Бугры и понижения газона: крупные ~11 м до ±0,4 м, мелкие ~4 м до ±0,12 м (уклон до 6–8°, видно светом); у ровных мест за 3 м сходят на нет,
-// за краем площадки гаснут за 8 м (там свои бугры холма). Только в рамке GRID: там земля мелкой сеткой.
+// Рельеф газона: длинные мягкие холмы ~27 м и ложбины, от −0,75 до +1,2 м — только вдали от ровного (нарастают за 14 м, без
+// ступенек), бугры ~11 м до ±0,35 м и кочки ~3 м до ±6 см — ближе. За краем площадки гаснет за 8 м (там бугры холма).
+// Только в рамке GRID: там земля мелкой сеткой.
 export const GRID = { x0: PAD.x0 - 8, x1: PAD.x1 + 8, z0: PAD.z0 - 8, z1: PAD.z1 + 8 };
 function relief(x, z) {
   if (x <= GRID.x0 || x >= GRID.x1 || z <= GRID.z0 || z >= GRID.z1) return 0;
   const k = smooth(8, 0, padDist(x, z)); if (k === 0) return 0;
-  const b = (vnoise(x / 11 + 3.1, z / 11 - 7.3) - 0.5) * 0.8 + (vnoise(x / 4 - 11, z / 4 + 5) - 0.5) * 0.24;
-  return b * k * smooth(0.4, 3.5, flatGap(x, z));
+  const d = flatGap(x, z); if (d <= 0.4) return 0;
+  const hill = (smooth(0.3, 0.85, vnoise(x / 27 + 1.7, z / 27 - 4.1)) * 1.95 - 0.75) * smooth(1.5, 14, d);
+  const bump = (vnoise(x / 11 + 3.1, z / 11 - 7.3) - 0.5) * 0.7 * smooth(0.4, 5, d) + (vnoise(x / 3 - 11, z / 3 + 5) - 0.5) * 0.12 * smooth(0.4, 2.5, d);
+  return (hill + bump) * k;
 }
 // Высота, по которой ходят (газон, дорожки, корт): на ровном месте 0. Земля рисуется на 5 см ниже (heightAt).
 export const groundAt = (x, z) => heightAt(x, z) + 0.05;
@@ -266,7 +269,7 @@ function terrainMaterial(U, club, hole) {
         lawn *= 1. + .035 * mown * (1. - k.b) * clamp(sin(q.x * 1.5708 + .3) * 2.5, -1., 1.) * normalize(vW - cameraPosition).z;
         // Бугры светом заметнее: склон к солнцу светлее, от солнца темнее — сверх обычного освещения (оно у газона плоское
         // из-за сильного рассеянного света неба).
-        lawn *= (1. + clamp(1.6 * (dot(normalize(vN), GSUN) - GSUN.y), -.15, .15)) * vec3(.93, .94, .92);
+        lawn *= (1. + clamp(2.6 * (dot(normalize(vN), GSUN) - GSUN.y), -.25, .25)) * vec3(.93, .94, .92);
         float rough = max(k.b, smoothstep(3., 16., pd) * .75);
         lawn = mix(lawn, lawn * vec3(.95, .88, .62) * (.8 + .4 * vn(q * 1.7)), rough);
         // Проплешины — вытоптанная земля пятнами; у стволов и на клумбах тёмная земля (на клумбах ещё темнее, с корой).

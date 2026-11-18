@@ -152,6 +152,12 @@ function tufts(map, time) {
     if (r() > Math.max(b * 0.9, meadow * 0.5)) continue;
     put(grass, x, z, 0.6 + r() * 0.7);
   }
+  // В ложбинах газона трава гуще: там сыро, косилка не достаёт (ложбина — соседи на 2 м выше середины).
+  for (let k = 0; k < 30000 && grass.length < 11500 * N; k++) {
+    const x = PAD.x0 + r() * (PAD.x1 - PAD.x0), z = PAD.z0 + r() * (PAD.z1 - PAD.z0), h = heightAt(x, z);
+    const dip = (heightAt(x + 2, z) + heightAt(x - 2, z) + heightAt(x, z + 2) + heightAt(x, z - 2)) / 4 - h;
+    if (r() < (dip - 0.015) * 22) put(grass, x, z, 0.5 + r() * 0.5);
+  }
   // Цветы: в клумбах гуще, по лугу за площадкой редко (белые, жёлтые, лиловые).
   for (let k = 0; k < 40000 && flowers.length < 1400 * N; k++) {
     const x = MAP.x0 + r() * MAP.size, z = MAP.z0 + r() * MAP.size, [p, bed] = map.at(x, z), pd = padDist(x, z);
@@ -189,8 +195,8 @@ function shortBlades() { // пучок: травинки из середины �
   return t;
 }
 function lawnBlades(map, time) {
-  const R = COARSE ? 6 : 8, n = COARSE ? 4500 : 12000, r = rng(57), hg = groundGrid();
-  const card = new THREE.PlaneGeometry(0.16, 0.085).translate(0, 0.0425, 0); // одна карточка: крестом сверху видно «ёжики»
+  const R = COARSE ? 6 : 8, n = COARSE ? 6000 : 16000, r = rng(57), hg = groundGrid();
+  const card = new THREE.PlaneGeometry(0.17, 0.11).translate(0, 0.055, 0); // одна карточка: крестом сверху видно «ёжики»
   const nr = card.attributes.normal; for (let i = 0; i < nr.count; i++) nr.setXYZ(i, 0, 1, 0);
   const geo = new THREE.InstancedBufferGeometry().copy(card); geo.instanceCount = n;
   const offs = new Float32Array(n * 4);
@@ -211,7 +217,9 @@ function lawnBlades(map, time) {
       float sc = offs.w * smoothstep(R, R * .6, length(p - cam)) * (1. - min(hide, 1.));
       vec2 hu = ((p - grid.xy) / grid.zw * (gridN - 1.) + .5) / gridN;
       float y = texture2D(hgt, hu).r;
-      vec3 lp = position * sc * vec3(1., 1. + k.b * 1.8, 1.); // у забора и стволов трава выше
+      vec2 e = 2. / grid.zw; // ложбина: соседи на 2 м выше — там трава выше
+      float dip = (texture2D(hgt, hu + vec2(e.x, 0.)).r + texture2D(hgt, hu - vec2(e.x, 0.)).r + texture2D(hgt, hu + vec2(0., e.y)).r + texture2D(hgt, hu - vec2(0., e.y)).r) * .25 - y;
+      vec3 lp = position * sc * vec3(1., 1. + k.b * 1.8 + clamp(dip * 12., 0., .9), 1.); // у забора, стволов и в ложбинах трава выше
       float cs = cos(offs.z), sn = sin(offs.z);
       vec3 transformed = vec3(p.x + cs * lp.x + sn * lp.z, y + lp.y - .01, p.y - sn * lp.x + cs * lp.z);
       transformed.xz += vec2(sin(time * 1.7 + p.x * .9), cos(time * 1.3 + p.y * .8)) * .25 * lp.y * lp.y / .1;

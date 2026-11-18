@@ -12,7 +12,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildCourt, COURT, CourtMarks, ClayDust } from './court.js';
-import { HAZE, AIR_DENSITY, SUN, outdoorEnv } from './env.js';
+import { HAZE, AIR_DENSITY, SUN, outdoorEnv, shadeIndoors } from './env.js';
 import { buildBall } from './ball.js';
 import { fitRacketModel, dressRacket } from './racket.js';
 import { Player, POWER, holdOf, powerOf } from './player.js';
@@ -567,7 +567,7 @@ if (!matchMedia('(pointer: coarse)').matches && !Q.has('noao')) {
   composer.addPass(ao);
   composer.addPass(new OutputPass());
 }
-const draw = () => (composer ? composer.render() : renderer.render(scene, camera));
+const draw = () => { shadeIndoors([club?.lev, game?.opp, sub]); return composer ? composer.render() : renderer.render(scene, camera); }; // в зале дома игроки тусклее и теплее (env-house.js)
 
 function resize() {
   const w = innerWidth, h = innerHeight;
