@@ -40,8 +40,9 @@ if (ONLY.includes('ui')) for (const [w, h] of [[1440, 900], [390, 844]]) {
   check(rk0 && !rk1 && rkName === 'Неон', `${tag}: на старте ракетки только купленные (одна — без выбора, две — стрелки, выбрана ${rkName})`);
   await page.evaluate(() => { __eco.outfit.wear('red'); localStorage.clear(); });
   await page.evaluate(() => { document.getElementById('play').click(); window.__pause = true; window.__noDraw = true; });
-  // Розыгрыш: дождаться ударов, чтобы силы ушли.
-  await page.evaluate(() => { const g = __lev.game; if (g.server === g.lev) g.serve(g.lev, g.now); g.autoLev = new g.ai.constructor(g.lev, g); for (let i = 0; i < 300 && g.rally < 4; i++) __lev.step(0.05); g.autoLev = null; });
+  await page.waitForTimeout(800); // стартовый экран гаснет за 0,4 с: иначе в кадре меню поверх игры
+  // Розыгрыш: за Лёву ИИ (он же подаёт), дождаться ударов, чтобы силы ушли.
+  await page.evaluate(() => { const g = __lev.game; g.autoLev = new g.ai.constructor(g.lev, g); if (g.server === g.lev) g.serve(g.lev, g.now); for (let i = 0; i < 300 && g.rally < 4; i++) __lev.step(0.05); g.autoLev = null; });
   await page.shot(`match-${tag}`);
   const hud = await page.evaluate(() => { const r = document.getElementById('me').getBoundingClientRect(), s = document.getElementById('hud').getBoundingClientRect(); return { me: [r.left, r.top, r.right, r.bottom], hud: [s.left, s.top, s.right, s.bottom], scroll: document.documentElement.scrollWidth }; });
   const over = !(hud.me[0] >= hud.hud[2] || hud.me[1] >= hud.hud[3]);
