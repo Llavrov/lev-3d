@@ -123,11 +123,10 @@ export class Hands {
   update(dt) {
     this.dt = dt;
     if (this.job && this.job.next().done) this.job = null;
-    for (const v of [this.held]) if (v) v.tilt = this.tilt / deg(60);
+    if (this.held) this.held.tilt = this.tilt / deg(60); // наклонённая к губам чашка не парит
   }
 
   // ---------- Шаги действий (генераторы: yield — подождать кадр) ----------
-  *wait(sec) { for (let t = 0; t < sec; t += this.dt) yield; }
   *tween(sec, fn) { for (let t = 0; t < sec; t += this.dt) { fn(ease(t / sec)); yield; } fn(1); }
   // Подойти к точке to (клуб ведёт по пути) и развернуться к точке at.
   *approach(to, at) {
@@ -195,7 +194,7 @@ export class Hands {
     yield* this.tween(0.5, (u) => { this.goal.w = 1 - u; this.tilt = deg(28) * (1 - u); });
     this.goal = null; this.tilt = 0; this.nod = 0;
   }
-  // Налить из графина в стакан: графин над стаканом, наклон до 75°, струя, стакан наполняется.
+  // Налить из графина в стакан: графин над стаканом, наклон до 70°, струя, стакан наполняется.
   *pour(glass) {
     const c = this.held, L = this.lev, G = glass.obj.getWorldPosition(new THREE.Vector3());
     if (!L.seat) yield* this.approach(this.standFor(G), G);
@@ -210,7 +209,8 @@ export class Hands {
       c.setFill(c0 - amount * k); glass.setFill(g0 + amount * 3.2 * k);
       stream.visible = flow > 0.5 && k > 0 && k < 1;
       if (stream.visible) { // струя от носика вниз до воды в стакане
-        const spout = c.obj.localToWorld(V(-0.026, c.k.top, 0)), to = G.clone().setY(G.y + glass.k.lo + (glass.k.hi - glass.k.lo) * glass.fill);
+        c.obj.updateMatrixWorld(); const top = c.obj.localToWorld(V(0, c.k.top, 0)), ax = V(0, 1, 0).transformDirection(c.obj.matrixWorld), down = V(0, -1, 0).addScaledVector(ax, ax.y).normalize(); // носик — самая низкая точка горлышка
+        const spout = top.addScaledVector(down, 0.026), to = G.clone().setY(G.y + glass.k.lo + (glass.k.hi - glass.k.lo) * glass.fill);
         stream.position.copy(spout); stream.scale.set(1, Math.max(0.01, spout.y - to.y), 1); stream.rotation.set(0, 0, 0);
       }
     });
@@ -250,7 +250,7 @@ export class Hands {
   }
 
   // ---------- Поза (крючок до rig.pose) ----------
-  pose(K, now, dt) {
+  pose(K) {
     const L = this.lev, seated = !!L.seat, jog = smooth(L.vel.length(), 2, 3.2);
     K = { ...K };
     if (L.free && !seated && !this.chair) { // ракетка на ходу — у правой ноги (см. RK_WALK)
@@ -266,7 +266,6 @@ export class Hands {
     }
     if (this.nod) { K.nod = (K.nod ?? 0) + this.nod; K.look = 0; }
     if (this.chair) { const u = this.chairW; for (const k of ['rUp', 'rFo', 'lUp', 'lFo', 'rk', 'face']) K[k] = K[k].clone().lerp(CHAIR[k], u).normalize(); K.lean = lerp(K.lean, 6, u); K.fist = Math.max(K.fist ?? 0, 0.85 * u); K.lh = -1; }
-    void now; void dt;
     return K;
   }
 
@@ -294,7 +293,7 @@ export class Hands {
         const toGlass = X.clone().negate(); // графин слева от стакана, наклон к нему
         Y = UP.clone().multiplyScalar(Math.cos(this.tilt)).addScaledVector(toGlass, Math.sin(this.tilt));
         X = sideOf(Y);
-        const spout = g.pour.clone().setY(g.pour.y + 0.105 + 0.05).addScaledVector(toGlass, -0.035);
+        const spout = g.pour.clone().setY(g.pour.y + 0.105 + 0.09).addScaledVector(toGlass, -0.035); // носик на 9 см над краем стакана: тело графина не ложится на стойку
         O = spout.addScaledVector(Y, -item.k.top).addScaledVector(toGlass, -0.026);
       } else { O = g.O; Y = g.Y; }
       R = Y.clone();

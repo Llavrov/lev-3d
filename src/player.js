@@ -526,7 +526,7 @@ export class Player {
     const pivot = (f) => (f === back ? toe * deg(18) * f.sign : 0);
     const fl = (f) => ({ pos: f.pos, yaw: wrapAngle(f.yaw - this.bodyTurn) + pivot(f), lift: f.lift + jump, toe: f === back ? toe : 0 }); // поворот ступни на корте — от лица тела (в ±π: на прогулке корпус крутится кругом)
     this.wrap.position.copy(this.pos).add(this.lunge);
-    if (this.hands) K = this.hands.pose(K, now, dt); // предметы в руках на прогулке (interact.js)
+    if (this.hands) K = this.hands.pose(K); // предметы в руках на прогулке (interact.js)
     this.lastPose = K;
     // Прогулка и скамейка (club.js): идёт — прямее в коленях; сидя ступни перед сиденьем, таз на высоте сиденья.
     const sw = this.free ? this.sitW() : 0;

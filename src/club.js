@@ -223,6 +223,13 @@ export class Club {
       const f = V(Math.sin(this.camYaw), Math.cos(this.camYaw));
       eye = L.pos.clone().addScaledVector(f, -4.2).setY(L.pos.y + 2.3);
       look = L.pos.clone().addScaledVector(f, 1.8).setY(L.pos.y + 0.95);
+      // Зонт террасы между камерой и Лёвой (или камера в нём) — ткань становится полупрозрачной.
+      const head = L.pos.clone().setY(L.pos.y + 1.4), q = new THREE.Vector3();
+      for (const u of this.terrace?.umbrellas ?? []) {
+        const p = u.obj.position; let hit = false;
+        for (let i = 0; i <= 10 && !hit; i++) { q.lerpVectors(camera.position, head, i / 10); hit = Math.hypot(q.x - p.x, q.z - p.z) < 1.6 && q.y > p.y + 1.85 && q.y < p.y + 2.6; }
+        u.fadeTo = hit && u.open > 0.3 ? 0.22 : 1;
+      }
     }
     if (this.fresh) { this.fresh = false; this.look.copy(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(8).add(camera.position)); } // с камеры матча без рывка
     camera.position.lerp(eye, k); this.look.lerp(look, k);

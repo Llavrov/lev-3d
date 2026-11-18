@@ -283,7 +283,8 @@ export class Umbrella {
     const at = (k, i, j) => k * (NU + 1) * (NV + 1) + i * (NV + 1) + j;
     for (let k = 0; k < RIBS; k++) for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) I.push(at(k, i, j), at(k, i + 1, j), at(k, i, j + 1), at(k, i, j + 1), at(k, i + 1, j), at(k, i + 1, j + 1));
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2)); geo.setIndex(I);
-    this.cloth = mesh(geo, MAT.fabric); this.cloth.frustumCulled = false; this.obj.add(this.cloth);
+    this.cloth = mesh(geo, MAT.fabric.clone()); this.cloth.frustumCulled = false; this.obj.add(this.cloth); // своя ткань: гаснет, когда закрывает Лёву (club.js)
+    this.fadeTo = 1;
     this.shape(1);
   }
   get folded() { return this.want < 0.5; }
@@ -320,6 +321,9 @@ export class Umbrella {
     p.needsUpdate = true; this.cloth.geometry.computeVertexNormals();
   }
   update(dt) {
+    const m = this.cloth.material, tr = this.fadeTo < 0.99 || m.opacity < 0.99;
+    m.opacity += (this.fadeTo - m.opacity) * Math.min(1, dt * 8);
+    if (m.transparent !== tr) { m.transparent = tr; m.depthWrite = !tr; m.needsUpdate = true; } // программу меняем только на переходе
     if (Math.abs(this.open - this.want) < 1e-3) return;
     this.open += Math.sign(this.want - this.open) * Math.min(Math.abs(this.want - this.open), dt / 1.4);
     this.shape(this.open);
