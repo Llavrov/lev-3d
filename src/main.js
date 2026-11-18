@@ -18,6 +18,7 @@ import { Player, POWER, holdOf, powerOf } from './player.js';
 import { Game, AI } from './game.js';
 import { Club } from './club.js';
 import { Practice } from './practice.js';
+import { Girls } from './girls.js';
 import { STROKES, sample } from './swing.js';
 import { makeSound } from './sound.js';
 import { solveShot, step as ballStep } from './physics.js';
@@ -351,7 +352,7 @@ addEventListener('keydown', (e) => {
 // ---------- Прогулка по клубу (club.js) ----------
 // Q — уйти с корта, E — сесть на скамейку или встать, V — вид (со скамейки → ТВ → крупно за заменой), R — вернуться на корт.
 // Те же действия кнопками (#cbar), ходьба — WASD или джойстик, Shift или джойстик до упора — бегом.
-let club = null, sub = null, subReady = null;
+let club = null, sub = null, subReady = null, girls = null; // girls — девушки на корте 2 (girls.js)
 function clubKey(code) {
   if (!started || !game || game.drill) return false;
   if (code === 'KeyQ' && !club.active) return leave(), true;
@@ -471,6 +472,7 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
   opp.measure();
   log('start', { reach: lev.measure(), opp: !!oppGltf, racket: myRacket, w: innerWidth, h: innerHeight, touch: matchMedia('(pointer: coarse)').matches });
   club = new Club({ game, lev, court, sound, onMode: clubUi });
+  girls = new Girls({ scene, game, club, camera, sound, loader });
   // Замена (club.js): модель из Meshy грузится после старта, без неё — соперник в голубом.
   subReady = loadOpt('/models/sub.glb').then((g) => {
     sub = new Player(scene, g ?? oppGltf ?? gltf, { side: 1, height: 1.8, racketColor: '#2f7d4f', cloth: g ? null : '#86bfe6' });
@@ -581,6 +583,7 @@ renderer.setAnimationLoop(() => {
       game.lev.update(dt, game.now, new THREE.Vector3(), game.b);
       game.opp.update(dt, game.now, new THREE.Vector3(), game.b);
     }
+    girls?.update(dt, game.now);
     if (club.active) clubCam(dt); else if (started) follow(dt); else menuCam(dt);
     showLanding(game.now); showSpot(game.now, dt);
     aimGuide.update(dt, game.now);
@@ -593,7 +596,7 @@ if (Q.has('debug')) window.__lev = {
   scene, camera, get game() { return game; },
   // Пошаговая проверка: __pause = true, потом step(секунды, движение {x, y}) — игра идёт ровно на заданное время.
   step(sec, a = null, h = window.__dt ?? 1 / 120) { // без a — бег от зажатых клавиш, как в игре; __dt — шаг кадра (проверка на 30–60 кадрах)
-    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, a ?? walkInput()); powerFx.track(game.now); }
+    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, a ?? walkInput()); girls?.update(h, game.now); powerFx.track(game.now); }
   },
   get club() { return club; },
   render() { window.__camHold = false; if (club.active) { club.snap(camera, follow); clubCam(0); } else follow(1); showLanding(game.now); showSpot(game.now, 1); aimGuide.update(0.2, game.now); powerFx.update(0, game.now); draw(); }, // кадр сразу, не дожидаясь requestAnimationFrame
