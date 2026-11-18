@@ -4,7 +4,7 @@
 // ТВ сверху из-за задней линии, крупно за заменой (камера матча follow из main.js).
 import * as THREE from 'three';
 import { COURT, GATE, COURT2_X } from './court.js';
-import { SEATS } from './env.js';
+import { SEATS, HOUSE, groundAt } from './env.js';
 import { PAD } from './env-mountains.js';
 
 const clamp = THREE.MathUtils.clamp;
@@ -86,7 +86,7 @@ function scan(court) {
     if (g && g.height <= 0.2 && g.width * g.depth > 3) { box.setFromObject(o); if (box.max.y > 0.02) floors.push([box.min.x, box.min.z, box.max.x, box.max.z, box.max.y]); }
   });
   for (const c of inst.values()) if (c[2] > 0.05 && c[2] < 1.5) circles.push(c);
-  return { segs, circles, boxes, floors, area: AREA };
+  return { segs: [...segs, ...HOUSE.segs], circles: [...circles, ...HOUSE.circles], boxes: [...boxes, ...HOUSE.boxes], floors: [...floors, ...HOUSE.floors], area: AREA }; // дом: стены с проёмом двери, створка, мебель, пол зала (env-house.js)
 }
 
 export class Club {
@@ -99,7 +99,7 @@ export class Club {
     this.eye = new THREE.Vector3(); this.look = new THREE.Vector3(); this.lookAt = new THREE.Vector3(0, 0.8, 0);
   }
   get active() { return this.mode !== null; }
-  ground(x, z) { let y = 0; for (const [x0, z0, x1, z1, top] of this.obs.floors) if (x >= x0 && x <= x1 && z >= z0 && z <= z1) y = Math.max(y, top); return y; }
+  ground(x, z) { let y = groundAt(x, z); for (const [x0, z0, x1, z1, top] of this.obs.floors) if (x >= x0 && x <= x1 && z >= z0 && z <= z1) y = Math.max(y, top); return y; }
   free(p) {
     p.free = true; p.idle = false; p.gest = null; p.stroke = null; p.split = null; p.sliding = 0;
     p.bounds = (pos) => pushOut(pos, R, this.obs);

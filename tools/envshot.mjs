@@ -6,6 +6,7 @@
 //   --dist <папка> — снимать собранную версию (vite build) вместо dev-сервера: так сравниваем с резервной копией
 //   --eval '<js>' — выполнить в странице перед съёмкой (пробы без правки кода)
 //   --desk — без кадров телефона (быстрее)
+//   --url http://localhost:3962 — свой dev-сервер
 //   --gpu — через видеокарту Мака (metal), а не программный swiftshader: так время кадра похоже на настоящее.
 import { chromium } from 'playwright-core';
 import { mkdirSync, existsSync } from 'node:fs';
@@ -14,7 +15,7 @@ import { join } from 'node:path';
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf('--' + k); return i < 0 ? d : argv[i + 1]; };
 const OUT = opt('out', 'test-out/env'), ONLY = opt('only', '')?.split(',').filter(Boolean), Q = opt('q', '');
-const PERF = argv.includes('--perf'), GPU = argv.includes('--gpu'), EVAL = opt('eval', ''), DIST = opt('dist', '');
+const PERF = argv.includes('--perf'), GPU = argv.includes('--gpu'), EVAL = opt('eval', ''), DIST = opt('dist', ''), BASE = opt('url', 'http://localhost:3952');
 mkdirSync(OUT, { recursive: true });
 
 // Ракурсы [глаз, цель]: корт z от −11.885 до +11.885, Лёва у z ≈ +12.7.
@@ -50,7 +51,7 @@ for (const [w, h, tag] of [[1440, 900, 'd'], ...(argv.includes('--desk') ? [] : 
   // Без горячей перезагрузки: рядом правят код другие агенты, и Vite перезагружал страницу посреди съёмки.
   await page.route('**/@vite/client', (r) => r.fulfill({ contentType: 'application/javascript', body: 'const h = () => ({ accept() {}, dispose() {}, prune() {}, invalidate() {}, on() {}, data: {} }); export const createHotContext = h, injectQuery = (u) => u, updateStyle = () => {}, removeStyle = () => {}; export class ErrorOverlay {}' }));
   if (DIST) await page.route('http://dist.test/**', (r) => { const f = join(DIST, new URL(r.request().url()).pathname.replace(/\/$/, '/index.html')); r.fulfill(existsSync(f) ? { path: f } : { status: 404 }); });
-  await page.goto(`${DIST ? 'http://dist.test' : 'http://localhost:3952'}/?debug&nolog${argv.includes('--ao') ? '' : '&noao'}${Q ? '&' + Q : ''}`); // --ao: с затенением GTAO, как на компьютере
+  await page.goto(`${DIST ? 'http://dist.test' : BASE}/?debug&nolog${argv.includes('--ao') ? '' : '&noao'}${Q ? '&' + Q : ''}`); // --ao: с затенением GTAO, как на компьютере
   await page.waitForFunction(() => window.__lev?.game && !document.getElementById('play').disabled, null, { timeout: 180000 });
   await page.waitForTimeout(2500); // текстуры и меню-камера успевают встать
   if (EVAL) await page.evaluate(EVAL);
