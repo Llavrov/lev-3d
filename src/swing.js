@@ -272,8 +272,43 @@ export function sample(keys, s) {
 // Поворот идёт снизу вверх и пик скорости таза приходится на −0,07 с, корпуса на −0,03, а не всё тело разом в момент
 // удара (разбор движения 18.11: таз, плечи и рука крутились синхронно, пик скорости таза узким всплеском на касании).
 export const CHAIN = { hips: 0.07, torso: 0.025 };
+// Кривая через ключи с непрерывной скоростью: кубический Эрмит, касательная в ключе — по соседям с ограничением
+// Фритча–Карлсона (без перелёта за ключ, на площадке ноль). У каждого отрезка раньше было своё замедление, и на стыке
+// −0,17 → 0 → 0,1 скорость корпуса падала с ~1600 до 600°/с за кадр — «робот». В самих ключах поза та же; в момент
+// удара касательная ×1,4 — рука всё так же разгоняется к мячу.
+function curveAt(keys, s) {
+  const n = keys.length, t = THREE.MathUtils.clamp(s, keys[0].t, keys[n - 1].t);
+  let i = 0;
+  while (i < n - 2 && t > keys[i + 1].t) i++;
+  const A = keys[i], B = keys[i + 1], h = B.t - A.t, u = (t - A.t) / h, u2 = u * u, u3 = u2 * u;
+  const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = 3 * u2 - 2 * u3, h11 = u3 - u2;
+  const slope = (j, get) => {
+    if (j === 0 || j === n - 1) return 0;
+    const K0 = keys[j - 1], K = keys[j], K1 = keys[j + 1], d0 = (get(K) - get(K0)) / (K.t - K0.t), d1 = (get(K1) - get(K)) / (K1.t - K.t);
+    if (d0 * d1 <= 0) return 0;
+    const m = ((get(K1) - get(K0)) / (K1.t - K0.t)) * (K.t === 0 ? 1.4 : 1);
+    return Math.sign(m) * Math.min(Math.abs(m), 3 * Math.abs(d0), 3 * Math.abs(d1));
+  };
+  const curve = (get) => h00 * get(A) + h10 * h * slope(i, get) + h01 * get(B) + h11 * h * slope(i + 1, get);
+  const o = {};
+  for (const k in A) {
+    const a = A[k];
+    if (typeof a === 'number') o[k] = curve((K) => K[k] ?? a);
+    else if (a?.isVector3) { // направление — по дуге от ключа к ключу, по той же кривой, но в угле пути (скорость по дуге непрерывна)
+      const seg = (j) => keys[j][k].angleTo(keys[j + 1][k]), th = seg(i);
+      const sp = (j) => {
+        if (j === 0 || j === n - 1) return 0;
+        const d0 = seg(j - 1) / (keys[j].t - keys[j - 1].t), d1 = seg(j) / (keys[j + 1].t - keys[j].t);
+        if (d0 < 1e-6 || d1 < 1e-6) return 0;
+        return Math.min(((seg(j - 1) + seg(j)) / (keys[j + 1].t - keys[j - 1].t)) * (keys[j].t === 0 ? 1.4 : 1), 3 * d0, 3 * d1);
+      };
+      o[k] = th < 1e-5 ? a.clone() : slerpDir(a, B[k], (h10 * h * sp(i) + h01 * th + h11 * h * sp(i + 1)) / th);
+    } else o[k] = a;
+  }
+  return o;
+}
 export function strokeAt(keys, s) {
-  const at = (t) => mix(...sample(keys, Math.max(s + t, keys[0].t)));
+  const at = (t) => curveAt(keys, s + t);
   const k = at(0), kt = at(CHAIN.torso);
   return { ...k, hips: at(CHAIN.hips).hips, torso: kt.torso, lean: kt.lean, tilt: kt.tilt };
 }
@@ -431,18 +466,25 @@ export class Rig {
       return Math.atan2(u.dot(new THREE.Vector3().crossVectors(front, bend)), front.dot(bend)) * k;
     };
     let ang = twist(u, f);
-    if (Math.abs(ang) > HUM_MAX) {
+    // В игре (coherent) локоть по кругу берём ближайший к прошлому кадру и плавно возвращаем к нулю. Раньше поиск брал
+    // первый подходящий угол в любую сторону, и на развороте на форхенд локоть перескакивал на другую сторону:
+    // предплечье на 140° за кадр. Без coherent (замеры, проверка поз) — как раньше, ближайший к нулю.
+    const prev = this.coherent ? this.orbit[side] : 0;
+    if (Math.abs(ang) > HUM_MAX || Math.abs(prev) > 1e-3) {
       const [L1, L2] = this.armLen[side], d = u.clone().multiplyScalar(L1).addScaledVector(f, L2).normalize(), q = new THREE.Quaternion();
-      let best = [u, f, ang];
-      search: for (let i = 1; i <= 36; i++) for (const sg of [1, -1]) {
-        q.setFromAxisAngle(d, sg * i * deg(5));
+      const anchor = prev * 0.8;
+      let best = null;
+      for (let j = 0; j <= 144; j++) {
+        const phi = (j % 2 ? (j + 1) / 2 : -j / 2) * deg(2.5); // 0, +, −, … — при равенстве как раньше: сначала «+»
+        q.setFromAxisAngle(d, phi);
         const u2 = u.clone().applyQuaternion(q), f2 = f.clone().applyQuaternion(q), a = twist(u2, f2);
-        if (Math.abs(a) < Math.abs(best[2])) best = [u2, f2, a];
-        if (Math.abs(a) <= HUM_MAX) break search;
+        const cost = Math.abs(a) <= HUM_MAX ? Math.abs(phi - anchor) : 100 + Math.abs(a);
+        if (!best || cost < best[3]) best = [u2, f2, a, cost, phi];
       }
       [u, f, ang] = best;
+      this.orbit[side] = Math.abs(best[4]) < deg(1) ? 0 : best[4];
       ang = THREE.MathUtils.clamp(ang, -HUM_MAX, HUM_MAX);
-    }
+    } else this.orbit[side] = 0;
     this.aim(up, fore, u);
     this.rotate(up, new THREE.Quaternion().setFromAxisAngle(u, ang));
     armTwist(this, side, u, ang); // есть скрутка плеча — она возвращает часть прокрута, стык с ключицей не жгутом
@@ -469,6 +511,7 @@ export class Rig {
   // Поза между ключами A и B (доля u). Ноги — из ключей или, если переданы feet, в точки на корте (legs).
   // Возвращает rk и face ракетки, ставит её вызывающий.
   pose(A, B, u, feet = null) {
+    this.coherent = !!feet?.dt; this.dt = feet?.dt ?? 0; this.orbit ??= { Left: 0, Right: 0 }; // кадры игры идут подряд — решения рук держим непрерывными
     this.root.updateMatrixWorld(true);
     this.toPlayer = this.root.getWorldQuaternion(new THREE.Quaternion()).invert();
     const lerp = (k) => A[k] + (B[k] - A[k]) * u;
@@ -604,8 +647,17 @@ export class Rig {
     const d = W.clone().sub(S), len = THREE.MathUtils.clamp(d.length(), Math.abs(L1 - L2) + 0.01, (L1 + L2) * 0.999);
     d.normalize();
     const a = (L1 * L1 - L2 * L2 + len * len) / (2 * len), h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
-    const pole = E.sub(S); pole.addScaledVector(d, -pole.dot(d));
+    let pole = E.sub(S); pole.addScaledVector(d, -pole.dot(d));
+    // Куда сгибается локоть — помним с прошлого кадра (в осях игрока): у почти прямой руки направление сгиба неустойчиво,
+    // и на двуручном бэкхенде локоть левой в момент удара перескакивал на другую сторону (плечо на 100° за кадр).
+    const mem = this.coherent ? this.poleMem?.[s]?.clone().applyQuaternion(this.toPlayer.clone().invert()) : null;
+    if (mem) {
+      mem.addScaledVector(d, -mem.dot(d));
+      const w = 0.5 * THREE.MathUtils.smoothstep(pole.length() / L1, 0.05, 0.35);
+      if (mem.lengthSq() > 1e-6) pole = (pole.lengthSq() > 1e-10 ? pole.normalize().multiplyScalar(w) : pole.set(0, 0, 0)).addScaledVector(mem.normalize(), 1 - w);
+    }
     if (pole.lengthSq() < 1e-5) pole.set(0, -1, 0).addScaledVector(d, d.y);
+    (this.poleMem ??= {})[s] = pole.clone().normalize().applyQuaternion(this.toPlayer);
     const elbow = S.clone().addScaledVector(d, a).addScaledVector(pole.normalize(), h);
     const target = S.clone().addScaledVector(d, len);
     this.arm(s, elbow.clone().sub(S).normalize().applyQuaternion(this.toPlayer), target.sub(elbow).normalize().applyQuaternion(this.toPlayer));
@@ -646,7 +698,11 @@ export class Rig {
     const slide = THREE.MathUtils.smoothstep(reachAt(along), 0.84, 0.95);
     const T = o.clone().addScaledVector(Y, THREE.MathUtils.lerp(along, 0.015, slide)), near = 1 - THREE.MathUtils.smoothstep(lp.distanceTo(T), 0.1, 0.3);
     const far = THREE.MathUtils.smoothstep(S.distanceTo(T) / arm, 0.9, 1.0);
-    const wt = (lh >= 0 ? Math.max(lh, near) : near * (1 + lh)) * (1 - far);
+    let wt = (lh >= 0 ? Math.max(lh, near) : near * (1 + lh)) * (1 - far);
+    // Хват и отпускание второй рукой — не быстрее ~0,12 с: раньше на развороте рука отпускала ракетку в кадр (порог «далеко»),
+    // и кисть перелетала на полметра.
+    if (this.coherent && this.leftW != null) wt = this.leftW + THREE.MathUtils.clamp(wt - this.leftW, -this.dt / 0.12, this.dt / 0.12);
+    this.leftW = wt;
     if (wt <= 0) return;
     this.leftOn = wt;
     for (let it = 0; it < 2; it++) {

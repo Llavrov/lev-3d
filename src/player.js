@@ -309,7 +309,9 @@ export class Player {
     for (const f of F) {
       if (!f.step) continue;
       const st = f.step, u = Math.min(1, (now - st.t0) / st.dur);
-      if (!st.fixed) apart(f, st.to.lerp(ideal(f, st.t0 + st.dur - now), 0.5));
+      // Место приземления уточняем только в начале маха: раньше цель ехала вместе с телом до самой постановки, ступня
+      // садилась на скорости тела и вставала в кадр — голень дёргалась на 25° за кадр.
+      if (!st.fixed && u < 0.7) apart(f, st.to.lerp(ideal(f, st.t0 + st.dur - now), 0.5 * (1 - smooth(u, 0.35, 0.7))));
       f.pos.lerpVectors(st.from, st.to, u * u * (3 - 2 * u));
       if (st.bow) f.pos.addScaledVector(st.bow, Math.sin(Math.PI * u)); // скрестный шаг идёт дугой перед опорной ногой, не сквозь неё
       f.lift = st.h * Math.sin(Math.PI * (1 - (1 - u) ** (1 / (st.k ?? 1)))); // на бегу пятка взлетает в начале маха (к ягодице), потом нога выносится вперёд; старт с конечной скоростью (u^k давал бесконечную — рывок голени)
@@ -466,7 +468,7 @@ export class Player {
     }
     const settle = now - (this.settleAt ?? -9) < 0.3 ? 0.05 * Math.sin(Math.PI * (now - this.settleAt) / 0.3) : 0;
     let turnTarget = 0;
-    if (!st && speed > 0.5) turnTarget = clamp(wrapAngle(Math.atan2(this.vel.x, this.vel.z) - this.netYaw), -1.75, 1.75) * run;
+    if ((!st || st.wout > 0.5) && speed > 0.5) turnTarget = clamp(wrapAngle(Math.atan2(this.vel.x, this.vel.z) - this.netYaw), -1.75, 1.75) * run; // после удара побежал — корпус по ходу, а не боком на 6 м/с
     // Прогулка (club.js): корпус разворачивается по ходу полностью, стоя держит разворот, на скамейке — по сиденью.
     if (this.free) turnTarget = this.seat ? wrapAngle(this.seat.yaw - this.netYaw) : speed > 0.3 ? wrapAngle(Math.atan2(this.vel.x, this.vel.z) - this.netYaw) : this.bodyTurn;
     // Разворот корпуса — пружина без перерегулирования (до 7 рад/с), а не ровная скорость 6 рад/с с места: та включалась
@@ -503,7 +505,7 @@ export class Player {
       // (+1,5 см после). Раньше таз был ниже всего ровно в момент удара — удар без ног.
       if (st.type !== 'oh' && !st.type.startsWith('v')) extra += 0.045 * Math.exp(-(((ss + 0.28) / 0.2) ** 2)) - 0.015 * Math.exp(-(((ss - 0.12) / 0.12) ** 2));
       // Разворот перед ударом плавный, 0,25–0,42 с по запасу времени (на видео Лёвы ~0,4 с), а не рывком за 0,1 с.
-      st.win = smooth(now - st.tPress, 0, lead >= PREP ? clamp(lead - 0.3, 0.25, 0.42) : 0.14); st.wout = smooth(s, AFTER - 0.3, AFTER);
+      st.win = smooth(now - st.tPress, 0, lead >= PREP ? clamp(lead - 0.3, 0.25, 0.42) : 0.14); st.wout = Math.max(smooth(s, AFTER - 0.3, AFTER), st.contacted ? smooth(speed, 1.5, 3.5) * smooth(s, 0.12, 0.35) : 0); // рванул после удара — проводку обрываем, как живые
       if (s > AFTER) this.stroke = null;
     }
     const hop = this.split ? Math.sin(Math.PI * Math.min(1, (now - this.split.t0) / this.split.dur)) : 0;
