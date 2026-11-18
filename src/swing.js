@@ -481,6 +481,14 @@ export class Rig {
         const cost = Math.abs(a) <= HUM_MAX ? Math.abs(phi - anchor) : 100 + Math.abs(a);
         if (!best || cost < best[3]) best = [u2, f2, a, cost, phi];
       }
+      // В игре локоть по кругу ходит не быстрее 7° за вызов: если прошлое решение стало недопустимым, плечо лучше на пару
+      // кадров докрутить до предела, чем локоть прыгнет на 60° за кадр.
+      if (this.coherent && Math.abs(best[4] - prev) > deg(7)) {
+        const phi = prev + Math.sign(best[4] - prev) * deg(7);
+        q.setFromAxisAngle(d, phi);
+        const u2 = u.clone().applyQuaternion(q), f2 = f.clone().applyQuaternion(q);
+        best = [u2, f2, twist(u2, f2), 0, phi];
+      }
       [u, f, ang] = best;
       this.orbit[side] = Math.abs(best[4]) < deg(1) ? 0 : best[4];
       ang = THREE.MathUtils.clamp(ang, -HUM_MAX, HUM_MAX);
@@ -699,9 +707,9 @@ export class Rig {
     const T = o.clone().addScaledVector(Y, THREE.MathUtils.lerp(along, 0.015, slide)), near = 1 - THREE.MathUtils.smoothstep(lp.distanceTo(T), 0.1, 0.3);
     const far = THREE.MathUtils.smoothstep(S.distanceTo(T) / arm, 0.9, 1.0);
     let wt = (lh >= 0 ? Math.max(lh, near) : near * (1 + lh)) * (1 - far);
-    // Хват и отпускание второй рукой — не быстрее ~0,12 с: раньше на развороте рука отпускала ракетку в кадр (порог «далеко»),
+    // Хват и отпускание второй рукой — не быстрее ~0,2 с: раньше на развороте рука отпускала ракетку в кадр (порог «далеко»),
     // и кисть перелетала на полметра.
-    if (this.coherent && this.leftW != null) wt = this.leftW + THREE.MathUtils.clamp(wt - this.leftW, -this.dt / 0.12, this.dt / 0.12);
+    if (this.coherent && this.leftW != null) wt = this.leftW + THREE.MathUtils.clamp(wt - this.leftW, -this.dt / 0.2, this.dt / 0.2);
     this.leftW = wt;
     if (wt <= 0) return;
     this.leftOn = wt;
