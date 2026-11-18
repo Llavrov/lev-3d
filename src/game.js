@@ -50,8 +50,11 @@ export class Game {
     Object.assign(this, { lev, opp, ballMesh, hud, sound, aimLev, axes, log, marks, dust });
     this.b = makeBall();
     this.prev = new THREE.Vector3();
+    // Счёт: очки в гейме (в тай-брейке — очки тай-брейка), геймы в сете, прошлые сеты [геймы Лёвы, соперника] — по местам,
+    // замена наследует. bestOf — сколько сетов максимум (1 или 3, выбор на старте; турниры зададут своё).
     this.pts = new Map([[lev, 0], [opp, 0]]);
     this.games = new Map([[lev, 0], [opp, 0]]);
+    this.sets = []; this.tb = null; this.bestOf = 1; this.ended = null;
     this.server = lev;
     this.hook(lev); this.hook(opp);
     this.ai = new AI(opp, this);
@@ -297,7 +300,8 @@ export class Game {
     this.pts.set(w, this.pts.get(w) + 1);
     // Сложность подстраивается симметрично (равновесие около 50% очков), плюс чуть сильнее, когда Лёва ведёт в геймах:
     // матч держится близким. Раньше −0,07 за очко соперника против +0,04 — он слабел, пока Лёва не брал ~64%.
-    const lead = clamp(this.games.get(this.lev) - this.games.get(this.opp), -3, 3);
+    // Ведёт на сет — как на два гейма: не больше ±3, чтобы матч держался близким и не уходил в разгром.
+    const lead = clamp(this.games.get(this.lev) - this.games.get(this.opp) + 2 * this.setLead(), -3, 3);
     ai.skill = clamp(ai.skill + (w === this.lev ? 0.04 : -0.04) + 0.006 * lead, 0.35, MAX_SKILL);
     // Кураж: три очка подряд — следующие 2–3 он играет сильнее и почти без ошибок.
     ai.streak = w === this.opp ? ai.streak + 1 : 0;
@@ -309,24 +313,56 @@ export class Game {
     w.mood = clamp(w.mood + (winner ? 0.35 : 0.15), -1, 1); l.mood = clamp(l.mood - (error ? 0.3 : 0.1), -1, 1);
     w.gest = { k: winner ? 'fist' : null, t0: this.now }; l.gest = { k: error ? 'down' : null, t0: this.now };
     let gameText = '';
-    if (this.pts.get(w) >= 4 && this.pts.get(w) - this.pts.get(l) >= 2) {
-      this.games.set(w, this.games.get(w) + 1);
-      this.pts.set(w, 0); this.pts.set(l, 0);
-      this.server = this.other(this.server);
-      gameText = w === this.lev ? 'Гейм Лёвы' : 'Гейм соперника';
-      if ((this.games.get(w) + this.games.get(l)) % 2) for (const p of [w, l]) p.stamina = Math.min(1, p.stamina + 0.35); // смена сторон: передышка
-    }
+    const pw = this.pts.get(w), pl = this.pts.get(l);
+    if (this.tb && pw >= 7 && pw - pl >= 2) gameText = this.winGame(w, l);
+    else if (this.tb) { // тай-брейк: первый подаёт одно очко, дальше по два; смена сторон каждые 6 очков
+      if ((pw + pl) % 2) this.server = this.other(this.server);
+      if ((pw + pl) % 6 === 0) this.rest();
+    } else if (pw >= 4 && pw - pl >= 2) gameText = this.winGame(w, l);
     const P = [this.lev, this.opp];
-    this.log('point', { winner: this.who(w), why, rally: this.rally, skill: r2(ai.skill), hot: ai.hot, sta: P.map((p) => r2(p.stamina)), mood: P.map((p) => r2(p.mood)), score: [this.pts.get(this.lev), this.pts.get(this.opp)], games: [this.games.get(this.lev), this.games.get(this.opp)] });
+    this.log('point', { winner: this.who(w), why, rally: this.rally, skill: r2(ai.skill), hot: ai.hot, sta: P.map((p) => r2(p.stamina)), mood: P.map((p) => r2(p.mood)), score: [this.pts.get(this.lev), this.pts.get(this.opp)], games: [this.games.get(this.lev), this.games.get(this.opp)], sets: this.sets.map((x) => x.join(':')), tb: !!this.tb });
     this.hud.score(this);
     this.hud.flash(gameText || why, w === this.lev);
   }
 
-  // Соперник в шаге от гейма: брейк-поинт на подаче Лёвы или геймбол на своей.
-  clutch() { const o = this.pts.get(this.opp); return o >= 3 && o > this.pts.get(this.lev); }
+  // Гейм взят. Сет — до 6 геймов с перевесом в 2, при 6:6 тай-брейк до 7 очков с перевесом в 2 (7:6 в сет).
+  // Подача переходит каждый гейм; следующий сет после тай-брейка начинает тот, кто в нём первым принимал.
+  // Смена сторон — после нечётного гейма в сете (передышка выносливости). Возвращает текст для табло.
+  winGame(w, l) {
+    const tb = this.tb, who = w === this.lev ? 'Лёвы' : 'соперника';
+    this.tb = null;
+    this.games.set(w, this.games.get(w) + 1); this.pts.set(w, 0); this.pts.set(l, 0);
+    const gw = this.games.get(w), gl = this.games.get(l);
+    if ((gw + gl) % 2) this.rest();
+    this.server = tb ? this.other(tb.first) : this.other(this.server);
+    if (!tb && !(gw >= 6 && gw - gl >= 2)) {
+      if (gw === 6 && gl === 6) { this.tb = { first: this.server }; this.log('tiebreak', { first: this.who(this.server) }); return 'Тай-брейк'; }
+      return 'Гейм ' + who;
+    }
+    this.sets.push([this.games.get(this.lev), this.games.get(this.opp)]);
+    this.games.set(w, 0); this.games.set(l, 0);
+    this.log('set', { winner: this.who(w), games: this.sets.at(-1), tb: !!tb });
+    if (this.sets.filter(([a, b]) => (a > b) === (w === this.lev)).length <= this.bestOf / 2) return 'Сет ' + who; // сетов меньше половины — играем дальше
+    this.ended = w; this.log('match', { winner: this.who(w), sets: this.sets.map((x) => x.join(':')) });
+    return 'Матч ' + who;
+  }
+  rest() { for (const p of [this.lev, this.opp]) p.stamina = Math.min(1, p.stamina + 0.35); } // смена сторон: передышка
+  setLead() { return this.sets.reduce((n, [a, b]) => n + Math.sign(a - b), 0); } // сетов у Лёвы минус у соперника
+  // Конец матча: табло с итогом (main.js, onMatch). Новый матч — с подачи Лёвы; serve = false — только обнулить счёт.
+  finish() { this.state = 'match-over'; this.hud.hint(''); this.onMatch?.(this.ended); }
+  newMatch(now, serve = true) {
+    for (const m of [this.pts, this.games]) for (const k of m.keys()) m.set(k, 0);
+    Object.assign(this, { sets: [], tb: null, ended: null, restartAt: null, server: this.lev });
+    this.log('newmatch', { bestOf: this.bestOf });
+    if (serve) this.resetPoint(now); else this.hud.score(this);
+  }
+
+  // Соперник в шаге от гейма (в тай-брейке — от сета): брейк-поинт на подаче Лёвы или геймбол на своей.
+  clutch() { const o = this.pts.get(this.opp); return o >= (this.tb ? 6 : 3) && o > this.pts.get(this.lev); }
 
   call() {
     const a = this.pts.get(this.lev), b = this.pts.get(this.opp);
+    if (this.tb) return [String(a), String(b)];
     if (a >= 3 && b >= 3) return a === b ? ['Ровно', ''] : a > b ? ['Больше', ''] : ['', 'Больше'];
     return [CALL[a], CALL[b]];
   }
@@ -336,7 +372,8 @@ export class Game {
     // Лёва ушёл с корта, замена ещё идёт к задней линии (club.js ведёт её сам): розыгрыша нет, соперник ждёт на месте.
     if (this.state === 'away') { this.opp.idle = true; this.opp.update(dt, now, new THREE.Vector3(), this.b); return; }
     if (this.state === 'serve' && this.serveAt && now >= this.serveAt) { this.serveAt = null; this.serve(this.server, now); }
-    if (this.state === 'over' && now >= this.nextAt) this.resetPoint(now);
+    if (this.state === 'over' && now >= this.nextAt) { if (this.ended) this.finish(); else this.resetPoint(now); }
+    if (this.state === 'match-over' && this.restartAt && now >= this.restartAt) this.newMatch(now); // за Лёву играет ИИ — следующий матч сам
     if (this.state === 'fault' && now >= this.nextAt) this.resetPoint(now, true);
     const b = this.b;
     this.prev.copy(b.pos);

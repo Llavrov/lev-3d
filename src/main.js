@@ -239,6 +239,7 @@ const hud = {
     const [a, b] = g.call();
     $('pl').textContent = a; $('po').textContent = b; $('nl').textContent = g.lev.human ? 'Лёва' : 'Замена';
     $('gl').textContent = g.games.get(g.lev); $('go').textContent = g.games.get(g.opp);
+    $('sets').textContent = g.sets.map(([a, b]) => `${a}:${b}`).join(' · '); // прошлые сеты, счёт Лёвы первым
     $('srv-l').classList.toggle('on', g.server === g.lev); $('srv-o').classList.toggle('on', g.server === g.opp);
   },
   stamina(g) {
@@ -341,6 +342,7 @@ addEventListener('keydown', (e) => {
   if (e.repeat) return;
   keys.add(e.code);
   if (!started && (e.code === 'Space' || e.code === 'Enter')) return start();
+  if (!$('end').hidden && e.code === 'Enter') return again();
   if (!started && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) return switchRacket(e.code === 'ArrowLeft' ? -1 : 1);
   if (clubKey(e.code)) return;
   if (/^(Key[WASD]|Arrow)/.test(e.code)) { if (swinging()) aimOnly.add(e.code); log('key', { k: e.code, down: 1, aim: aimOnly.has(e.code) }); }
@@ -365,7 +367,11 @@ function clubKey(code) {
   if (code === 'KeyE') { if (club.mode === 'sit') club.stand(); else club.sit(); } else if (code === 'KeyV') club.nextView(); else if (code === 'KeyR') club.back(game.now, Q.has('auto')); else return false;
   return true;
 }
-async function leave() { if (club.active || club.leaving) return; club.leaving = true; club.exit(await subReady, game.now); club.leaving = false; } // замена догружается в фоне
+async function leave() {
+  if (club.active || club.leaving) return;
+  if (game.state === 'match-over') { endUi(null); game.newMatch(game.now, false); } // замена начнёт новый матч
+  club.leaving = true; club.exit(await subReady, game.now); club.leaving = false; // замена догружается в фоне
+}
 const walkInput = () => { const a = axes(); return { x: a.x, y: a.y, run: held('ShiftLeft', 'ShiftRight') || stick.length() > 0.95 }; };
 function clubUi(mode, canSit) {
   document.body.classList.toggle('club', !!mode);
@@ -415,14 +421,30 @@ function start(mode = 'match') {
   $('start').classList.add('done');
   document.body.classList.remove('menu');
   court.getObjectByName('fence-near').visible = false; // в игре камера стоит за этой стенкой
-  log('mode', { mode });
-  if (mode === 'match') return game.resetPoint(game.now ?? 0);
+  log('mode', { mode, bestOf });
+  if (mode === 'match') { game.bestOf = bestOf; return game.resetPoint(game.now ?? 0); }
   document.body.classList.add('practice');
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* без памяти — рекорд на эту игру */ } } };
   const ui = { text: (h) => { $('ltext').innerHTML = h; }, dots: (n, need) => { $('ldots').innerHTML = need && need < 9 ? Array.from({ length: need }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('') : ''; }, flash: (h, good) => hud.flash(h.replace(/&nbsp;/g, '\u00a0'), good) };
   game.drill = new Practice(game, mode, { scene, court, ui, store, touch: matchMedia('(pointer: coarse)').matches });
   $('pnext').hidden = mode !== 'lessons';
 }
+// Сколько сетов: 1 или до двух побед (из трёх). Запоминаем выбор на этом устройстве.
+let bestOf = (() => { try { return localStorage.getItem('bestOf') === '3' ? 3 : 1; } catch { return 1; } })();
+const bestOfUi = () => document.querySelectorAll('#bestof button').forEach((b) => b.setAttribute('aria-pressed', +b.dataset.n === bestOf));
+document.querySelectorAll('#bestof button').forEach((b) => b.addEventListener('click', () => { bestOf = +b.dataset.n; try { localStorage.setItem('bestOf', bestOf); } catch { /* без памяти — на эту игру */ } bestOfUi(); }));
+bestOfUi();
+// Конец матча: итог одним экраном. За Лёву играет ИИ или замена (Лёва гуляет по клубу) — следующий матч сам через 3 с.
+function endUi(w) {
+  $('end').hidden = !w; document.body.classList.toggle('ended', !!w);
+  if (!w) return;
+  $('endT').textContent = w === game.lev ? 'Лёва выиграл' : 'Соперник выиграл';
+  $('endS').textContent = game.sets.map(([a, b]) => `${a}:${b}`).join(' · ');
+  $('again').focus();
+}
+const again = () => { endUi(null); game.newMatch(game.now); };
+$('again').addEventListener('click', again);
+$('toClub').addEventListener('click', () => { endUi(null); leave(); });
 $('play').addEventListener('click', () => start());
 $('pLessons').addEventListener('click', () => start('lessons'));
 $('pWall').addEventListener('click', () => start('wall'));
@@ -474,6 +496,7 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
     : new Player(scene, gltf, { side: -1, racketColor: '#1d4f91', cloth: '#22324a' });
   game = new Game({ lev, opp, ballMesh, hud, sound, aimLev, axes: () => axes(), log, marks, dust });
   game.onShot = (p, power, at) => powerFx.shot(p, power, at);
+  game.onMatch = (w) => { if (club.active || game.autoLev) game.restartAt = game.now + 3; else endUi(w); };
   opp.measure();
   log('start', { reach: lev.measure(), opp: !!oppGltf, racket: myRacket, w: innerWidth, h: innerHeight, touch: matchMedia('(pointer: coarse)').matches });
   club = new Club({ game, lev, court, sound, onMode: clubUi });
