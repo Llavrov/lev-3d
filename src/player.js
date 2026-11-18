@@ -267,6 +267,7 @@ export class Player {
     const tired = this.tired; // усталость: спринт до −20%, разгон до −15%
     const cap = MOVE.shuffle + (MOVE.sprint * (1 - 0.2 * tired) - MOVE.shuffle) * smooth(this.hold, 0.15, 0.45);
     const want = this.dir.clone().multiplyScalar(m > 0.1 ? Math.min(m * cap * (this.speedScale ?? 1), Math.sqrt(2 * MOVE.slide * left)) : 0);
+    this.wantV = want.length(); // к какой скорости тянется: по ней шаг по мокапу знает, где тело будет к касанию
     const speed = this.vel.length();
     const braking = want.lengthSq() < this.vel.lengthSq() * 0.95 || want.dot(this.vel) < 0;
     // После выпада тело уносит по инерции: скользит по грунту (carry), и первое время разгон к центру вялый (recover).
@@ -365,7 +366,7 @@ export class Player {
     // иначе на 3,5 м/с ступни разъезжались на метр и таз проседал.
     if (other.step && ((now - other.step.t0) / other.step.dur < (run > 0.4 ? 0.72 : 0.6 - 0.15 * smooth(speed, 1.5, 3))) && err[i] < thr + 0.15) return; // полёт — последняя четверть шага другой ноги
     const dur = speed > 0.4 ? THREE.MathUtils.lerp(0.2 - 0.04 * smooth(speed, 1.5, 3.4), 0.32, run) : 0.2;
-    F[i].step = { t0: now, dur, from: F[i].pos.clone(), to: apart(F[i], ideal(F[i], dur)), h: 0.04 + 0.2 * run, k: 1 - 0.4 * run, yaw: this.bodyTurn };
+    F[i].step = { t0: now, dur, from: F[i].pos.clone(), to: apart(F[i], ideal(F[i], dur)), h: 0.04 + 0.2 * run, k: 1 - 0.4 * run, yaw: this.bodyTurn + (this.free ? (this.turnVel ?? 0) * dur : 0) }; // в развороте носок встаёт туда, куда корпус повернётся к касанию
     this.onStep?.(F[i]);
     // Ступня не отстаёт от тела дальше шага: иначе на резком рывке её «телепортирует» под тело.
     for (const f of F) {
@@ -384,12 +385,14 @@ export class Player {
     const ok = gaitReady() && !this.seat && !(st && now > st.tContact - MOVE.plant - 0.15 && now < st.tContact + 0.3) && now >= (this.plantUntil ?? 0)
       && (this.free ? v > (g.on ? 0.2 : 0.35) && off < deg(g.on ? 50 : 35) : v > (g.on ? 1.2 : 1.8) && off < deg(g.on ? 35 : 22));
     if (!ok) { g.on = false; return false; }
-    const L = this.rig.L1 + this.rig.L2, P = gaitParams(v, L), dir = this.vel.clone().setY(0).divideScalar(v);
+    // В разгоне темп — по скорости, к которой тянется (первые шаги с места частые, а не по 0,55 с: иначе опорная стояла,
+    // пока тело уезжало на 0,7 м, и следующая ступня летела 1,7 м).
+    const L = this.rig.L1 + this.rig.L2, P = gaitParams(Math.max(v, Math.min(this.wantV ?? v, v + 1.5)), L), dir = this.vel.clone().setY(0).divideScalar(v);
     const td = (f) => (f === this.feet.Left ? 0 : P.rOff); // касание: левая на φ = 0, правая на rOff
     if (!g.on) { // вход в ход: первой отрывается задняя по ходу ступня; если одна ещё в шаге — фаза по нему
       g.on = true;
       const swing = F.find((f) => f.step);
-      if (swing) g.phase = td(swing) + P.duty + (1 - P.duty) * Math.min(1, (now - swing.step.t0) / swing.step.dur);
+      if (swing) g.phase = td(swing) - Math.max(0, swing.step.t0 + swing.step.dur - now) / P.T; // её касание — когда она и встанет, иначе обе ступни стоят, а тело уезжает
       else { const back = F.reduce((a, f) => (f.pos.dot(dir) < a.pos.dot(dir) ? f : a)); g.phase = td(back) + P.duty - 0.002; }
       g.phase = ((g.phase % 1) + 1) % 1;
     }
@@ -403,7 +406,9 @@ export class Player {
       // в торможении ступня вставала далеко впереди, и таз падал на 6 см за кадр, чтобы до неё дотянуться.
       const aim = (t) => {
         const u = this.vel.clone().setY(0), sp = u.length(), a = clamp(this.acc.dot(u) / Math.max(sp, 1e-3), -12, 12);
-        const go = a < 0 && sp + a * t < 0 ? (sp * sp) / (-2 * a) : sp * t + 0.5 * a * t * t;
+        let go; // путь тела за t: разгон не дальше желаемой скорости, торможение не дальше остановки
+        if (a < 0 && sp + a * t < 0) go = (sp * sp) / (-2 * a);
+        else { const top = Math.max(sp, this.wantV ?? sp), v1 = Math.min(sp + a * t, top), ta = a > 0 ? Math.min(t, (v1 - sp) / a) : t; go = sp * ta + 0.5 * a * ta * ta + v1 * (t - ta); }
         return this.pos.clone().addScaledVector(u.divideScalar(Math.max(sp, 1e-3)), go + P.ahead + this.hipFwd).addScaledVector(bodyRight, f.sign * P.half);
       };
       const dur = (1 - P.duty) * P.T, k0 = this.legFK(f, P, 0, dt);
@@ -550,11 +555,15 @@ export class Player {
     let turnTarget = 0;
     if ((!st || st.wout > 0.5) && speed > 0.5) turnTarget = clamp(wrapAngle(Math.atan2(this.vel.x, this.vel.z) - this.netYaw), -1.75, 1.75) * run; // после удара побежал — корпус по ходу, а не боком на 6 м/с
     // Прогулка (club.js): корпус разворачивается по ходу полностью, стоя держит разворот, на скамейке — по сиденью.
-    if (this.free) turnTarget = this.seat ? wrapAngle(this.seat.yaw - this.netYaw) : speed > 0.3 ? wrapAngle(Math.atan2(this.vel.x, this.vel.z) - this.netYaw) : this.bodyTurn;
+    // На прогулке корпус поворачивается туда, куда тянет ввод (и стоя — разворот на месте), а не за скоростью: та при
+    // смене направления на обратное сначала шла спиной, и тело крутилось столбом посреди хода.
+    if (this.free) turnTarget = this.seat ? wrapAngle(this.seat.yaw - this.netYaw) : (this.wantV ?? 0) > 0.05 ? wrapAngle(Math.atan2(this.dir.x, this.dir.z) - this.netYaw) : speed > 0.3 ? wrapAngle(Math.atan2(this.vel.x, this.vel.z) - this.netYaw) : this.bodyTurn;
     // Разворот корпуса — пружина без перерегулирования (до 7 рад/с), а не ровная скорость 6 рад/с с места: та включалась
     // и выключалась мгновенно — рывок таза и плеч в начале и конце каждого разворота (до 10 000°/с²).
     this.turnVel = (this.turnVel ?? 0) + clamp(144 * wrapAngle(turnTarget - this.bodyTurn) - 24 * (this.turnVel ?? 0), -45, 45) * dt; // ускорение до 45 рад/с²
-    this.turnVel = clamp(this.turnVel, -7, 7); this.bodyTurn += this.turnVel * dt;
+    // На прогулке медленно — разворот на месте не быстрее ~3,5 рад/с: полкруга за 3–4 шага, а не столбом за 0,4 с.
+    const tmax = this.free ? THREE.MathUtils.lerp(3.5, 7, smooth(speed, 0.8, 2.5)) : 7;
+    this.turnVel = clamp(this.turnVel, -tmax, tmax); this.bodyTurn += this.turnVel * dt;
     this.wrap.rotation.y = this.netYaw + this.bodyTurn;
     this.footwork(dt, now);
     // Ход по мокапу: доля позы клипа растёт и гаснет за ~0,12 с, поза — на фазу шага (руки, таз, корпус, качание таза).
@@ -728,8 +737,11 @@ export class Player {
       const m = Math.hypot(move.x, move.z), d = m > 1e-3 ? move.clone().setY(0).divideScalar(m) : null, prev = this.pos.clone();
       this.hold = d && m > 2.2 && d.dot(this.dir) > 0.9 ? this.hold + dt : 0;
       if (d) this.dir.copy(d);
-      const cap = m <= 1.3 ? 1.4 * m : THREE.MathUtils.lerp(1.82, 3.3, smooth(m, 1.3, 1.6)) + (m > 2.2 ? 2.3 * smooth(this.hold, 0.4, 1.4) : 0);
+      // Куда смотрит корпус против того, куда идти: разворачиваясь, человек почти стоит (переступает), а не идёт спиной.
+      const facing = this.netYaw + this.bodyTurn, face = d ? d.x * Math.sin(facing) + d.z * Math.cos(facing) : 1;
+      const cap = (m <= 1.3 ? 1.4 * m : THREE.MathUtils.lerp(1.82, 3.3, smooth(m, 1.3, 1.6)) + (m > 2.2 ? 2.3 * smooth(this.hold, 0.4, 1.4) : 0)) * THREE.MathUtils.lerp(0.15, 1, smooth(face, 0.2, 0.9));
       const want = d ? d.multiplyScalar(cap) : new THREE.Vector3();
+      this.wantV = cap * (d ? 1 : 0);
       const rate = (want.lengthSq() < this.vel.lengthSq() ? 9 : this.vel.length() > 3 ? 4 : 5) * dt, dv = want.sub(this.vel); // тормозит быстрее, чем разгоняется
       if (dv.length() > rate) dv.setLength(rate);
       this.vel.add(dv); this.pos.addScaledVector(this.vel, dt);

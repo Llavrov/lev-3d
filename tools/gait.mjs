@@ -25,6 +25,19 @@ const SC = {
   'court-back': { mode: 'court', at: [0, 8], dur: 2.4, what: 'корт: бег назад к задней линии и стоп', cam: 'top', script: `(t) => (t > 0.2 && t < 1.4 ? { x: 0.3, y: -1 } : { x: 0, y: 0 })` },
 };
 
+// --from-frames: только пересчитать числа по уже снятым frames.json (было и стало одной меркой).
+if (argv.includes('--from-frames')) {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const out = {};
+  for (const name of Object.keys(SC)) {
+    const f = join(OUT, name, 'frames.json');
+    if ((ONLY && !ONLY.includes(name)) || !existsSync(f)) continue;
+    out[name] = metrics(JSON.parse(readFileSync(f, 'utf8')).frames);
+    console.log(name.padEnd(11), JSON.stringify(out[name]));
+  }
+  writeFileSync(join(OUT, `summary-${WHO}.json`), JSON.stringify(out, null, 1));
+  process.exit(0);
+}
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 420, height: 520 } });
 page.setDefaultTimeout(90000); // зависла страница — исключение и пересъёмка, а не вечное ожидание
@@ -109,8 +122,8 @@ async function capture(name, c, dir) {
   return m;
 }
 
-// Числа по костям. Опора — подушечка (ToeBase) у земли (до 1,2 см над своим минимумом в сценарии): за время опоры
-// она не должна ехать по корту. Таз — скачок за кадр и вторая разность. Ступни внахлёст — левая щиколотка правее правой
+// Числа по костям. Опора — подушечка (ToeBase) у земли (до 1,2 см над своим минимумом в сценарии) и ступня не в шаге:
+// за время опоры она не должна ехать по корту. Таз — скачок за кадр и вторая разность. Ступни внахлёст — левая щиколотка правее правой
 // в осях тела. Ракетка у ноги — ближе всего точки ракетки к бедру и голени (радиусы ноги 8,5 и 6 см вычтены).
 function metrics(F) {
   const d2 = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
@@ -120,7 +133,7 @@ function metrics(F) {
     const y = F.map((f) => f.bones[s + 'ToeBase'][1]), lo = Math.min(...y);
     let start = null;
     for (let i = 0; i <= F.length; i++) {
-      const on = i < F.length && y[i] < lo + 0.012;
+      const on = i < F.length && y[i] < lo + 0.012 && !F[i].feet[s].step;
       if (on && start == null) start = i;
       if (!on && start != null) {
         if (i - start >= 3) { let mx = 0; for (let j = start; j < i; j++) mx = Math.max(mx, d2(F[j].bones[s + 'ToeBase'], F[start].bones[s + 'ToeBase'])); slips.push(mx * 100); }
