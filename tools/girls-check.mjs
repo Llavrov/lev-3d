@@ -137,10 +137,10 @@ if (ONLY.some((k) => ['talk', 'match', 'coffee'].includes(k))) for (const [w, h]
     await page.screenshot({ path: join(OUT, `match-${tag}.png`) });
     const P = await page.evaluate(() => __lev.game.opp.pos.toArray());
     await shot(page, `match-her-${tag}`, [P[0] + 2.6, 1.5, P[2] + 2.2], [P[0], 0.95, P[2]]);
-    // Сет короче для проверки: с 4:4 по геймам. Подачи по новым правилам — из журнала (квадрат, сторона по счёту).
+    // Сет короче для проверки: с 5:4 по геймам. Подачи по новым правилам — из журнала (квадрат, сторона по счёту).
     const res = await page.evaluate(() => { const G = __lev.girls, g = __lev.game, ev = window.__events, n0 = ev.length;
-      g.games.set(g.lev, 4); g.games.set(g.opp, 4);
-      let last = null; for (let i = 0; i < 20000 && !G.match.over; i++) { __lev.step(0.05); if (g.ended && g.autoLev) g.autoLev = null; last = [g.games.get(g.lev), g.games.get(g.opp), g.pts.get(g.lev), g.pts.get(g.opp)]; }
+      g.games.set(g.lev, 5); g.games.set(g.opp, 4);
+      let last = null; for (let i = 0; i < 40000 && !G.match.over; i++) { __lev.step(0.05); if (g.ended && g.autoLev) g.autoLev = null; last = [g.games.get(g.lev), g.games.get(g.opp), g.pts.get(g.lev), g.pts.get(g.opp)]; }
       const e = ev.slice(n0), her = e.filter((x) => x.type === 'contact' && x.who === 'opp');
       return { over: G.match.over, last, sets: g.sets, endShown: !document.getElementById('end').hidden, endT: document.getElementById('endT').textContent, endG: document.getElementById('endG')?.textContent ?? null,
         serves: e.filter((x) => x.type === 'serve').length, faults: e.filter((x) => x.type === 'fault').length, herShots: e.filter((x) => x.type === 'shot' && x.who === 'opp').length, herHit: her.length ? +(her.filter((x) => x.hit).length / her.length).toFixed(2) : null };
