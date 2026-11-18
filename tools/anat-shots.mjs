@@ -21,13 +21,13 @@ const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--ena
 const page = await browser.newPage({ viewport: { width: TW, height: TH } });
 page.on('pageerror', (e) => console.error('ОШИБКА СТРАНИЦЫ:', e.message));
 await page.routeWebSocket(/./, () => {}); // без HMR: правки других агентов не перезагружают страницу посреди съёмки
-await page.goto('http://localhost:3952/?debug&noao&nolog' + opt('q', ''));
-await page.waitForFunction(() => window.__lev?.game?.lev?.contactPt && !document.getElementById('play').disabled, null, { timeout: 120000 });
+await page.goto(opt('url', 'http://localhost:3952') + '/?debug&noao&nolog' + opt('q', ''), { timeout: 180000 }); // --url — свой сервер
+await page.waitForFunction(() => window.__lev?.game?.lev?.contactPt && !document.getElementById('play').disabled, null, { timeout: 240000 });
 await page.evaluate(() => {
   window.__pause = true; window.__noDraw = true;
   for (const id of ['loader', 'start', 'hud', 'hint', 'msg', 'pad']) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
   document.getElementById('play').click();
-  for (const id of ['hud', 'hint', 'msg', 'pad']) { const e = document.getElementById(id); if (e) e.style.visibility = 'hidden'; }
+  for (const id of ['hud', 'hint', 'msg', 'pad', 'cbar']) { const e = document.getElementById(id); if (e) e.style.visibility = 'hidden'; }
   // Замеры: прокрут кости вокруг своей оси от покоя (swing-twist), углы локтя и запястья, скрутка плеч к тазу.
   const Q = (q) => q.clone(), V3 = __lev.camera.position.constructor;
   const twist = (rig, name, child) => {

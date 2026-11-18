@@ -12,6 +12,8 @@ const r2 = (v) => +v.toFixed(2);
 const clamp = THREE.MathUtils.clamp;
 // Сила соперника 0,35–1,35. До 1 — обычный соперник; выше — «босс»: раньше реагирует, быстрее, без ошибок, агрессивнее.
 const MAX_SKILL = 1.35;
+// Стиль игрока (rivals.js, p.style 0..1): отклонение от середины −0,5..0,5; без стиля — 0, всё как раньше.
+const lean = (p, k) => (p.style?.[k] ?? 0.5) - 0.5;
 
 // ---------- Подача ----------
 // court +1 — подающий справа от центральной отметки (чётная сумма очков в гейме), −1 — слева. Тай-брейка в игре нет.
@@ -96,7 +98,7 @@ export class Game {
   // second — вторая подача после ошибки на первой: тот же подающий, счёт не меняется.
   resetPoint(now, second = false) {
     if (this.ended) return this.newMatch(now); // матч кончился, а очко зовут снова (вернулся из клуба) — новый матч
-    if (!second) { this.serveNo = 1; this.ai.newPoint(); }
+    if (!second) { this.serveNo = 1; this.ai.newPoint(); } else this.ai.net = false; // первая с выходом к сетке ушла мимо — вторую подаёт сзади
     this.court = this.courtSide();
     for (const p of [this.lev, this.opp]) p.place(servePos(p, this.court, p === this.server));
     this.b.live = false; this.toss = null;
@@ -150,9 +152,10 @@ export class Game {
     const power = ai ? st.aiPower : st.serve === 'over' ? powerOf(st, this.now) : 0;
     const dir = (!ai && this.axes && dirOf(this.axes(), B)) || st.dir;
     const aim = serveAim(B, S, dir, this.other(p).pos.x), target = aim.clone();
-    const k = ai ? 1.15 - 0.25 * Math.min(ai.sk, 1) - 0.15 * ai.boss : 1, err = (S.err + S.errP * power) * k; // сильный ИИ точнее
+    const sv = ai && S === SERVE.first ? lean(p, 'serve') : 0; // стиль: подающий на первой до +8% скорости и точнее
+    const k = (ai ? 1.15 - 0.25 * Math.min(ai.sk, 1) - 0.15 * ai.boss : 1) * (1 - 0.8 * sv), err = (S.err + S.errP * power) * k; // сильный ИИ точнее
     target.x += gauss() * err; target.z += gauss() * err * 1.2;
-    return { target, aim, power, dir, speed: S.speed * (1 + S.pw * power), spin: S.spin, lob: null, kind: st.serve === 'under' ? 'serve-under' : 'serve' };
+    return { target, aim, power, dir, speed: S.speed * (1 + S.pw * power) * (1 + 0.2 * sv), spin: S.spin, lob: null, kind: st.serve === 'under' ? 'serve-under' : 'serve' };
   }
 
   // Куда и как полетит удар без случайной ошибки: им пользуется и сам удар, и подсказка направления у Лёвы.
@@ -207,9 +210,12 @@ export class Game {
       const focus = this.ai.hot ? 0.6 : this.clutch() ? 0.7 : 1;
       // Разброс 0,2 + 1,2·(1 − s): на 0,7 как раньше, по краям шире — сильный честно сильный, слабый слабый.
       // Выше 1 (boss 0..1) — почти без невынужденных: разброс до 8 см, грубых ошибок нет, растянутым ошибается вдвое реже.
-      err += (0.2 + 1.2 * (1 - s) - 0.12 * boss + 0.5 * stretch + (Math.random() < 0.05 * (1.3 - s) * (1 - boss) ? 2.2 : 0) + 0.8 * down * stretch) * focus;
+      // Стиль: защитник реже ошибается растянутым, сильный рискует, бэкхенд — по стилю (подача — в serveShot).
+      const bh = /^v?bh/.test(st.type), styleErr = 0.25 * lean(p, 'power') - (bh ? 0.6 * lean(p, 'backhand') : 0);
+      err += (0.2 + 1.2 * (1 - s) - 0.12 * boss + styleErr + 0.5 * stretch * (1 - lean(p, 'defense')) + (Math.random() < 0.05 * (1.3 - s) * (1 - boss) ? 2.2 : 0) + 0.8 * down * stretch) * focus;
       if (st.aiPace) err *= 1 - 0.3 * up;
       pace = Math.max(0.6, 0.97 + 0.1 * boss - ran * 0.06 - (1 - s) * 0.15); // босс бьёт до 7% быстрее
+      pace *= 1 + 0.12 * lean(p, 'power') + (bh ? 0.08 * lean(p, 'backhand') : 0); // стиль: до +6% темпа
       q = Math.min(q, 0.9);
       miss = Math.random() < ((0.005 + 0.045 * (1 - s)) * (1 - 0.8 * boss) + 0.06 * stretch + 0.04 * down * stretch) * focus;
     } else err += 0.5 * down * Math.max(clamp((run - 1) / 3, 0, 1), power); // низкий настрой: под давлением чаще мимо
@@ -233,6 +239,7 @@ export class Game {
     this.lastHitter = p; this.bounces = 0; this.b.bounces = 0; this.serving = null;
     if (p === this.lev) { this.ai.readDrop = !!st.drop && shot.lob == null; this.ai.levShort = false; } // укороченный видно по замаху: соперник срывается раньше
     else if (!served) this.ai.afterShot(st, shot, aim);
+    else if (served === 1 && lean(p, 'net') > 0 && Math.random() < 0.8 * lean(p, 'net')) { this.ai.net = this.ai.netTried = true; this.log('approach', { serve: 1 }); } // стиль: сеточник идёт вперёд за первой подачей
     this.log('shot', { who: this.who(p), stroke: st.type, kind: shot.kind, drop: !!st.drop && shot.lob == null, lob: shot.lob != null ? r2(shot.lob) : null, power: r2(power), serve: served, ...(served && { dir: shot.dir }), speed: r2(b.vel.length()), spin: r2(shot.spin), aim: [r2(aim.x), r2(aim.z)], target: [r2(target.x), r2(target.z)], opp: [r2(this.opp.pos.x), r2(this.opp.pos.z)], lev: [r2(this.lev.pos.x), r2(this.lev.pos.z)], net: this.ai.net });
     if (p === this.lev) this.lastShot = { stroke: st.type, drop: !!st.drop && shot.lob == null, power, kind: shot.kind, serve: st.serve ?? null };
     this.landing = null;
@@ -517,7 +524,8 @@ export class AI {
     if (this.net && Math.abs(p.pos.z) > 9) this.net = false; // откинули назад свечой — снова сзади
     if (this.net || this.netTried || shot.lob != null || st.drop) return;
     const deep = Math.abs(aim.z) > 9.6 && this.ran < 3;
-    if (Math.random() < (this.levShort && this.ran < 2.5 ? 0.25 + 0.4 * s : deep ? 0.03 + 0.07 * s : 0)) { this.net = this.netTried = true; this.game.log('approach', { short: this.levShort }); }
+    // Стиль: сеточник выходит заметно чаще, защитник реже.
+    if (Math.random() < (this.levShort && this.ran < 2.5 ? 0.25 + 0.4 * s : deep ? 0.03 + 0.07 * s : 0) * (1 + 1.6 * lean(p, 'net'))) { this.net = this.netTried = true; this.game.log('approach', { short: this.levShort }); }
   }
 
   update(now) {
@@ -526,10 +534,11 @@ export class AI {
     // «Босс» (выше 1): бежит до 6% быстрее и резче разгоняется — в пределах живого игрока (~6,4 м/с), — тянется дальше
     // и реагирует до 0,1 с. План точки удара он считает по скорости 1 (player.plan): запас времени, а не опоздание.
     const boss = this.boss, s1 = Math.min(s, 1);
-    p.speedScale = 0.62 + 0.38 * s1 + 0.06 * boss; p.accelScale = 1 + 0.25 * boss;
-    p.defend = 0.25 * Math.max(0, s1 - 0.6) + 0.15 * boss; // сильный дальше тянется в защите: до +10 см выпада, босс до +25
+    const def = lean(p, 'defense'); // стиль: защитник быстрее, раньше срывается и дальше тянется
+    p.speedScale = 0.62 + 0.38 * s1 + 0.06 * boss + 0.08 * def; p.accelScale = 1 + 0.25 * boss + 0.2 * def;
+    p.defend = Math.max(0, 0.25 * Math.max(0, s1 - 0.6) + 0.15 * boss + 0.2 * def); // сильный дальше тянется в защите: до +10 см выпада, босс до +25
     if (g.state === 'serve' || g.serving) { this.planned = null; return new THREE.Vector3(); } // к подаче оба стоят на своих местах
-    const react = Math.max(0.1, 0.48 - 0.28 * s) + 0.08 * p.tired; // уставший реагирует позже
+    const react = Math.max(0.08, 0.48 - 0.28 * s - 0.08 * def) + 0.08 * p.tired; // уставший реагирует позже
     const incoming = b.live && g.state === 'rally' && g.lastHitter && g.lastHitter !== p;
     if (incoming && now >= this.next) {
       this.next = now + 0.12;
