@@ -8,6 +8,7 @@ import { buildRacket } from './racket.js';
 import { step, copyBall, inSingles } from './physics.js';
 import { COURT } from './court.js';
 import { useDQS } from './dqs.js';
+import { loadGait, gaitReady, gaitParams, gaitPose, swingLeg } from './mocap.js';
 
 // Скорости и ускорения (м/с, м/с²). Короткие рывки по 3–4 м — основа тенниса, до полной скорости разгоняются редко.
 // plant — за сколько секунд до удара ноги встают: дальше WASD только целит, тело тормозит.
@@ -35,6 +36,7 @@ const TIRED = { lh: -1, lean: 24, nod: 10, rUp: V(0.12, -0.9, 0.3), rFo: V(0.02,
 // Бег (0..1) по скорости: до ~3,6 м/с — приставной шаг лицом к сетке, дальше разворот и беговой шаг. Раньше порог был
 // 2,6–4,2 м/с, и короткий приставной (до 3,8 м/с) уже разворачивал корпус и махал ногой на 24 см вверх.
 const runOf = (v) => THREE.MathUtils.smoothstep(v, 3.6, 5.0);
+const RUN_RK = new THREE.Vector3(-0.1, 0.3, 0.95).normalize(); // ракетка на бегу по мокапу: головкой вперёд и чуть вверх (оси скелета)
 const distSeg = (p, a, c) => { const ac = c.clone().sub(a), t = clamp(p.clone().sub(a).dot(ac) / Math.max(ac.lengthSq(), 1e-9), 0, 1); return a.clone().addScaledVector(ac, t).distanceTo(p); };
 
 // Перекрашивает светлую ткань (футболка, носки, кроссовки) в цвет формы, кожу не трогает: у ткани низкая насыщенность.
@@ -82,7 +84,10 @@ export class Player {
     this.wrap.updateMatrixWorld(true);
     this.rig = new Rig(model, this.racket);
     this.hipH = this.rig.b.Hips.getWorldPosition(new THREE.Vector3()).y - this.pos.y; // таз над землёй в покое — для позы сидя (club.js)
-    this.feet = { Left: { sign: -1, pos: new THREE.Vector3(), lift: 0, yaw: 0, step: null }, Right: { sign: 1, pos: new THREE.Vector3(), lift: 0, yaw: 0, step: null } };
+    const hj = this.rig.b.LeftUpLeg.getWorldPosition(new THREE.Vector3()).add(this.rig.b.RightUpLeg.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+    this.hipFwd = hj.sub(this.pos).dot(this.fwd); // тазобедренные суставы впереди (+) места игрока: от них считаем вынос ступни
+    this.feet = { Left: { sign: -1, pos: new THREE.Vector3(), lift: 0, yaw: 0, heel: 0, step: null }, Right: { sign: 1, pos: new THREE.Vector3(), lift: 0, yaw: 0, heel: 0, step: null } };
+    this.gait = { on: false, phase: 0, w: 0 }; loadGait(); // ход по мокапу (mocap.js), клипы грузятся после старта
     this.bodyTurn = 0; this.hold = 0; this.dir = new THREE.Vector3(); // bodyTurn — разворот всего тела от лица к сетке, рад
     this.acc = new THREE.Vector3(); this.lastVel = new THREE.Vector3(); this.headYaw = 0; this.ballPos = null;
     this.boostUntil = 0; this.split = null; this.sliding = 0; this.now = 0; this.lunge = new THREE.Vector3();
@@ -96,7 +101,8 @@ export class Player {
   place(pos) {
     this.pos.copy(pos); this.vel.set(0, 0, 0); this.stroke = null; this.split = null; this.bodyTurn = 0; this.sliding = 0;
     this.wrap.position.copy(pos); this.wrap.rotation.y = this.netYaw;
-    for (const f of Object.values(this.feet)) { f.pos.copy(pos).addScaledVector(this.right, f.sign * STANCE); f.lift = 0; f.yaw = 0; f.step = null; }
+    for (const f of Object.values(this.feet)) { f.pos.copy(pos).addScaledVector(this.right, f.sign * STANCE * (this.free ? 0.5 : 1)); f.lift = 0; f.yaw = 0; f.heel = 0; f.step = null; }
+    if (this.gait) this.gait.on = false;
   }
 
   // Сплит-степ: маленький прыжок, приземление к удару соперника; после него первый шаг резче.
@@ -311,13 +317,26 @@ export class Player {
       const st = f.step, u = Math.min(1, (now - st.t0) / st.dur);
       // Место приземления уточняем только в начале маха: раньше цель ехала вместе с телом до самой постановки, ступня
       // садилась на скорости тела и вставала в кадр — голень дёргалась на 25° за кадр.
-      if (!st.fixed && u < 0.7) apart(f, st.to.lerp(ideal(f, st.t0 + st.dur - now), 0.5 * (1 - smooth(u, 0.35, 0.7))));
-      f.pos.lerpVectors(st.from, st.to, u * u * (3 - 2 * u));
+      if (!st.fixed && u < 0.7) apart(f, st.to.lerp(st.aim ? st.aim(st.t0 + st.dur - now) : ideal(f, st.t0 + st.dur - now), 0.5 * (1 - smooth(u, 0.35, 0.7))));
+      if (st.P) { // шаг по мокапу: нога бедром и голенью клипа от сустава; от точки отрыва и к точке касания — плавно
+        // c0 — где ступня была на отрыве против клипа, c1 — где должна встать против клипа в момент касания (таз к тому
+        // времени уедет): обе поправки едут вместе с телом, а не тянут ступню к точке на корте посреди маха.
+        const k = this.legFK(f, st.P, u, dt), k1 = this.legFK(f, st.P, 1, dt + Math.max(0, st.t0 + st.dur - now)), w0 = 1 - smooth(u, 0, 0.35), w1 = smooth(u, 0.45, 1);
+        f.pos.copy(k.pos).addScaledVector(st.c0, w0).addScaledVector(st.to.clone().sub(k1.pos), w1).lerp(st.to, smooth(u, 0.85, 1)); // последние 15 % — ступня садится без скорости
+        // Подъём гасим только в самом конце: иначе ступня «вставала» (подъём < 1 см) ещё в полёте далеко впереди, и ИК
+        // ронял таз на 4–7 см за кадр, чтобы до неё дотянуться.
+        f.lift = Math.max(0, k.lift - 0.07 * (st.heel ?? 0) * (1 - smooth(u, 0, 0.4)) - w0 * st.l0 - smooth(u, 0.82, 1) * k1.lift);
+      } else {
+        f.pos.lerpVectors(st.from, st.to, u * u * (3 - 2 * u));
+        f.lift = st.h * Math.sin(Math.PI * (1 - (1 - u) ** (1 / (st.k ?? 1)))); // на бегу пятка взлетает в начале маха (к ягодице), потом нога выносится вперёд; старт с конечной скоростью (u^k давал бесконечную — рывок голени)
+      }
       if (st.bow) f.pos.addScaledVector(st.bow, Math.sin(Math.PI * u)); // скрестный шаг идёт дугой перед опорной ногой, не сквозь неё
-      f.lift = st.h * Math.sin(Math.PI * (1 - (1 - u) ** (1 / (st.k ?? 1)))); // на бегу пятка взлетает в начале маха (к ягодице), потом нога выносится вперёд; старт с конечной скоростью (u^k давал бесконечную — рывок голени)
+      f.heel = (st.heel ?? 0) * (1 - smooth(u, 0, 0.4));
       f.yaw += wrapAngle(st.yaw - f.yaw) * Math.min(1, dt * 14);
       if (u >= 1) { f.pos.copy(st.to); f.lift = 0; f.step = null; }
     }
+    if (this.gaitSteps(dt, now, F, apart, bodyRight)) return;
+    for (const f of F) if (!f.step) f.heel = Math.max(0, (f.heel ?? 0) - dt * 4); // пятка опускается, когда ход по мокапу кончился
     // Опора на бегу ~0,1 с, мах 0,32 с: ступня уходит, отстав на скорость × 0,1 (до 62 см), — длинный шаг с полётом,
     // ~5 шагов в секунду, а не дробь. Задняя нога при этом встаёт на носок (Rig.legs), таз не проседает.
     // Приставной шаг — от 20 до 45 см.
@@ -326,9 +345,20 @@ export class Player {
     const vDir = speed > 0.05 ? this.vel.clone().divideScalar(speed) : null, start = vDir ? smooth(this.acc.dot(vDir), 6, 14) * (1 - smooth(speed, 1.5, 3)) : 0;
     const thr = THREE.MathUtils.lerp(speed > 0.4 ? clamp(0.15 + speed * 0.08, 0.2, 0.45) : 0.15, clamp(speed * 0.08, 0.42, 0.5), run) * (1 - 0.55 * start);
     // Приставной: первой шагает ведущая нога (со стороны движения), отстающая подтягивается за ней.
-    const err = F.map((f) => (f.step ? -1 : f.pos.distanceTo(ideal(f, 0)) + Math.abs(wrapAngle(f.yaw - this.bodyTurn)) * 0.2 + (vDir ? 0.08 * (1 - run) * f.sign * vDir.dot(bodyRight) : 0)));
+    // На прогулке разворот на месте — шагами: носок, отставший от корпуса на ~25°, уже повод переступить (было ~45°).
+    const err = F.map((f) => (f.step ? -1 : f.pos.distanceTo(ideal(f, 0)) + Math.abs(wrapAngle(f.yaw - this.bodyTurn)) * (this.free ? 0.35 : 0.2) + (vDir ? 0.08 * (1 - run) * f.sign * vDir.dot(bodyRight) : 0)));
     const i = err[0] >= err[1] ? 0 : 1, other = F[1 - i];
-    if (err[i] < thr) return;
+    if (err[i] < thr) {
+      // Стоя на прогулке переминается: раз в 3–6 с одна ступня переступает на пару сантиметров и чуть доворачивает носок.
+      if (this.free && !this.seat && speed < 0.05 && !other.step && now > (this.shiftAt ??= now + 2)) {
+        this.shiftAt = now + 3 + 3 * Math.random();
+        const f = F[Math.random() < 0.5 ? 0 : 1], fw = new THREE.Vector3().crossVectors(bodyRight, UP);
+        const to = ideal(f, 0).addScaledVector(bodyRight, f.sign * (Math.random() - 0.3) * 0.05).addScaledVector(fw, (Math.random() - 0.5) * 0.08);
+        f.step = { t0: now, dur: 0.45, from: f.pos.clone(), to: apart(f, to), h: 0.025, yaw: this.bodyTurn + f.sign * -(0.05 + 0.15 * Math.random()) };
+        this.onStep?.(f);
+      }
+      return;
+    }
     if (now < (this.plantUntil ?? 0) && speed < 1.5) return; // шаг в удар стоит до конца удара, потом ноги возвращаются в стойку
     // Приставной шаг — по очереди; бег — следующая нога отрывается во второй половине полёта первой.
     // Приставной на скорости: отстающая нога отрывается, когда ведущая прошла 45 % шага (шаг-приставка), шаг короче по времени —
@@ -342,6 +372,56 @@ export class Player {
       const off = f.pos.clone().sub(this.pos).setY(0), max = 0.8;
       if (off.length() > max) f.pos.copy(this.pos).add(off.setLength(max));
     }
+  }
+
+  // Ход по мокапу (mocap.js): фаза цикла идёт по пройденному пути (период по скорости), ступня отрывается и встаёт
+  // по фазе клипа, опорная стоит на месте — не скользит. Встаёт впереди таза на долю опорного пути, как в клипе, сбоку —
+  // на полширины следа. На прогулке — всегда, когда идёт по ходу; на корте — бег лицом по ходу (рывок, бег к сетке),
+  // а приставной, бег спиной, сплит-степ, шаг в удар и выпад — свои шаги, как раньше. Нет мокапа — false.
+  gaitSteps(dt, now, F, apart, bodyRight) {
+    const g = this.gait, v = Math.hypot(this.vel.x, this.vel.z), st = this.stroke;
+    const head = v > 0.05 ? Math.atan2(this.vel.x, this.vel.z) - this.netYaw : this.bodyTurn, off = Math.abs(wrapAngle(head - this.bodyTurn));
+    const ok = gaitReady() && !this.seat && !(st && now > st.tContact - MOVE.plant - 0.15 && now < st.tContact + 0.3) && now >= (this.plantUntil ?? 0)
+      && (this.free ? v > (g.on ? 0.2 : 0.35) && off < deg(g.on ? 50 : 35) : v > (g.on ? 1.2 : 1.8) && off < deg(g.on ? 35 : 22));
+    if (!ok) { g.on = false; return false; }
+    const L = this.rig.L1 + this.rig.L2, P = gaitParams(v, L), dir = this.vel.clone().setY(0).divideScalar(v);
+    const td = (f) => (f === this.feet.Left ? 0 : P.rOff); // касание: левая на φ = 0, правая на rOff
+    if (!g.on) { // вход в ход: первой отрывается задняя по ходу ступня; если одна ещё в шаге — фаза по нему
+      g.on = true;
+      const swing = F.find((f) => f.step);
+      if (swing) g.phase = td(swing) + P.duty + (1 - P.duty) * Math.min(1, (now - swing.step.t0) / swing.step.dur);
+      else { const back = F.reduce((a, f) => (f.pos.dot(dir) < a.pos.dot(dir) ? f : a)); g.phase = td(back) + P.duty - 0.002; }
+      g.phase = ((g.phase % 1) + 1) % 1;
+    }
+    const prev = g.phase; g.phase = (g.phase + dt / P.T) % 1;
+    const crossed = (x) => (prev <= g.phase ? prev < x && x <= g.phase : prev < x || x <= g.phase);
+    for (const f of F) {
+      const t0 = td(f), lift = (t0 + P.duty) % 1, s = (((g.phase - t0) % 1) + 1) % 1 / P.duty;
+      if (!f.step && s < 1) f.heel = Math.max(f.heel ?? 0, smooth(s, 0.55, 1) * P.heel); // к отрыву пятка встаёт, подушечка на месте
+      if (!crossed(lift) || f.step) continue;
+      // Где будет таз к касанию — с ускорением (в разгоне и торможении), не дальше точки остановки: при постоянной скорости
+      // в торможении ступня вставала далеко впереди, и таз падал на 6 см за кадр, чтобы до неё дотянуться.
+      const aim = (t) => {
+        const u = this.vel.clone().setY(0), sp = u.length(), a = clamp(this.acc.dot(u) / Math.max(sp, 1e-3), -12, 12);
+        const go = a < 0 && sp + a * t < 0 ? (sp * sp) / (-2 * a) : sp * t + 0.5 * a * t * t;
+        return this.pos.clone().addScaledVector(u.divideScalar(Math.max(sp, 1e-3)), go + P.ahead + this.hipFwd).addScaledVector(bodyRight, f.sign * P.half);
+      };
+      const dur = (1 - P.duty) * P.T, k0 = this.legFK(f, P, 0, dt);
+      f.step = { t0: now, dur, from: f.pos.clone(), to: apart(f, aim(dur)), aim, P, c0: f.pos.clone().sub(k0.pos), l0: k0.lift - 0.07 * (f.heel ?? 0), heel: f.heel ?? 0, yaw: head };
+      this.onStep?.(f);
+    }
+    return true;
+  }
+
+  // Ступня в махе по мокапу: от тазобедренного сустава (прошлый кадр плюс сдвиг тела) бедром и голенью клипа (swingLeg),
+  // в мире: pos — на земле под щиколоткой, lift — щиколотка над стойкой.
+  legFK(f, P, u, dt) {
+    const { th, sh } = swingLeg(u, P), side = f === this.feet.Left ? 'Left' : 'Right';
+    if (side === 'Right') { th.x = -th.x; sh.x = -sh.x; }
+    const q = this.wrap.quaternion.clone().multiply(this.rig.root.quaternion);
+    const a = this.rig.b[side + 'UpLeg'].getWorldPosition(new THREE.Vector3()).addScaledVector(this.vel, dt)
+      .addScaledVector(th.applyQuaternion(q), this.rig.L1).addScaledVector(sh.applyQuaternion(q), this.rig.L2);
+    return { pos: a.clone().setY(f.pos.y), lift: a.y - f.pos.y - this.rig.ankleH };
   }
 
   // Мяч задел тело (не ракетку): туловище, голова, ноги — капсулы по костям. В теннисе это проигранное очко.
@@ -477,6 +557,11 @@ export class Player {
     this.turnVel = clamp(this.turnVel, -7, 7); this.bodyTurn += this.turnVel * dt;
     this.wrap.rotation.y = this.netYaw + this.bodyTurn;
     this.footwork(dt, now);
+    // Ход по мокапу: доля позы клипа растёт и гаснет за ~0,12 с, поза — на фазу шага (руки, таз, корпус, качание таза).
+    const g = this.gait;
+    g.w += ((g.on ? 1 : 0) - g.w) * (1 - Math.exp(-dt / 0.12));
+    if (g.w < 1e-3) g.w = 0;
+    this.gp = g.w > 0 && gaitReady() ? gaitPose(g.phase, gaitParams(Math.max(speed, 0.3), this.rig.L1 + this.rig.L2)) : null;
 
     // Поза: удар или стойка и бег. В удар входим и выходим плавно, руку с ракеткой подстраиваем под высоту мяча,
     // на смэше прыгаем с вершиной в момент удара.
@@ -511,8 +596,9 @@ export class Player {
     const hop = this.split ? Math.sin(Math.PI * Math.min(1, (now - this.split.t0) / this.split.dur)) : 0;
     // Таз на бегу качается плавно: выше в полёте, ниже в опоре (±2 см), а не скачком в кадр, когда обе ступни в воздухе.
     const air = this.feet.Left.step && this.feet.Right.step;
-    this.bob = (this.bob ?? 0) + ((air ? -0.025 : 0.01) * run - (this.bob ?? 0)) * (1 - Math.exp(-dt / 0.06));
-    const crouch = 0.07 - 0.02 * run + this.bob + 0.1 * this.sliding - 0.04 * hop + extra - jump + settle + 0.14 * (k ? 0 : this.slump); // на бегу выше, в стойке и скольжении ниже, без сил — присел
+    this.bob = (this.bob ?? 0) + ((air ? -0.025 : 0.01) * run * (1 - g.w) - (this.bob ?? 0)) * (1 - Math.exp(-dt / 0.06));
+    const gbob = this.gp ? -this.gp.hipH * this.hipH * g.w * (0.6 + 0.4 * smooth(speed, 1.9, 3)) : 0; // по мокапу: таз выше в середине опоры (шаг) и в полёте (бег)
+    const crouch = 0.07 - 0.02 * run + this.bob + gbob + 0.1 * this.sliding - 0.04 * hop + extra - jump + settle + 0.14 * (k ? 0 : this.slump); // на бегу выше, в стойке и скольжении ниже, без сил — присел
     this.lunge.set(0, 0, 0); this.lungeDrop = 0;
     if (k) {
       if (st.h != null) k = this.reachFor(st, k, w, crouch - 0.07);
@@ -524,13 +610,16 @@ export class Player {
     const back = st && !/^(v|oh)/.test(st.type) ? (/^fh/.test(st.type) ? this.feet.Right : this.feet.Left) : null;
     const toe = back ? smooth(now - st.tContact, -0.05, 0.12) * (1 - smooth(now - st.tContact, 0.55, 0.85)) : 0;
     const pivot = (f) => (f === back ? toe * deg(18) * f.sign : 0);
-    const fl = (f) => ({ pos: f.pos, yaw: wrapAngle(f.yaw - this.bodyTurn) + pivot(f), lift: f.lift + jump, toe: f === back ? toe : 0 }); // поворот ступни на корте — от лица тела (в ±π: на прогулке корпус крутится кругом)
+    const fl = (f) => ({ pos: f.pos, yaw: wrapAngle(f.yaw - this.bodyTurn) + pivot(f), lift: f.lift + jump, toe: Math.max(f === back ? toe : 0, f.heel ?? 0) }); // поворот ступни на корте — от лица тела (в ±π: на прогулке корпус крутится кругом)
     this.wrap.position.copy(this.pos).add(this.lunge);
+    // Стоя на прогулке тело покачивается с ноги на ногу (±1,2 см, ~4,5 с), ступни стоят.
+    const idleW = this.free && !this.seat ? 1 - smooth(speed, 0.05, 0.4) : 0;
+    if (idleW > 0) this.wrap.position.addScaledVector(this.right.clone().applyAxisAngle(UP, this.bodyTurn), 0.012 * Math.sin(now * 1.4) * idleW);
     this.lastPose = K;
     // Прогулка и скамейка (club.js): идёт — прямее в коленях; сидя ступни перед сиденьем, таз на высоте сиденья.
     const sw = this.free ? this.sitW() : 0;
     const foot = (f) => (sw ? { pos: f.pos.clone().lerp(this.seat.feet[f.sign > 0 ? 1 : 0], sw), yaw: fl(f).yaw * (1 - sw), lift: f.lift * (1 - sw) } : fl(f));
-    const low = this.free ? THREE.MathUtils.lerp(crouch - 0.045, this.hipH - (this.seat?.h ?? 0) - SIT_HIP + this.pos.y, sw) : crouch + (k ? this.lungeDrop ?? 0 : 0);
+    const low = this.free ? THREE.MathUtils.lerp(crouch - 0.06 + 0.045 * (this.gp ? smooth(speed, 1.9, 3) * g.w : 0), this.hipH - (this.seat?.h ?? 0) - SIT_HIP + this.pos.y, sw) : crouch + (k ? this.lungeDrop ?? 0 : 0);
     const { rk, face } = this.rig.pose(K, K, 0, { Left: foot(this.feet.Left), Right: foot(this.feet.Right), crouch: low, dt });
     this.rig.placeRacket(rk, face);
     this.sweetPrev = this.sweetNow ?? null; this.sweetNow = this.rig.sweet(); // центр струн в начале и в конце кадра — для касания
@@ -571,11 +660,23 @@ export class Player {
     const R3 = (x, y, z) => new THREE.Vector3(-x, y, z).normalize();
     const runUp = (sx, p) => R3(0.18 * sx, -0.95, 0.75 * p), runFo = (sx, p) => R3(-0.15 * sx, 0.25 + 0.45 * p, 0.95 - 0.25 * Math.max(0, -p));
     const blend = (a, b) => a.clone().lerp(b, run).normalize();
-    return this.body(now, speed, { ...READY, hips: 0, torso: 0, look: THREE.MathUtils.radToDeg(this.headYaw), lh: 1 - 2 * smooth(speed, 1.5, 3), // меньше нуля — левая не берётся за ракетку, даже если рядом
+    let K = { ...READY, hips: 0, torso: 0, roll: 0, look: THREE.MathUtils.radToDeg(this.headYaw), lh: 1 - 2 * smooth(speed, 1.5, 3), // меньше нуля — левая не берётся за ракетку, даже если рядом
       lean: this.leanS, tilt: this.tiltS,
       rUp: blend(arm(READY.rUp, -0.7 * pump), runUp(1, -0.6 * pump)), lUp: blend(arm(READY.lUp, 0.7 * pump), runUp(-1, pump)),
       rFo: blend(READY.rFo, runFo(1, -0.6 * pump)), lFo: blend(READY.lFo, runFo(-1, pump)),
-      rk: READY.rk.clone().lerp(new THREE.Vector3(0, 0.5, 0).addScaledVector(dirRig, 0.85), run * 0.6).normalize() }); // ракетка на бегу головкой вперёд, не у лица
+      rk: READY.rk.clone().lerp(new THREE.Vector3(0, 0.5, 0).addScaledVector(dirRig, 0.85), run * 0.6).normalize() }; // ракетка на бегу головкой вперёд, не у лица
+    // Бег лицом по ходу — руки, таз и корпус по мокапу; левая отпускает ракетку, правая несёт её головкой вперёд.
+    if (this.gp) K = mix(K, this.gaitUpper({ ...K, lh: -1, lean: this.leanS - 12 + 3, rUp: this.gp.rUpMean, rFo: this.gp.rFoMean, rk: RUN_RK }), this.gait.w);
+    return this.body(now, speed, K);
+  }
+
+  // Верх тела по мокапу поверх позы K: левая рука, таз, корпус, крен и наклон — из клипа на фазе шага; правая с ракеткой
+  // качается вдвое меньше вокруг своей позы (K.rUp, K.rFo), ракетка поворачивается вместе с предплечьем — мимо ноги.
+  gaitUpper(K, k = 0.5) {
+    const M = this.gp, part = (mean, cur) => new THREE.Quaternion().slerp(new THREE.Quaternion().setFromUnitVectors(mean, cur), k);
+    const qu = part(M.rUpMean, M.rUp), qf = part(M.rFoMean, M.rFo);
+    return { ...K, hips: M.hips, torso: 0.8 * M.torso, roll: M.roll, tilt: K.tilt + M.tilt, lean: K.lean + M.lean, lUp: M.lUp, lFo: M.lFo,
+      rUp: K.rUp.clone().applyQuaternion(qu), rFo: K.rFo.clone().applyQuaternion(qf), rk: K.rk.clone().applyQuaternion(new THREE.Quaternion().slerp(qf, 0.5)) }; // ракетку кисть доворачивает обратно наполовину
   }
 
   // Между очками: после виннера короткий кулак, после своей ошибки голова и плечи вниз, без сил (выносливость < 0,4) —
@@ -622,8 +723,14 @@ export class Player {
       for (const f of Object.values(this.feet)) { f.step = null; f.lift = 0; f.pos.copy(this.pos).addScaledVector(r, f.sign * STANCE * 0.5); }
       if (s.up && s.w === 0) this.seat = null;
     } else {
-      const want = move.clone().setY(0).multiplyScalar(1.4), prev = this.pos.clone();
-      const rate = (want.lengthSq() < this.vel.lengthSq() ? 9 : 5) * dt, dv = want.sub(this.vel); // тормозит быстрее, чем разгоняется
+      // Шаг до 1,4 м/с (длина move до 1; club.js по пути даёт до 1,3 — бодрый шаг), от 1,6 — трусца 3,3 м/с,
+      // Shift (2,4): трусца, а если держать направление 0,4–1,4 с — спринт до 5,6 м/с.
+      const m = Math.hypot(move.x, move.z), d = m > 1e-3 ? move.clone().setY(0).divideScalar(m) : null, prev = this.pos.clone();
+      this.hold = d && m > 2.2 && d.dot(this.dir) > 0.9 ? this.hold + dt : 0;
+      if (d) this.dir.copy(d);
+      const cap = m <= 1.3 ? 1.4 * m : THREE.MathUtils.lerp(1.82, 3.3, smooth(m, 1.3, 1.6)) + (m > 2.2 ? 2.3 * smooth(this.hold, 0.4, 1.4) : 0);
+      const want = d ? d.multiplyScalar(cap) : new THREE.Vector3();
+      const rate = (want.lengthSq() < this.vel.lengthSq() ? 9 : this.vel.length() > 3 ? 4 : 5) * dt, dv = want.sub(this.vel); // тормозит быстрее, чем разгоняется
       if (dv.length() > rate) dv.setLength(rate);
       this.vel.add(dv); this.pos.addScaledVector(this.vel, dt);
       if (this.bounds?.(this.pos)) this.vel.subVectors(this.pos, prev).divideScalar(dt).setY(0); // упёрся — скользит вдоль
@@ -641,8 +748,24 @@ export class Player {
     const lead = speed > 0.1 ? this.feet.Right.pos.clone().sub(this.feet.Left.pos).dot(this.vel) / speed : 0;
     const p = clamp(lead / 0.6, -1, 1) * smooth(speed, 0.2, 0.9), jog = smooth(speed, 2, 3.2);
     const swing = (b, k) => b.clone().addScaledVector(dirRig, k).normalize(); // правая нога впереди — левая рука вперёд
-    let K = { ...WALK, rUp: swing(WALK.rUp, -0.35 * p), lUp: swing(WALK.lUp, 0.35 * p), rFo: swing(WALK.rFo, -0.2 * p), lFo: swing(WALK.lFo, 0.25 * p) };
-    if (jog > 0) K = mix(K, this.loco(now, speed, 1), jog * 0.8);
+    let K = { ...WALK, roll: 0, rUp: swing(WALK.rUp, -0.35 * p), lUp: swing(WALK.lUp, 0.35 * p), rFo: swing(WALK.rFo, -0.2 * p), lFo: swing(WALK.lFo, 0.25 * p) };
+    if (jog > 0 && !this.gp) K = mix(K, this.loco(now, speed, 1), jog * 0.8);
+    // Наклон по ускорению, как на корте (~0,1 с): вперёд в разгоне, назад в торможении, внутрь на повороте.
+    const dt = Math.min(0.05, now - (this.strollAt ?? now)); this.strollAt = now;
+    const facing = this.netYaw + this.bodyTurn, kl = 1 - Math.exp(-dt / 0.1);
+    const aF = this.acc.x * Math.sin(facing) + this.acc.z * Math.cos(facing), aS = this.acc.dot(this.right.clone().applyAxisAngle(UP, this.bodyTurn));
+    this.walkLean = (this.walkLean ?? 0) + (clamp(aF * 1.1, -9, 7) - (this.walkLean ?? 0)) * kl;
+    this.walkTilt = (this.walkTilt ?? 0) + (clamp(aS * 0.8, -8, 8) - (this.walkTilt ?? 0)) * kl;
+    // Шаг, трусца и спринт — по мокапу: правая рука от позы с ракеткой (шаг) к согнутой беговой, головка ракетки вперёд.
+    if (this.gp) {
+      const M = this.gp, r = smooth(speed, 1.9, 3);
+      const base = { ...K, lean: WALK.lean + this.walkLean, tilt: this.walkTilt, look: 0,
+        rUp: WALK.rUp.clone().lerp(M.rUpMean, r).normalize(), rFo: WALK.rFo.clone().lerp(M.rFoMean, r).normalize(), rk: WALK.rk.clone().lerp(RUN_RK, r).normalize() };
+      K = mix(K, this.gaitUpper(base), this.gait.w);
+    }
+    // Стоя покачивается: корпус чуть против сдвига таза (update), голова ровно.
+    const idle = this.seat ? 0 : 1 - smooth(speed, 0.05, 0.4);
+    if (idle > 0) K = { ...K, tilt: (K.tilt ?? 0) - 1.2 * Math.sin(now * 1.4) * idle };
     const w = this.sitW();
     if (w > 0) {
       let look = 0;

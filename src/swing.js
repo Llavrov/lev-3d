@@ -535,6 +535,9 @@ export class Rig {
     // корпус наклоняется над правой ногой, как на видео, а не валится вбок к сетке.
     const leanAll = deg(lerp('lean') + LEAN0), axis = (a, yaw) => a.clone().applyAxisAngle(up, yaw);
     this.rotate('Hips', _q.setFromAxisAngle(axis(side, this.hipYaw), leanAll * PELVIS_LEAN));
+    // Крен таза на ходу (roll, мокап, + — правое бедро выше): поясница возвращает корпус, ноги ставит legs.
+    const roll = deg(lerp('roll') || 0);
+    if (roll) { this.rotate('Hips', _q.setFromAxisAngle(axis(ahead, this.hipYaw), -roll)); this.rotate('Spine', _q.setFromAxisAngle(axis(ahead, this.hipYaw), roll)); }
     // Корпус крутится от таза не больше чем на 40°, и не поровну: поясница почти не крутится (15 %), грудной отдел — остальное.
     // Дальше плечи разворачивают ключицы (arm → clavicle).
     const twist = deg(THREE.MathUtils.clamp(lerp('torso') - lerp('hips'), -40, 40)), lean = leanAll * (1 - PELVIS_LEAN) / 3, tilt = deg(lerp('tilt') || 0) / 3;
@@ -755,7 +758,7 @@ export class Rig {
 // Шаг по клубу: корпус прямо, руки вдоль тела (мах — в player.stroll), ракетка в правой головкой вперёд-вниз, левая свободна.
 export const WALK = P({ lean: -3, lh: -1,
   rUp: V(0.12, -1, 0.02), rFo: V(0.05, -0.75, 0.6), lUp: V(-0.12, -1, 0.02), lFo: V(-0.05, -0.85, 0.45),
-  rk: V(0.2, -0.45, 0.85), face: V(1, 0, 0) });
+  rk: V(0.32, -0.3, 0.9), face: V(1, 0, 0) }); // головка вперёд и наружу: на махе назад рукой ракетка идёт мимо ноги
 // Сидя на скамейке: таз на сиденье (~0,45 м, player.js), бёдра вперёд, стопы на земле (ноги ставит legs), спина прямо,
 // кисти на бёдрах, ракетка в правой головкой на земле справа от ног. Бёдра и голени в ключе — для позы без ступней.
 export const SIT = P({ lean: -3, lh: -1,
