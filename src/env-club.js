@@ -213,7 +213,8 @@ function lawnBlades(map, time) {
       vec3 k = texture2D(clubMap, (p - clubRect.xy) / clubRect.z).rgb;
       vec2 a = abs(p), b = abs(p - vec2(-38., 0.));
       float hide = step(.2, k.r) + step(.25, k.g) + step(max(a.x - 10.1, a.y - 20.9), 0.) + step(max(b.x - 10.1, b.y - 20.9), 0.)
-        + step(9.9, p.x) * step(p.x, 26.4) * step(-35.4, p.y) * step(p.y, -18.7); // дорожки, клумбы, корты с рыжей каймой, терраса с домом
+        + step(9.9, p.x) * step(p.x, 26.4) * step(-35.4, p.y) * step(p.y, -18.7) // дорожки, клумбы, корты с рыжей каймой, терраса с домом
+        + step(.0, max(max(grid.x - p.x, p.x - grid.x - grid.z), max(grid.y - p.y, p.y - grid.y - grid.w))); // за площадкой: там нет высот
       float sc = offs.w * smoothstep(R, R * .6, length(p - cam)) * (1. - min(hide, 1.));
       vec2 hu = ((p - grid.xy) / grid.zw * (gridN - 1.) + .5) / gridN;
       float y = texture2D(hgt, hu).r;

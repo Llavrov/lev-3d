@@ -13,11 +13,20 @@ test('ровно на кортах, дорожках, террасе, в дом�
   }
 });
 
-test('на газоне холмы до 1,5 м и ложбины, к краям площадки газон сходит вниз', () => {
+test('на газоне холмы до 1,5 м и ложбины', () => {
   let big = 0, max = 0, min = 0;
   for (let x = PAD.x0 + 8; x < PAD.x1 - 8; x += 1.3) for (let z = PAD.z0 + 8; z < PAD.z1 - 8; z += 1.7) { const y = groundAt(x, z); if (Math.abs(y) > 0.3) big++; max = Math.max(max, y); min = Math.min(min, y); }
   assert.ok(big > 300, `заметных бугров ${big}`); assert.ok(max > 0.8 && max < 1.8, `самый высокий ${max}`); assert.ok(min < -0.3, `самая низкая ${min}`);
-  assert.ok(groundAt(PAD.x1 - 0.5, 0) < -0.3, `у края площадки ${groundAt(PAD.x1 - 0.5, 0)}`);
+});
+
+test('край площадки, стоянка и дорога как были: рельеф только внутри', () => {
+  for (let t = 0; t <= 1; t += 0.01) {
+    const pts = [[PAD.x0 + t * (PAD.x1 - PAD.x0), PAD.z0], [PAD.x0 + t * (PAD.x1 - PAD.x0), PAD.z1], [PAD.x0, PAD.z0 + t * (PAD.z1 - PAD.z0)], [PAD.x1, PAD.z0 + t * (PAD.z1 - PAD.z0)]];
+    for (const [x, z] of pts) assert.ok(Math.abs(groundAt(x, z)) < 1e-9, `край (${x.toFixed(1)}, ${z.toFixed(1)}): ${groundAt(x, z)}`);
+  }
+  for (const [x, z] of [[54, 27], [57, 33], [51.3, 22], [48, 30.6], [56, -30]]) assert.ok(Math.abs(groundAt(x, z)) < 1e-9, `у дороги (${x}, ${z}): ${groundAt(x, z)}`);
+  // За краем (до 1 м) холм клуба ещё ровный — значит, никакого уступа от площадки к склону.
+  for (const [x, z] of [[PAD.x1 + 0.6, 0], [PAD.x0 - 0.6, 10], [20, PAD.z0 - 0.6], [-5, PAD.z1 + 0.6]]) assert.ok(Math.abs(groundAt(x, z)) < 1e-9, `за краем (${x}, ${z})`);
 });
 
 test('без ступенек: шаг 10 см меняет высоту меньше чем на 4 см, и на краю сетки земли', () => {
