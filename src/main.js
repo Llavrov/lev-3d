@@ -371,13 +371,19 @@ function clubKey(code) {
 async function leave() {
   if (club.active || club.leaving) return;
   if (game.state === 'match-over') { endUi(null); game.newMatch(game.now, false); } // замена начнёт новый матч
-  club.leaving = true; club.exit(await subReady, game.now); club.leaving = false; // замена догружается в фоне
+  club.leaving = true; loadTown(); club.exit(await subReady, game.now); club.leaving = false; // замена догружается в фоне
 }
+// Дорога, городок, велосипед и машина (town.js, vehicle.js) — отдельным куском после старта: на загрузку сайта не влияют.
+let townReady = null;
+const loadTown = () => (townReady ??= Promise.all([import('./town.js'), import('./vehicle.js')]).then(([{ Town }, { Rides }]) => {
+  club.world = new Town(scene);
+  club.ride = new Rides({ scene, club, town: club.world });
+}));
 const walkInput = () => { const a = axes(); return { x: a.x, y: a.y, run: held('ShiftLeft', 'ShiftRight') || stick.length() > 0.95 }; };
-function clubUi(mode, canSit) {
+function clubUi(mode, canSit, view, act) {
   document.body.classList.toggle('club', !!mode);
   $('cexit').hidden = !!mode; $('cback').hidden = !mode; $('cview').hidden = mode !== 'sit';
-  $('csit').hidden = !(mode === 'sit' || (mode === 'walk' && canSit)); $('csit').firstChild.textContent = mode === 'sit' ? 'Встать' : 'Сесть';
+  $('csit').hidden = !(mode === 'sit' || (mode === 'walk' && canSit)); $('csit').firstChild.textContent = mode === 'sit' ? 'Встать' : act ?? 'Сесть';
   if (!mode) court.getObjectByName('fence-near').visible = false; // снова матч: камера за этой стенкой
 }
 for (const [id, code] of [['cexit', 'KeyQ'], ['csit', 'KeyE'], ['cview', 'KeyV'], ['cback', 'KeyR']]) $(id).addEventListener('click', (e) => { e.currentTarget.blur(); clubKey(code); });
@@ -423,7 +429,7 @@ function start(mode = 'match') {
   document.body.classList.remove('menu');
   court.getObjectByName('fence-near').visible = false; // в игре камера стоит за этой стенкой
   log('mode', { mode, bestOf });
-  if (mode === 'match') { game.bestOf = bestOf; return game.resetPoint(game.now ?? 0); }
+  if (mode === 'match') { game.bestOf = bestOf; setTimeout(loadTown, 1500); return game.resetPoint(game.now ?? 0); }
   document.body.classList.add('practice');
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* без памяти — рекорд на эту игру */ } } };
   const ui = { text: (h) => { $('ltext').innerHTML = h; }, dots: (n, need) => { $('ldots').innerHTML = need && need < 9 ? Array.from({ length: need }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('') : ''; }, flash: (h, good) => hud.flash(h.replace(/&nbsp;/g, '\u00a0'), good) };
@@ -629,6 +635,7 @@ if (Q.has('debug')) window.__lev = {
     for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, a ?? walkInput()); girls?.update(h, game.now); powerFx.track(game.now); }
   },
   get club() { return club; },
+  loadTown: () => loadTown(),
   render() { window.__camHold = false; if (club.active) { club.snap(camera, follow); clubCam(0); } else follow(1); showLanding(game.now); showSpot(game.now, 1); aimGuide.update(0.2, game.now); powerFx.update(0, game.now); draw(); }, // кадр сразу, не дожидаясь requestAnimationFrame
   shot(eye, at) { window.__camHold = true; camera.position.fromArray(eye); camera.lookAt(new THREE.Vector3(...at)); draw(); }, // кадр с любой точки — смотреть соперника и ракетки
   // Поза удара в момент s (с от удара) на месте, без игры: смотреть руки, кисти, ноги крупно.
