@@ -4,38 +4,23 @@
 // вдоль забора, где и так не пройти.
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { heightAt, padDist, vnoise, PAD } from './env-mountains.js';
+import { heightAt, padDist, vnoise, PAD, PATHS, pathGap, FLAT, GRID, groundGrid } from './env-mountains.js';
 
 const COARSE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches; // телефон: меньше травы
 const loader = new THREE.TextureLoader();
-const tex = (url) => { const t = loader.load(url); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; };
+const tex = (url, data) => { const t = loader.load(url); t.colorSpace = data ? THREE.NoColorSpace : THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; };
 const rng = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const FX = 9.145, FZ = 19.885; // ограждение корта
 
 // ---------- План клуба (метры) ----------
-// Дорожки: [ширина, [[x, z], …]]. От калитки к дорожке вдоль корта, по ней на террасу (z −19) и назад, к входу в клуб.
-export const PATHS = [
-  [1.2, [[9.2, 3.99], [10.85, 3.99]]],
-  [1.4, [[10.85, 10.2], [10.85, -19.3]]],
-  [1.5, [[10.85, 10.2], [11.4, 15.8], [10.3, 21.6], [6, 24.7], [-2, 25.7], [-12, 25.3], [-23, 23.6], [-25.6, 14], [-26.8, 3.99], [-28.7, 3.99]]], // за спиной Лёвы к калитке корта 2
-  [1.6, [[10.6, 20.4], [15.5, 25.6], [26, 28.8], [38, 30.2], [48.5, 30.6]]], // ко входу с дороги и стоянке
-  [7, [[51.3, 22], [51.3, 32]]], // гравийная стоянка у дороги (дорога на x ≈ 57.5)
-];
-// Насколько точка дальше края дорожки, м (минус — на дорожке). Деревья и камни ставим не ближе пары метров.
-export function pathGap(x, z) {
-  let best = Infinity;
-  for (const [w, pts] of PATHS) for (let i = 1; i < pts.length; i++) {
-    const [ax, az] = pts[i - 1], [bx, bz] = pts[i], dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
-    best = Math.min(best, Math.hypot(x - ax - dx * t, z - az - dz * t) - w / 2);
-  }
-  return best;
-}
-// Клумбы: [x, z, полуось x, полуось z]. У торца шале, у флагштока, у таблички, круглая на газоне справа.
-const BEDS = [[23.2, -18.2, 8, 0.75], [15.2, -16.8, 1.0, 1.0], [13.7, 20.9, 1.7, 0.8], [17.2, 4.5, 1.8, 1.8]];
+// Дорожки (PATHS) и ровные места (FLAT) — в env-mountains.js: по ним считается рельеф газона.
+export { PATHS, pathGap } from './env-mountains.js';
+// Клумбы: [x, z, полуось x, полуось z]. Вдоль северной стены дома, у флагштока, у таблички, круглая на газоне справа.
+const BEDS = [[20.6, -18.0, 5.4, 0.7], [15.2, -16.8, 1.0, 1.0], [13.7, 20.9, 1.7, 0.8], [17.2, 4.5, 1.8, 1.8]];
 // Живая изгородь граба вдоль забора снаружи: [x0, z0, x1, z1, высота, толщина].
 const HEDGES = [[-10.05, -19.4, -10.05, 19.4, 1.35, 0.75], [-9.7, -20.8, 7.4, -20.8, 1.35, 0.75]];
 // Кусты: [x, z, размер]. У шале, у таблички, группами на газоне, по бровке холма.
-const BUSHES = [[32.9, -18.1, 1.25], [32.8, -35.9, 1.1], [15.2, -36.4, 0.95], [15.6, 22.3, 0.8], [17.9, 2.2, 1.2], [19.4, 5.1, 0.9], [-24.2, 21.4, 1.3],
+const BUSHES = [[27.4, -19.4, 1.25], [27.2, -34.6, 1.1], [15.2, -36.4, 0.95], [15.6, 22.3, 0.8], [17.9, 2.2, 1.2], [19.4, 5.1, 0.9], [-24.2, 21.4, 1.3],
   [-21, 27.3, 1.0], [-12.6, -22.6, 1.1], [-4.2, -30.5, 1.4], [3.8, -33.2, 1.1], [-15.5, -36.2, 1.3], [8.4, -41.5, 1.2], [16.5, -15.6, 0.6], [26, 14, 1.4], [28.4, 16.2, 1.0]];
 // Камни: [x, z, размер]. Валуны по бровке холма и у входа.
 const ROCKS = [[-8, -47.5, 1.4], [-6.5, -48.6, 0.8], [12.3, -49.3, 1.1], [25.4, -46.8, 1.8], [-26.4, -30.2, 1.2], [-27.8, -28.5, 0.7], [38.4, -10.2, 1.5],
@@ -44,6 +29,8 @@ const ROCKS = [[-8, -47.5, 1.4], [-6.5, -48.6, 0.8], [12.3, -49.3, 1.1], [25.4, 
 const LAMPS = [[11.75, -14.5], [11.75, -1.4], [11.95, 13.6], [3, 26.3], [-9.5, 26.6], [27, 30.1], [43.6, 29.1]];
 const FLAG = [15.2, -16.8], SIGN = [13.7, 21.1, -2.7]; // табличка лицом к корту и к идущим от входа
 const BENCHES_OUT = [[12.3, -6.5], [12.3, 9], [-4.5, 21.7], [13.7, -12.2]]; // скамейки зрителей и фонтан (env.js): вокруг них трава гуще
+// Фонари, скамейки, фонтан, табличка и флагшток стоят на ровном: бугры газона вокруг них сходят на нет (рельеф в env-mountains.js).
+FLAT.circles.push(...LAMPS.map(([x, z]) => [x, z, 0.4]), ...BENCHES_OUT.map(([x, z]) => [x, z, 1.2]), [SIGN[0], SIGN[1], 1.2], [FLAG[0], FLAG[1], 0.5]);
 
 // ---------- Карта клуба на земле ----------
 // R — гравий дорожек, G — клумбы, B — некошеная трава (у забора, изгороди, стволов, камней). Квадрат 100 м, 10 см на пиксель.
@@ -64,6 +51,8 @@ function drawMap(trees) {
   g.save(); g.translate(-38, 0); rect(0.6, 0.9, 1); rect(1.1, 1.8, 0.4); g.restore(); // корт 2
   for (const [x0, z0, x1, z1, , w] of HEDGES) { g.strokeStyle = B(0.9); g.lineWidth = w + 0.8; g.beginPath(); g.moveTo(x0, z0); g.lineTo(x1, z1); g.stroke(); }
   for (const t of trees) dot(t[1], t[2], 1.1 * t[3], 0.8);
+  g.fillStyle = 'rgb(0,115,0)'; // у ствола тёмная земля (G ≈ 0,45: не клумба — без цветов и пучков, край рваный шумом)
+  for (const t of trees) { g.beginPath(); g.ellipse(t[1], t[2], 0.85 * t[3], 0.75 * t[3], t[1], 0, 7); g.fill(); }
   for (const [x, z, s] of [...ROCKS, ...BUSHES]) dot(x, z, s * 1.1, 0.7);
   for (const [x, z] of [...LAMPS, ...BENCHES_OUT, FLAG, SIGN]) dot(x, z, 0.75, 0.6);
   g.fillStyle = 'rgb(0,255,0)';
@@ -167,7 +156,7 @@ function tufts(map, time) {
   for (let k = 0; k < 40000 && flowers.length < 1400 * N; k++) {
     const x = MAP.x0 + r() * MAP.size, z = MAP.z0 + r() * MAP.size, [p, bed] = map.at(x, z), pd = padDist(x, z);
     if (p > 0.1) continue;
-    if (bed > 0.5) { flowers.push([x, 0.0, z, 0.9 + r() * 0.5, r() * 6.28, 1]); continue; }
+    if (bed > 0.6) { flowers.push([x, heightAt(x, z) + 0.02, z, 0.9 + r() * 0.5, r() * 6.28, 1]); continue; }
     if (pd > 3 && r() < 0.06 * vnoise(x / 9 + 3, z / 9)) flowers.push([x, heightAt(x, z) + 0.02, z, 0.5 + r() * 0.4, r() * 6.28, 0]);
   }
   const BED = [[0.75, 0.05, 0.06], [0.85, 0.32, 0.55], [0.95, 0.9, 0.85], [0.55, 0.3, 0.7]], WILD = [[0.95, 0.95, 0.92], [0.95, 0.8, 0.2], [0.6, 0.45, 0.8]];
@@ -182,6 +171,58 @@ function tufts(map, time) {
   g.add(make(grass, tuftGeometry(0.5, 0.42), tuftMaterial(bladeTexture(false), time, false), () => { const v = 0.62 + r() * 0.25; return [v * (0.95 + r() * 0.15), v, v * (0.85 + r() * 0.2)]; }));
   g.add(make(flowers, tuftGeometry(0.42, 0.4), tuftMaterial(bladeTexture(true), time, true), (s) => (s[5] ? BED : WILD)[Math.floor(r() * 3.999) % (s[5] ? 4 : 3)]));
   return g;
+}
+
+// ---------- Трава у камеры ----------
+// Газон стрижен, но не стол: вокруг камеры (9 м, на телефоне 6) короткие травинки карточками. Одни и те же
+// экземпляры переезжают за камерой (по модулю 2R в шейдере), встают на бугры по текстуре высот земли, прячутся на
+// дорожках, клумбах, у стволов, на кортах и террасе, к краю круга уходят в землю. Тень не отбрасывают.
+function shortBlades() { // пучок: травинки из середины низа веером, между ними пусто
+  const N = 128, H = 96, c = document.createElement('canvas'); c.width = N; c.height = H;
+  const g = c.getContext('2d'), r = rng(41), PAL = ['#3f5a20', '#4c6a26', '#58772b', '#647f31', '#6f8a37', '#556f2a'];
+  for (let i = 0; i < 34; i++) {
+    const x0 = N / 2 + (r() - 0.5) * N * 0.35, top = H * (0.05 + r() * 0.55), x1 = x0 + (x0 - N / 2) * 1.6 + (r() - 0.5) * 30, w = 0.9 + r() * 1.2;
+    const gr = g.createLinearGradient(0, H, 0, top); gr.addColorStop(0, '#34481f'); gr.addColorStop(0.4, PAL[Math.floor(r() * PAL.length)]); gr.addColorStop(1, r() < 0.25 ? '#8e9550' : PAL[Math.floor(r() * PAL.length)]);
+    g.fillStyle = gr; g.beginPath(); g.moveTo(x0 - w, H); g.quadraticCurveTo((x0 + x1) / 2, (H + top) / 2, x1, top); g.quadraticCurveTo((x0 + x1) / 2 + w * 0.5, (H + top) / 2, x0 + w, H); g.fill();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function lawnBlades(map, time) {
+  const R = COARSE ? 6 : 8, n = COARSE ? 4500 : 12000, r = rng(57), hg = groundGrid();
+  const card = new THREE.PlaneGeometry(0.16, 0.085).translate(0, 0.0425, 0); // одна карточка: крестом сверху видно «ёжики»
+  const nr = card.attributes.normal; for (let i = 0; i < nr.count; i++) nr.setXYZ(i, 0, 1, 0);
+  const geo = new THREE.InstancedBufferGeometry().copy(card); geo.instanceCount = n;
+  const offs = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) offs.set([r() * 2 * R, r() * 2 * R, r() * 6.283, 0.7 + r() * 0.6], i * 4);
+  geo.setAttribute('offs', new THREE.InstancedBufferAttribute(offs, 4));
+  const m = new THREE.MeshLambertMaterial({ map: shortBlades(), alphaTest: 0.5, side: THREE.DoubleSide });
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, { time, clubMap: { value: map.tex }, hgt: { value: hg.tex }, clubRect: { value: new THREE.Vector4(MAP.x0, MAP.z0, MAP.size, 0) },
+      grid: { value: new THREE.Vector4(GRID.x0, GRID.z0, GRID.x1 - GRID.x0, GRID.z1 - GRID.z0) }, gridN: { value: new THREE.Vector2(hg.nx + 1, hg.nz + 1) } });
+    sh.vertexShader = `attribute vec4 offs; uniform float time; uniform sampler2D clubMap, hgt; uniform vec4 clubRect, grid; uniform vec2 gridN; varying float vShade;
+` + sh.vertexShader.replace('#include <begin_vertex>', `
+      const float R = ${R.toFixed(1)};
+      vec2 cam = cameraPosition.xz, p = cam + mod(offs.xy - cam, 2. * R) - R;
+      vec3 k = texture2D(clubMap, (p - clubRect.xy) / clubRect.z).rgb;
+      vec2 a = abs(p), b = abs(p - vec2(-38., 0.));
+      float hide = step(.2, k.r) + step(.25, k.g) + step(max(a.x - 10.1, a.y - 20.9), 0.) + step(max(b.x - 10.1, b.y - 20.9), 0.)
+        + step(9.9, p.x) * step(p.x, 26.4) * step(-35.4, p.y) * step(p.y, -18.7); // дорожки, клумбы, корты с рыжей каймой, терраса с домом
+      float sc = offs.w * smoothstep(R, R * .6, length(p - cam)) * (1. - min(hide, 1.));
+      vec2 hu = ((p - grid.xy) / grid.zw * (gridN - 1.) + .5) / gridN;
+      float y = texture2D(hgt, hu).r;
+      vec3 lp = position * sc * vec3(1., 1. + k.b * 1.8, 1.); // у забора и стволов трава выше
+      float cs = cos(offs.z), sn = sin(offs.z);
+      vec3 transformed = vec3(p.x + cs * lp.x + sn * lp.z, y + lp.y - .01, p.y - sn * lp.x + cs * lp.z);
+      transformed.xz += vec2(sin(time * 1.7 + p.x * .9), cos(time * 1.3 + p.y * .8)) * .25 * lp.y * lp.y / .1;
+      vShade = .8 + .4 * fract(sin(dot(floor(offs.xy * 3.), vec2(12.9, 78.2))) * 43758.5);`);
+    sh.fragmentShader = 'varying float vShade;\n' + sh.fragmentShader
+      .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''))
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        diffuseColor.rgb *= vec3(.8, .82, .58) * vShade * (.7 + .3 * vMapUv.y);`);
+  };
+  const mesh = new THREE.Mesh(geo, m); mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.name = 'blades';
+  return mesh;
 }
 
 // ---------- Изгородь, кусты, камни ----------
@@ -384,7 +425,7 @@ export const WIND = { value: 0 }; // часы ветра: трава, флаг, 
 export function buildClub(trees) {
   const map = drawMap(trees), time = WIND, g = new THREE.Group(); g.name = 'club';
   const leaf = tex('/tex/hedge.webp'), rock = tex('/tex/rock.webp');
-  g.add(hedges(leaf), tufts(map, time), lamps(), sign(), flag(time));
+  g.add(hedges(leaf), tufts(map, time), lamps(), sign(), flag(time), lawnBlades(map, time));
   // Кусты: три варианта, у каждого карточки листвы и тёмная сердцевина с теми же местами.
   const leafCards = cardsMaterial(leafTexture()), coreMat = new THREE.MeshLambertMaterial({ vertexColors: true, color: '#2c3a22' });
   const bushPlace = ([x, z, s], r) => [new THREE.Vector3(x, heightAt(x, z) - 0.05, z), new THREE.Vector3(s * (0.9 + r() * 0.3), s * (0.8 + r() * 0.35), s * (0.9 + r() * 0.3))];
@@ -400,11 +441,12 @@ export function buildClub(trees) {
   const rocks = blobs(stones, [0, 1, 2].map((s) => blobGeometry(2, 10 + s * 5.3, true)), rockMat, ([x, z, s], rr) => [new THREE.Vector3(x, heightAt(x, z) - 0.08 * s, z), new THREE.Vector3(s * (0.8 + rr() * 0.5), s * (0.7 + rr() * 0.4), s * (0.8 + rr() * 0.5))], (rr) => new THREE.Color().setHSL(0.09, 0.06, 0.34 + rr() * 0.14));
   g.add(rocks);
   g.getObjectByName('tufts').children[0].onBeforeRender = () => { time.value = performance.now() / 1000; }; // часы ветра: трава рисуется всегда
-  const grassT = tex('/tex/grass.webp'), gravelT = tex('/tex/gravel.webp');
+  // Газон, земля и гравий — Poly Haven (CC0): цвет и карта нормалей (tools/polyhaven-tex.sh).
+  const T = (n) => ({ value: tex(`/tex/${n}.webp`) }), N = (n) => ({ value: tex(`/tex/${n}-n.webp`, true) });
   return {
     group: g,
     uniforms: {
-      clubMap: { value: map.tex }, grassT: { value: grassT }, gravelT: { value: gravelT },
+      clubMap: { value: map.tex }, lawnT: T('lawn'), lawnN: N('lawn'), dirtT: T('dirt'), dirtN: N('dirt'), gravelT: T('gravel'), gravelN: N('gravel'),
       clubRect: { value: new THREE.Vector4(MAP.x0, MAP.z0, MAP.size, 0) }, pad: { value: new THREE.Vector4(PAD.x0, PAD.z0, PAD.x1, PAD.z1) },
     },
   };

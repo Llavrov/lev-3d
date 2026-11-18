@@ -5,6 +5,8 @@
 //
 //   node tools/playtest.mjs match --points 30 --bot human --out test-out/match   матч: Лёвой играет бот через клавиатуру
 //   node tools/playtest.mjs match --bot ai                                       Лёвой играет ИИ соперника (?auto)
+//   node tools/playtest.mjs match --games 5:5 --points 40 --out test-out/tb       со счёта 5:5 в сете: тай-брейк вживую,
+//                                                                                кадры табло на тай-брейке, сете и конце матча; --bestof 3 — до двух сетов
 //   node tools/playtest.mjs cases --out test-out/cases [--only volley,short] [--reps 6] [--frames]   сценарии
 //   node tools/playtest.mjs move                                                 разгон, остановка, разворот, спринт
 //   node tools/playtest.mjs touch                                                телефон: подсказка и подача кнопкой
@@ -26,7 +28,7 @@ const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--ena
 const page = await browser.newPage(cmd === 'touch' || (cmd === 'fx' && argv.includes('--phone')) ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : { viewport: { width: 960, height: 960 } });
 page.on('pageerror', (e) => console.error('ОШИБКА СТРАНИЦЫ:', e.message));
 async function load() {
-  await page.goto(`${URL}/?debug&noao&nolog${BOT === 'ai' && cmd === 'match' ? '&auto' : ''}${opt('q', '')}${opt('rival') ? '&rival=' + opt('rival') : ''}`, { timeout: 180000 }); // 3 мин: рядом гоняют другие агенты, загрузка медленная; --q "&rig=1" — свои параметры страницы; --rival gh|ch|jp|ru — соперник из rivals.js
+  await page.goto(`${URL}/?debug&noao&nolog${BOT === 'ai' && cmd === 'match' ? '&auto' : ''}${opt('q', '')}${opt('rival') ? '&rival=' + opt('rival') : ''}`, { timeout: 180000 }); // --q "&rig=1" — свои параметры страницы; --rival gh|ch|jp|ru — соперник из rivals.js; программная видеокарта и соседние агенты — загрузка дольше 30 с
   await page.waitForFunction(() => window.__lev?.game?.lev?.contactPt && !document.getElementById('play').disabled, null, { timeout: 240000 });
   await page.evaluate((HZ) => {
     window.__pause = true; window.__noDraw = true; window.__dt = 1 / HZ;
@@ -53,10 +55,13 @@ async function closeups(name, who = 'lev') {
 if (cmd === 'poses') {
   const audits = [];
   await page.evaluate(() => document.getElementById('play').click());
-  for (const who of ['lev', 'opp']) for (const type of ['fh', 'bh', 'fh-top', 'bh-top', 'fh-slice', 'bh-slice', 'oh', 'vfh', 'vbh', 'vfh-lo', 'vbh-lo', 'vfh-hi', 'vbh-hi', 'vfh-half', 'vbh-half']) for (const s of [-0.45, -0.17, 0, 0.12, 0.2, 0.5, 0.7, 0.9]) { // 0.7 — возврат, 0.9 — стойка, её видно на стартовом экране
+  // Подача — свои фазы: стойка, руки вниз, выпуск мяча, трофей, ракетка за спиной, удар, пронация, финиш, возврат.
+  const PH = { srv: [-1.1, -0.9, -0.65, -0.5, -0.38, -0.26, -0.2, -0.14, -0.07, 0, 0.06, 0.12, 0.25, 0.4, 0.7, 0.9], 'srv-u': [-0.8, -0.55, -0.36, -0.15, 0, 0.12, 0.25, 0.5, 0.7, 0.9] };
+  const CLOSE = { srv: [-0.38, -0.14, 0, 0.4], 'srv-u': [-0.36, 0, 0.25] };
+  for (const who of ['lev', 'opp']) for (const type of ['fh', 'bh', 'fh-top', 'bh-top', 'fh-slice', 'bh-slice', 'oh', 'vfh', 'vbh', 'vfh-lo', 'vbh-lo', 'vfh-hi', 'vbh-hi', 'vfh-half', 'vbh-half', 'srv', 'srv-u']) for (const s of PH[type] ?? [-0.45, -0.17, 0, 0.12, 0.2, 0.5, 0.7, 0.9]) { // 0.7 — возврат, 0.9 — стойка, её видно на стартовом экране
     const a = await page.evaluate(([who, type, s]) => { __lev.pose(type, s, who); return __lev.game[who].rig.audit(); }, [who, type, s]);
     audits.push({ who, type, s, ...a });
-    if (s === -0.17 || s === 0 || s === 0.2) await closeups(`${who}-${type}-${s}`, who);
+    if ((CLOSE[type] ?? [-0.17, 0, 0.2]).includes(s)) await closeups(`${who}-${type}-${s}`, who);
   }
   // Язык тела между очками: кулак, голова вниз, без сил (руки на коленях) — в пике позы.
   for (const who of ['lev', 'opp']) for (const [type, t, sta] of [['fist', 0.5, 1], ['down', 0.9, 1], ['tired', 1.5, 0.2]]) {
@@ -99,9 +104,9 @@ if (cmd === 'touch') {
   const r = await page.evaluate(() => {
     const g = __lev.game, hint = document.getElementById('hint').textContent, before = g.state;
     document.getElementById('bfh').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
-    return { coarse: matchMedia('(pointer: coarse)').matches, hint, before, after: g.state, served: __events.some((e) => e.type === 'serve' && e.who === 'lev') };
+    return { coarse: matchMedia('(pointer: coarse)').matches, hint, before, after: g.state, served: __events.find((e) => e.type === 'serve' && e.who === 'lev')?.kind ?? false };
   });
-  console.log(`${r.coarse && /Удар/.test(r.hint) && r.served ? 'OK  ' : 'FAIL'} подача с телефона`, JSON.stringify(r));
+  console.log(`${r.coarse && /Сверху/.test(r.hint) && r.served === 'over' ? 'OK  ' : 'FAIL'} подача с телефона`, JSON.stringify(r));
   writeFileSync(join(OUT, 'touch.json'), JSON.stringify(r, null, 2));
 }
 
@@ -575,10 +580,17 @@ const BOTFN = ([seed, mode]) => {
   let r = seed * 9301 + 49297; const rnd = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
   const g = __lev.game, L = g.lev, io = __io, X = mode === 'exploit';
   let ball = null, react = 0, plan = null, nextPlan = 0, pressAt = null, jitter = [0, 0], serveAt = null, choice = null, late = 0.1, aimAt = null, aimKey = null;
-  let rush = false, lastKind = null, holdKey = null, aim2 = null;
+  let rush = false, lastKind = null, holdKey = null, aim2 = null, srv = null;
   window.__bot = (now) => {
     const b = g.b;
-    if (g.state === 'serve' && g.server === L && !g.autoLev) { io.releaseAll(); serveAt ??= now + 0.8; if (now >= serveAt) { serveAt = null; io.tap('Space'); } return; }
+    if (srv && now >= srv.at) { for (const k of srv.keys) io.release(k); srv = null; } // отпустил подачу: сила набрана
+    // Подача как у человека: чаще сверху (K держит 0–0,6 с — сила), иногда снизу (J); стрелка — широко, в «T» или в тело.
+    if (g.state === 'serve' && g.server === L && !g.autoLev) {
+      if (!srv) io.releaseAll();
+      serveAt ??= now + 0.8;
+      if (now >= serveAt && !srv) { serveAt = null; const k = rnd() < 0.85 ? 'KeyK' : 'KeyJ', d = [null, 'KeyA', 'KeyD', 'KeyS'][Math.floor(rnd() * 4)]; if (d) io.hold(d); io.hold(k); srv = { keys: d ? [k, d] : [k], at: now + (k === 'KeyK' ? rnd() * 0.6 : 0.05) }; }
+      return;
+    }
     const incoming = b.live && g.state === 'rally' && g.lastHitter === g.opp;
     if (g.state !== 'rally') { rush = false; lastKind = null; }
     if (!incoming) {
@@ -624,15 +636,24 @@ const AIM = ([mode]) => {
 };
 const aimMode = opt('aim', '');
 await page.evaluate(BOTFN, [SEED, BOT]); if (aimMode) await page.evaluate(AIM, [aimMode]);
+// --games a:b — начать с этого счёта в сете (6:6 — сразу тай-брейк), --bestof 1|3 — сколько сетов.
+const GAMES = opt('games', null), BESTOF = +opt('bestof', 0);
+if (GAMES || BESTOF) await page.evaluate(([gm, bo]) => {
+  const g = __lev.game;
+  if (bo) g.bestOf = bo;
+  if (gm) { const [a, b] = gm.split(':').map(Number); g.games.set(g.lev, a); g.games.set(g.opp, b); g.server = (a + b) % 2 ? g.opp : g.lev; if (a === 6 && b === 6) g.tb = { first: g.server }; }
+  g.resetPoint(g.now);
+}, [GAMES, BESTOF]);
+const SCORE = ['tiebreak', 'set', 'match'];
 
 // Шагаем до N очков; останавливаемся на кадрах: первые SHOTS касаний Лёвы, все мячи в тело, рывки.
 const audits = [], events = [];
 let shots = 0, lastRun = 0;
 const nPts = () => events.filter((e) => e.type === 'point').length;
-for (let guard = 0; guard < 2000 && nPts() < POINTS; guard++) {
+for (let guard = 0; guard < 2000 && nPts() < POINTS && !events.some((e) => e.type === 'match'); guard++) {
   let r;
   try {
-    r = await page.evaluate(({ need, human, lastRun, skill }) => {
+    r = await page.evaluate(({ need, human, lastRun, skill, SCORE }) => {
       const g = __lev.game, L = g.lev, ev = window.__events;
       const pts = () => ev.filter((e) => e.type === 'point').length;
       const out = (o) => ({ ...o, ev: ev.splice(0) }); // журнал забираем по кускам: при перезагрузке страницы теряется только кусок
@@ -640,13 +661,13 @@ for (let guard = 0; guard < 2000 && nPts() < POINTS; guard++) {
         if (human) window.__bot(g.now);
         __lev.step(window.__dt);
         if (skill) g.ai.skill = skill; // --skill: сила соперника закреплена (без подстройки)
-        const hit = ev.find((e) => e.type === 'contact' || e.type === 'body');
+        const hit = ev.find((e) => e.type === 'contact' || e.type === 'body' || SCORE.includes(e.type));
         if (hit) return out({ stop: hit, audit: { t: g.now, who: hit.who, lev: L.rig.audit(), opp: g.opp.rig.audit() } });
         if (L.vel.length() > 4.5 && g.now - lastRun > 15) return out({ stop: { type: 'run', speed: +L.vel.length().toFixed(2) } });
         if (pts() >= need) return out({});
       }
       return out({});
-    }, { need: POINTS - nPts(), human: BOT === 'human' || BOT === 'exploit', lastRun, skill: +opt('skill', 0) });
+    }, { need: POINTS - nPts(), human: BOT === 'human' || BOT === 'exploit', lastRun, skill: +opt('skill', 0), SCORE });
   } catch (e) {
     if (!/destroyed|navigat|closed/.test(e.message)) throw e;
     console.log('страница перезагрузилась, продолжаем матч'); await boot(true); await page.evaluate(BOTFN, [SEED + guard, BOT]); if (aimMode) await page.evaluate(AIM, [aimMode]); continue;
@@ -654,6 +675,7 @@ for (let guard = 0; guard < 2000 && nPts() < POINTS; guard++) {
   events.push(...r.ev);
   if (r.audit) audits.push(r.audit);
   if (r.stop?.type === 'run') lastRun = await page.evaluate(() => __lev.game.now);
+  if (SCORE.includes(r.stop?.type)) { await page.evaluate(() => __lev.render()); await shot(`score-${r.stop.type}-${nPts()}`); continue; } // табло: тай-брейк, сет, матч
   if (r.stop && shots < SHOTS * 3) {
     const s = r.stop;
     const who = s.who ?? 'lev';
@@ -667,6 +689,7 @@ for (let guard = 0; guard < 2000 && nPts() < POINTS; guard++) {
     }
   }
 }
+if (events.some((e) => e.type === 'match')) { await page.evaluate(() => { __lev.step(2.2); __lev.render(); }); await shot('score-match-end'); } // экран итога
 writeFileSync(join(OUT, 'events.jsonl'), events.map((e) => JSON.stringify(e)).join('\n'));
 writeFileSync(join(OUT, 'audit.jsonl'), audits.map((a) => JSON.stringify(a)).join('\n'));
 
@@ -693,6 +716,17 @@ for (const e of events) {
   if (e.type === 'shot' && e.who !== 'opp') lastLev = e.drop ? 'укороченный' : e.lob ? 'свеча' : /^(v|oh)/.test(e.stroke) ? 'сетка' : (e.power ?? 0) > 0.5 ? 'сильный' : 'обычный';
   if (e.type === 'point') { const k = lastLev ?? 'без удара'; byLast[k] ??= { lev: 0, opp: 0 }; byLast[k][e.winner]++; }
 }
+// Подачи: сколько каких, доля первых и вторых в квадрат, двойные, переподачи — по подающему.
+function serveStats() {
+  const out = {};
+  for (const who of ['lev', 'opp']) { // сетка мяча не роняет в отскок — считаем по подачам и ошибкам; переподача не в счёт
+    const S = events.filter((e) => e.type === 'serve' && e.who === who), L = events.filter((e) => e.type === 'let' && e.who === who);
+    const n = (k) => S.filter((e) => e.n === k).length - L.filter((e) => e.n === k).length;
+    const faults = events.filter((e) => e.type === 'fault' && e.who === who).length, doubles = pts.filter((e) => e.why === 'Двойная' && e.winner !== who).length;
+    out[who] = { serves: S.length, kinds: by(S, (e) => e.kind), firstIn: n(1) ? +(1 - faults / n(1)).toFixed(2) : null, secondIn: n(2) ? +(1 - doubles / n(2)).toFixed(2) : null, faults, doubles, lets: L.length };
+  }
+  return out;
+}
 // Выносливость в конце розыгрыша (минимум за очко: между очками только восстанавливается), сила соперника, кураж.
 const sta = (i) => { const a = pts.map((e) => e.sta?.[i]).filter((v) => v != null); return { min: a.length ? Math.min(...a) : null, med: med(a), under05: a.filter((v) => v < 0.5).length }; };
 const skills = pts.map((e) => e.skill);
@@ -700,7 +734,8 @@ const fitness = { sta: { lev: sta(0), opp: sta(1) }, skill: { min: skills.length
 const summary = { bot: BOT, aim: aimMode || undefined, fitness, levShare: pts.length ? +(pts.filter((e) => e.winner === 'lev').length / pts.length).toFixed(2) : null, byLast, points: pts.length, gameTime: +(events.at(-1)?.t ?? 0).toFixed(1), lev: side('lev'), opp: side('opp'),
   levDrift: { median: r2(med(drift)), over05: drift.filter((d) => d > 0.5).length, n: drift.length },
   pointWhy: by(pts, (e) => `${e.winner}: ${e.why}`), body: events.filter((e) => e.type === 'body'),
-  rallyAvg: pts.length ? +(pts.reduce((s, e) => s + e.rally, 0) / pts.length).toFixed(1) : 0, anatomy: bad.slice(0, 40), anatomyCount: bad.length };
+  rallyAvg: pts.length ? +(pts.reduce((s, e) => s + e.rally, 0) / pts.length).toFixed(1) : 0, anatomy: bad.slice(0, 40), anatomyCount: bad.length,
+  serve: serveStats(), score: { sets: pts.at(-1)?.sets, games: pts.at(-1)?.games, events: events.filter((e) => SCORE.includes(e.type)) } };
 writeFileSync(join(OUT, 'summary.json'), JSON.stringify(summary, null, 2));
 console.log(JSON.stringify({ ...summary, anatomy: undefined }, null, 2));
 await browser.close();
