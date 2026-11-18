@@ -12,10 +12,12 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { COURT, clayMaterial, lineMaterial } from './court.js';
 import { Practice } from './practice.js';
 import { MAT, initMat } from './props.js';
+import { FLAT } from './env-mountains.js';
 
 // O — середина стенки в мире; w — полуширина площадки до забора, back — от стенки до заднего забора, h — высота забора.
 export const HALF = { x: 46.5, z: -2.2, w: 6.7, back: 15.4, h: 1.0, gate: [4.7, 6.0], wall: 4.6, wallH: 4.2 };
 const W_ALL = COURT.wide + COURT.runSide * 2, L_ALL = COURT.len + COURT.runBack * 2;
+FLAT.rects.push([HALF.x - HALF.w - 0.6, HALF.z - 1.6, HALF.x + HALF.w + 0.6, HALF.z + HALF.back + 0.6]); // газон под полукортом без бугров (до постройки мира)
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 // Стенка: крашеный бетон, тёмная «сетка» ниже линии, белая полоса по той же кривой, что верх сетки в физике

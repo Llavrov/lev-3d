@@ -1,5 +1,6 @@
 // Теннис: Лёва против соперника на грунте. WASD/стрелки — бег, K — форхенд, J — бэкхенд, L — укороченный,
-// Shift + удар — кручёный, высокий мяч — смэш сам. Направление в момент удара — куда полетит мяч, Пробел — подача.
+// Shift + удар — кручёный, высокий мяч — смэш сам. Направление в момент удара — куда полетит мяч.
+// Подача: K или пробел — сверху (держишь — сильнее), J — снизу; стрелки — широко, в «T» или в тело.
 // На телефоне — джойстик и кнопки. В dev каждый розыгрыш пишется в logs/play-<дата>.jsonl (vite.config.js).
 // Проверка поз: ?pose=fh&s=-0.17&cam=1 (s — секунды от удара). ?auto — Лёвой играет ИИ.
 import * as THREE from 'three';
@@ -11,7 +12,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildCourt, COURT, CourtMarks, ClayDust } from './court.js';
-import { HAZE, AIR_DENSITY, SUN, outdoorEnv } from './env.js';
+import { HAZE, AIR_DENSITY, SUN, outdoorEnv, door } from './env.js';
 import { buildBall } from './ball.js';
 import { fitRacketModel, dressRacket } from './racket.js';
 import { Player, POWER, holdOf, powerOf } from './player.js';
@@ -20,6 +21,7 @@ import { Club } from './club.js';
 import { Interact, Hands, registerTerrace, registerBenches, registerSurface } from './interact.js';
 import { HalfCourt } from './halfcourt.js';
 import { Practice } from './practice.js';
+import { Girls } from './girls.js';
 import { STROKES, sample } from './swing.js';
 import { makeSound } from './sound.js';
 import { solveShot, step as ballStep } from './physics.js';
@@ -237,9 +239,10 @@ scene.add(ballMesh);
 const $ = (id) => document.getElementById(id);
 const hud = {
   score(g) {
-    const [a, b] = g.call();
+    const [a, b] = g.ended ? ['', ''] : g.call(); // матч кончился: очков последнего гейма на табло нет
     $('pl').textContent = a; $('po').textContent = b; $('nl').textContent = g.lev.human ? 'Лёва' : 'Замена';
     $('gl').textContent = g.games.get(g.lev); $('go').textContent = g.games.get(g.opp);
+    $('sets').textContent = g.sets.map(([a, b]) => `${a}:${b}`).join(' · '); // прошлые сеты, счёт Лёвы первым
     $('srv-l').classList.toggle('on', g.server === g.lev); $('srv-o').classList.toggle('on', g.server === g.opp);
   },
   stamina(g) {
@@ -251,7 +254,7 @@ const hud = {
     }
   },
   hint(t) { $('hint').textContent = t; },
-  serveHint: matchMedia('(pointer: coarse)').matches ? 'Удар — подача' : 'Пробел — подача', // на телефоне пробела нет, подаёт любая кнопка удара
+  serveHint: matchMedia('(pointer: coarse)').matches ? 'Подача\u00a0— «Сверху» или\u00a0«Снизу»' : 'K\u00a0— подача сверху, J\u00a0— снизу', // на телефоне кнопки ударов на подаче подписаны «Сверху» и «Снизу»
   flash(t, good) {
     const el = $('msg');
     el.textContent = t; el.className = good ? 'show good' : 'show';
@@ -297,7 +300,7 @@ function aimLev() {
   const z = a.y > 0.3 ? -10.6 : a.y < -0.3 ? -6.8 : -9.4;
   return new THREE.Vector3(x, 0, z);
 }
-let game = null, started = false;
+let game = null, started = false, servingUi = false;
 const sound = makeSound();
 
 // Журнал игры: нажатия, удары, промахи, очки и раз в 0,2 с положение и ввод. Читается для настройки управления.
@@ -319,7 +322,12 @@ const log = (() => {
 function hit(kind, drop = false, key = '', spin = null) {
   if (!game || !started || (club?.active && club.mode !== 'wall')) return; // на стенке полукорта бьёт как в матче
   sound.unlock();
-  if (game.state === 'serve' && game.server === game.lev) return game.serve(game.lev, game.now);
+  if (game.state === 'serve' && game.server === game.lev) { // J (бэкхенд) — снизу, остальное — сверху; держишь — копишь силу
+    game.serve(game.lev, game.now, kind === 'bh' ? 'under' : 'over');
+    const st = game.lev.stroke;
+    if (st?.serve === 'over' && game.serving === game.lev) Object.assign(st, { holdTo: null, holdKey: key || 'touch' });
+    return;
+  }
   if (key === 'Space') return; // пробел только подаёт: раньше в розыгрыше он бил форхендом и перебивал нажатый бэкхенд
   const lev = game.lev, cut = !drop && (spin === 'cut' || sliceMode || held('AltLeft', 'AltRight')), top = !drop && !cut && (spin === 'top' || topMode || held('ShiftLeft', 'ShiftRight'));
   if (kind === 'auto') {
@@ -337,6 +345,7 @@ addEventListener('keydown', (e) => {
   if (e.repeat) return;
   keys.add(e.code);
   if (!started && (e.code === 'Space' || e.code === 'Enter')) return start();
+  if (!$('end').hidden && e.code === 'Enter') return again();
   if (!started && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) return switchRacket(e.code === 'ArrowLeft' ? -1 : 1);
   if (clubKey(e.code)) return;
   if (/^(Key[WASD]|Arrow)/.test(e.code)) { if (swinging()) aimOnly.add(e.code); log('key', { k: e.code, down: 1, aim: aimOnly.has(e.code) }); }
@@ -351,11 +360,11 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Space') hit('fh', false, e.code);
 });
 // ---------- Прогулка по клубу (club.js) ----------
-// Q — уйти с корта, E — действие с предметом перед Лёвой (взять, выпить, поставить, сесть, встать — interact.js),
-// F — второе действие (выпить, взять стул), V — вид (со скамейки → ТВ → крупно за заменой), R — вернуться на корт.
-// На полукорте со стенкой (halfcourt.js) — удары как в матче, Q — обратно на прогулку.
+// Q — уйти с корта, E — действие с тем, что перед Лёвой (взять, выпить, поставить, сесть, встать, дверь, велосипед,
+// поговорить — interact.js), F — второе действие (выпить, взять стул), V — вид (со скамейки → ТВ → крупно за заменой),
+// R — вернуться на корт. На полукорте со стенкой (halfcourt.js) — удары как в матче, Q — обратно на прогулку.
 // Те же действия кнопками (#cbar, #act), ходьба — WASD или джойстик, Shift или джойстик до упора — бегом.
-let club = null, sub = null, subReady = null, half = null;
+let club = null, sub = null, subReady = null, half = null, girls = null; // girls — девушки на корте 2 (girls.js)
 function clubKey(code) {
   if (!started || !game || !club) return false;
   if (club.mode === 'wall') { if (code === 'KeyQ') { wallExit(); return true; } return false; }
@@ -367,7 +376,24 @@ function clubKey(code) {
   else if (code === 'KeyR') { club.hands.reset(); club.back(game.now, Q.has('auto')); } else return false;
   return true;
 }
-async function leave() { if (club.active || club.leaving) return; club.leaving = true; club.exit(await subReady, game.now); club.leaving = false; } // замена догружается в фоне
+async function leave() {
+  if (club.active || club.leaving) return;
+  if (game.state === 'match-over') { endUi(null); game.newMatch(game.now, false); } // замена начнёт новый матч
+  club.leaving = true; loadTown(); club.exit(await subReady, game.now); club.leaving = false; // замена догружается в фоне
+}
+// Дорога, городок, велосипед и машина (town.js, vehicle.js) — отдельным куском после старта: на загрузку сайта не влияют.
+let townReady = null;
+const loadTown = () => (townReady ??= Promise.all([import('./town.js'), import('./vehicle.js')]).then(([{ Town }, { Rides }]) => {
+  club.world = new Town(scene);
+  club.ride = new Rides({ scene, club, town: club.world });
+  // Велосипед и машина: E — сесть или слезть; пока едет, других действий нет (interact.riding).
+  const r = club.ride, kind = (v) => v.kind === 'car';
+  club.interact.riding = () => !!r.active;
+  club.interact.register({ ride: true, r: 1, pri: 0.5, get pos() { return r.active || r.nearest() ? club.interact.ahead() : FAR; },
+    label: (st) => { const v = r.active ?? (st.held || st.chair ? null : r.nearest()); return !v ? null : r.active ? (kind(v) ? 'выйти из\u00a0машины' : 'слезть') : kind(v) ? 'сесть в\u00a0машину' : 'сесть на\u00a0велосипед'; },
+    act: () => r.use() });
+}));
+const FAR = new THREE.Vector3(1e6, 0, 1e6); // «нет рядом» для действий без своего места (транспорт, разговор, стенка)
 const walkInput = () => { const a = axes(); return { x: a.x, y: a.y, run: held('ShiftLeft', 'ShiftRight') || stick.length() > 0.95 }; };
 function clubUi(mode) {
   const wall = mode === 'wall';
@@ -426,12 +452,27 @@ function start(mode = 'match') {
   $('start').classList.add('done');
   document.body.classList.remove('menu');
   court.getObjectByName('fence-near').visible = false; // в игре камера стоит за этой стенкой
-  log('mode', { mode });
-  if (mode === 'match') return game.resetPoint(game.now ?? 0);
+  log('mode', { mode, bestOf });
+  if (mode === 'match') { game.bestOf = bestOf; setTimeout(loadTown, 1500); return game.resetPoint(game.now ?? 0); }
   document.body.classList.add('practice');
   game.drill = new Practice(game, mode, { scene, court, ui: practiceUi, store, touch: TOUCH });
   $('pnext').hidden = mode !== 'lessons';
 }
+// Сколько сетов: 1 или до двух побед (из трёх). Запоминаем выбор на этом устройстве.
+let bestOf = (() => { try { return localStorage.getItem('bestOf') === '3' ? 3 : 1; } catch { return 1; } })();
+const bestOfUi = () => document.querySelectorAll('#bestof button').forEach((b) => b.setAttribute('aria-pressed', +b.dataset.n === bestOf));
+document.querySelectorAll('#bestof button').forEach((b) => b.addEventListener('click', () => { bestOf = +b.dataset.n; try { localStorage.setItem('bestOf', bestOf); } catch { /* без памяти — на эту игру */ } bestOfUi(); }));
+bestOfUi();
+// Конец матча: итог одним экраном. За Лёву играет ИИ или замена (Лёва гуляет по клубу) — следующий матч сам через 3 с.
+function endUi(w) {
+  $('end').hidden = !w; document.body.classList.toggle('ended', !!w);
+  if (!w) return;
+  $('endT').textContent = w === game.lev ? 'Лёва выиграл' : 'Соперник выиграл';
+  $('endS').textContent = game.sets.map(([a, b]) => `${a}:${b}`).join(' · ');
+}
+const again = () => { endUi(null); game.newMatch(game.now); };
+$('again').addEventListener('click', again);
+$('toClub').addEventListener('click', () => { endUi(null); leave(); });
 $('play').addEventListener('click', () => start());
 $('pLessons').addEventListener('click', () => start('lessons'));
 $('pWall').addEventListener('click', () => start('wall'));
@@ -484,20 +525,26 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
   const opp = oppGltf
     ? new Player(scene, oppGltf, { side: -1, height: 1.85, racketColor: '#1d4f91' })
     : new Player(scene, gltf, { side: -1, racketColor: '#1d4f91', cloth: '#22324a' });
-  game = new Game({ lev, opp, ballMesh, hud, sound, aimLev, log, marks, dust });
+  game = new Game({ lev, opp, ballMesh, hud, sound, aimLev, axes: () => axes(), log, marks, dust });
   game.onShot = (p, power, at) => powerFx.shot(p, power, at);
+  game.onMatch = (w) => { if (club.active || game.autoLev) game.restartAt = game.now + 3; else endUi(w); };
   opp.measure();
   log('start', { reach: lev.measure(), opp: !!oppGltf, racket: myRacket, w: innerWidth, h: innerHeight, touch: matchMedia('(pointer: coarse)').matches });
   club = new Club({ game, lev, court, sound, onMode: clubUi });
-  // Предметы террасы, скамейки и стенка полукорта (interact.js, props.js, halfcourt.js).
+  // Предметы террасы, скамейки, дверь дома, стенка полукорта, девушки (interact.js, props.js, halfcourt.js, girls.js).
   const T = court.getObjectByName('terrace').userData.T;
   const interact = new Interact({ lev, ui: actUi }), hands = new Hands({ lev, club, root: T.group });
   Object.assign(club, { interact, hands, chairs: T.chairs, terrace: T }); Object.assign(interact, { hands, stand: () => club.stand() });
   registerTerrace(interact, hands, club, T); registerBenches(interact, club);
+  interact.door(door);
   half = club.half = new HalfCourt({ game, club, court, scene, marks, ui: practiceUi, store, touch: TOUCH });
-  interact.register({ get pos() { return half.inside(lev.pos) ? lev.pos.clone().add(new THREE.Vector3(Math.sin(lev.netYaw + lev.bodyTurn), 0, Math.cos(lev.netYaw + lev.bodyTurn)).multiplyScalar(0.3)) : half.O; },
-    r: 1, label: (st) => (half.inside(lev.pos) && !st.held && !st.chair && !st.seated ? 'бить об\u00a0стенку' : null), act: (st, now) => wallEnter(now) });
+  interact.register({ r: 1, get pos() { return half.inside(lev.pos) ? interact.ahead() : FAR; },
+    label: (st) => (half.inside(lev.pos) && !st.held && !st.chair && !st.seated ? 'бить об\u00a0стенку' : null), act: (st, now) => wallEnter(now) });
   registerSurface(interact, hands, half.bench);
+  girls = new Girls({ scene, game, club, camera, sound, loader });
+  // Разговор: с кем — решает girls.near() (калитка корта 2, девушка рядом, она за столиком), E — girls.act().
+  interact.register({ r: 1, pri: 0.6, get pos() { return girls.target ? interact.ahead() : FAR; },
+    label: (st) => (girls.target && !girls.dlg && !st.chair ? 'поговорить' : null), act: () => girls.act() });
   // Замена (club.js): модель из Meshy грузится после старта, без неё — соперник в голубом.
   subReady = loadOpt('/models/sub.glb').then((g) => {
     sub = new Player(scene, g ?? oppGltf ?? gltf, { side: 1, height: 1.8, racketColor: '#2f7d4f', cloth: g ? null : '#86bfe6' });
@@ -608,7 +655,10 @@ renderer.setAnimationLoop(() => {
       game.lev.update(dt, game.now, new THREE.Vector3(), game.b);
       game.opp.update(dt, game.now, new THREE.Vector3(), game.b);
     }
+    girls?.update(dt, game.now);
     if (club.active) clubCam(dt); else if (started) follow(dt); else menuCam(dt);
+    const srv = started && game.state === 'serve' && game.server === game.lev && !game.autoLev && game.drill?.mode !== 'wall';
+    if (srv !== servingUi) { servingUi = srv; document.body.classList.toggle('serving', srv); } // кнопки ударов на подаче — «Сверху» и «Снизу»
     showLanding(game.now); showSpot(game.now, dt);
     aimGuide.update(dt, game.now);
     powerFx.update(dt, game.now);
@@ -620,10 +670,11 @@ if (Q.has('debug')) window.__lev = {
   scene, camera, get game() { return game; },
   // Пошаговая проверка: __pause = true, потом step(секунды, движение {x, y}) — игра идёт ровно на заданное время.
   step(sec, a = null, h = window.__dt ?? 1 / 120) { // без a — бег от зажатых клавиш, как в игре; __dt — шаг кадра (проверка на 30–60 кадрах)
-    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, a ?? walkInput()); powerFx.track(game.now); }
+    for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, a ?? walkInput()); girls?.update(h, game.now); powerFx.track(game.now); }
   },
   get club() { return club; },
   get half() { return half; },
+  loadTown: () => loadTown(),
   render() { window.__camHold = false; if (club.active) { club.snap(camera, follow); clubCam(0); } else follow(1); showLanding(game.now); showSpot(game.now, 1); aimGuide.update(0.2, game.now); powerFx.update(0, game.now); draw(); }, // кадр сразу, не дожидаясь requestAnimationFrame
   shot(eye, at) { window.__camHold = true; camera.position.fromArray(eye); camera.lookAt(new THREE.Vector3(...at)); draw(); }, // кадр с любой точки — смотреть соперника и ракетки
   // Поза удара в момент s (с от удара) на месте, без игры: смотреть руки, кисти, ноги крупно.

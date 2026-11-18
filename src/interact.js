@@ -7,7 +7,8 @@
 //   act(state, now) — сделать, y — высота точки (куда тянуться), alt — второе действие { label(state), act(state, now) },
 //   pri — насколько предмет главнее соседей (м): мелочь на столе важнее стула рядом.
 //   state: { held — что в левой руке, chair — стул в руках, seated — сидит, busy — идёт действие }.
-// Дверь дома (env-house.js: door = { pos, open, toggle() }) — interact.door(door).
+// Дверь дома (env-house.js: door = { pos, open, toggle() }) — interact.door(door). Действие без своего места (разговор,
+// транспорт, стенка) — pos: interact.ahead(), пока оно есть, иначе далеко. ride: true — доступно и в езде (riding()).
 //
 // Руки (Hands): предмет в левой руке, ракетка остаётся в правой. Позы рук — направлениями сегментов (как в swing.js),
 // кисть ставится двухзвенной кинематикой (rig.armTo) и поворачивается так, чтобы предмет стоял прямо или наклонялся
@@ -44,7 +45,8 @@ export class Interact {
   }
   register(it) { this.items.push(it); return it; }
   unregister(it) { this.items = this.items.filter((x) => x !== it); if (this.cur?.it === it) this.cur = null; }
-  door(door) { return this.register({ pos: door.pos, r: 1.6, y: 1.0, label: () => (door.open ? 'закрыть дверь' : 'открыть дверь'), act: () => door.toggle() }); }
+  door(door) { return this.register({ pos: door.pos, r: 1.6, y: 1.0, label: (st) => (st.chair ? null : door.open ? 'закрыть дверь' : 'открыть дверь'), act: () => door.toggle() }); }
+  ahead(d = 0.3) { const L = this.lev, y = L.netYaw + L.bodyTurn; return L.pos.clone().add(V(Math.sin(y) * d, 0, Math.cos(y) * d)); } // точка перед Лёвой
   get state() { const h = this.hands; return { held: h?.held ?? null, chair: h?.chair ?? null, seated: !!this.lev.seat, busy: !!h?.job, lev: this.lev }; }
 
   // Кого показать: ближайший предмет в ~1,3 м перед Лёвой (сидя — на расстоянии руки), у которого есть действие.
@@ -53,8 +55,10 @@ export class Interact {
     this.on = on;
     const L = this.lev, st = this.state, yaw = L.netYaw + L.bodyTurn, f = V(Math.sin(yaw), 0, Math.cos(yaw));
     let best = null, alt = null, next = null;
+    const riding = !!this.riding?.();
     if (on && !st.busy) {
       for (const it of this.items) {
+        if (riding && !it.ride) continue; // едет — только «слезть»
         const p = it.pos, d = Math.hypot(p.x - L.pos.x, p.z - L.pos.z), r = st.seated ? Math.min(it.r ?? 1.3, 1.05) : it.r ?? 1.3;
         if (d > r) continue;
         const a = d < 1e-3 ? 0 : Math.acos(clamp((f.x * (p.x - L.pos.x) + f.z * (p.z - L.pos.z)) / d, -1, 1));
@@ -63,10 +67,10 @@ export class Interact {
         const score = d + a - (it.pri ?? 0), c = { it, label: lb, act: it.act, score };
         if (!best || score < best.score) { if (best && best.label !== lb) next = best; best = c; } else if ((!next || score < next.score) && lb !== best.label) next = c;
       }
-      const use = this.hands?.use(st); // своё действие предмета в руке
+      const use = riding ? null : this.hands?.use(st); // своё действие предмета в руке
       if (best?.it.alt) { const lb = best.it.alt.label(st); if (lb) alt = { label: lb, act: best.it.alt.act }; }
       if (!alt && use && best) alt = use;
-      if (!alt && next && best) alt = next; // второе по близости действие — на F
+      if (!alt && next && best && !riding) alt = next; // второе по близости действие — на F
       if (!best) best = use ?? (st.seated ? { label: 'встать', act: () => this.stand?.() } : null);
     }
     this.cur = best; this.alt = alt;

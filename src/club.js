@@ -5,7 +5,7 @@
 // 18.11: предметы и действия — interact.js (E/F, подсказка внизу), стенка на полукорте — halfcourt.js (режим 'wall').
 import * as THREE from 'three';
 import { COURT, GATE, COURT2_X } from './court.js';
-import { SEATS } from './env.js';
+import { SEATS, HOUSE, groundAt } from './env.js';
 import { PAD } from './env-mountains.js';
 
 const clamp = THREE.MathUtils.clamp;
@@ -90,7 +90,7 @@ function scan(court) {
     if (g && g.height <= 0.2 && g.width * g.depth > 3) { box.setFromObject(o); if (box.max.y > 0.02) floors.push([box.min.x, box.min.z, box.max.x, box.max.z, box.max.y]); }
   });
   for (const c of inst.values()) if (c[2] > 0.05 && c[2] < 1.5) circles.push(c);
-  return { segs, circles, boxes, floors, area: AREA };
+  return { segs: [...segs, ...HOUSE.segs], circles: [...circles, ...HOUSE.circles], boxes: [...boxes, ...HOUSE.boxes], floors: [...floors, ...HOUSE.floors], area: AREA }; // дом: стены с проёмом двери, створка, мебель, пол зала (env-house.js)
 }
 
 export class Club {
@@ -105,11 +105,12 @@ export class Club {
   }
   get active() { return this.mode !== null; }
   get walking() { return this.mode === 'walk' || this.mode === 'sit'; }
-  ground(x, z) { let y = 0; for (const [x0, z0, x1, z1, top] of this.obs.floors) if (x >= x0 && x <= x1 && z >= z0 && z <= z1) y = Math.max(y, top); return y; }
+  ground(x, z) { let y = groundAt(x, z); for (const [x0, z0, x1, z1, top] of this.obs.floors) if (x >= x0 && x <= x1 && z >= z0 && z <= z1) y = Math.max(y, top); return y; }
   free(p) {
     p.free = true; p.idle = false; p.gest = null; p.stroke = null; p.split = null; p.sliding = 0;
-    p.bounds = (pos) => pushOut(pos, R, { ...this.obs, dyn: () => this.chairs.filter((c) => !c.carried).map((c) => [c.obj.position.x, c.obj.position.z, 0.2]) });
-    p.ground = (x, z) => this.ground(x, z);
+    const dyn = () => this.chairs.filter((c) => !c.carried).map((c) => [c.obj.position.x, c.obj.position.z, 0.2]); // стулья — где стоят сейчас
+    p.bounds = (pos) => { const obs = { ...this.obs, dyn }; return this.world ? this.world.bounds(pos, R, obs) : pushOut(pos, R, obs); }; // world — дорога и городок (town.js); obs меняет и vehicle.js
+    p.ground = (x, z) => this.world?.ground(x, z) ?? this.ground(x, z);
   }
 
   // Уйти с корта: текущий розыгрыш не в счёт, на место Лёвы встаёт замена (ИИ) и идёт с дорожки на заднюю линию,
@@ -129,6 +130,7 @@ export class Club {
   // Вернуться на корт: замена уходит (прячем), Лёва на своей задней линии, следующее очко с того же счёта.
   back(now, auto = false) {
     const g = this.game, L = this.lev, sub = this.sub;
+    this.ride?.leave(); // с велосипеда или из машины (vehicle.js), издалека — через затемнение
     if (sub) { sub.wrap.visible = sub.racket.visible = false; sub.free = false; sub.stroke = null; }
     L.free = false; L.seat = null; L.onStep = null; L.stamina = 1; L.mood = 0; // отдохнул на скамейке
     L.place(L.home);
@@ -139,6 +141,7 @@ export class Club {
   }
   // Сесть: подойти к месту перед сиденьем (у стула — сбоку, спереди стол), развернуться и сесть.
   // s — место { at, h (высота сиденья в мире), yaw, f, r, approach? } — скамейка из SEATS или стул (interact.js).
+  // Транспорт и дверь дома — тоже через interact.js (main.js), а не здесь.
   sit(s) {
     if (this.mode !== 'walk' || !s || this.lev.seat) return;
     this.path = [s.approach ?? s.at.clone().addScaledVector(s.f, 0.55)]; this.toSeat = s;
@@ -163,6 +166,7 @@ export class Club {
     if (!this.active) return;
     const L = this.lev, g = this.game;
     if (this.mode === 'wall') { this.half.keep(L); this.interact?.update(false); return; } // Лёву ведёт розыгрыш (game.update)
+    if (this.ride?.update(dt, now, input)) input = { x: 0, y: 0 }; // Лёва на велосипеде или в машине: ведёт vehicle.js
     this.hands?.update(dt, now); this.terrace?.update(dt, now); // действия с предметами; пар над кофе и зонты
     let move = new THREE.Vector3();
     if (L.seat && !L.seat.up && L.seat.w > 0.9 && Math.hypot(input.x, input.y) > 0.5 && !this.hands?.busy) this.stand(); // сидя тронул ходьбу — встаёт
@@ -190,7 +194,7 @@ export class Club {
     if (ml > 0.1 && (this.path || move.dot(V(Math.sin(this.camYaw), Math.cos(this.camYaw))) > -0.25 * ml)) {
       this.camYaw += clamp(wrap(Math.atan2(move.x, move.z) - this.camYaw), -1.6 * dt, 1.6 * dt) * Math.min(1, ml);
     }
-    L.update(dt, now, move, L.seat ? g.b : null); // сидя голова следит за мячом
+    if (!this.ride?.active) L.update(dt, now, move, L.seat ? g.b : null); // сидя голова следит за мячом
     // Замена: ждёт на дорожке, пока Лёва не выйдет, потом идёт на заднюю линию; там игра продолжается.
     const sub = this.sub;
     if (sub && g.state === 'away') {
@@ -206,6 +210,7 @@ export class Club {
     const L = this.lev, k = 1 - Math.exp(-dt * 4);
     let eye, look;
     if (this.mode === 'wall' || (this.mode === 'sit' && this.view === 'close')) { follow(dt); return this.mode === 'wall'; }
+    if (this.ride?.active) { this.ride.camera(dt, camera); return true; }
     if (this.mode === 'sit' && this.view === 'tv') { // ТВ: высоко из-за задней линии замены, весь корт в кадре
       const portrait = innerWidth / innerHeight < 0.8;
       eye = portrait ? V(0, 33).setY(15) : V(0, 28).setY(9.5); look = V(0, portrait ? 0 : 0.5).setY(0);
@@ -223,6 +228,7 @@ export class Club {
       const f = V(Math.sin(this.camYaw), Math.cos(this.camYaw));
       eye = L.pos.clone().addScaledVector(f, -4.2).setY(L.pos.y + 2.3);
       look = L.pos.clone().addScaledVector(f, 1.8).setY(L.pos.y + 0.95);
+      this.world?.camClamp(eye, L.pos); // в доме — не дальше стен
       // Зонт террасы между камерой и Лёвой (или камера в нём) — ткань становится полупрозрачной.
       const head = L.pos.clone().setY(L.pos.y + 1.4), q = new THREE.Vector3();
       for (const u of this.terrace?.umbrellas ?? []) {

@@ -5,6 +5,7 @@
 // Правила розыгрыша (Game.bounce, point, lose) в тренировке передают решение сюда: practice.bounce и practice.miss.
 import * as THREE from 'three';
 import { solveShot, solveLob, inSingles } from './physics.js';
+import { inBox, servePos } from './game.js';
 
 const MOUTH = new THREE.Vector3(0, 0.62, -11.1); // откуда вылетает мяч у мячемёта
 const WALL_W = 4.6, WALL_H = 4.2; // полширины и высота стенки, м
@@ -12,6 +13,7 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 
 // Шаги урока. text(b) — строка подсказки, b(клавиша) — клавиша на ноутбуке или кнопка на телефоне.
 // feed — куда кидать: fh справа, bh слева, alt по очереди; z — где стоит Лёва; ok — засчитан ли удар; bad — что сказать.
+// serve — шаг подачи: мячемёт молчит, Лёва подаёт сам то справа, то слева от центра, мяч должен упасть в квадрат.
 const STEPS = [
   { id: 'fh', feed: 'fh', need: 3, text: (b) => `Мяч справа&nbsp;— форхенд ${b('KeyK')}. Жми, как только мяч перелетел сетку`, ok: (s) => /^v?fh/.test(s.stroke), bad: 'Справа&nbsp;— форхенд' },
   { id: 'bh', feed: 'bh', need: 3, text: (b) => `Мяч слева&nbsp;— бэкхенд ${b('KeyJ')}`, ok: (s) => /^v?bh/.test(s.stroke), bad: 'Слева&nbsp;— бэкхенд' },
@@ -23,6 +25,8 @@ const STEPS = [
   { id: 'power', feed: 'alt', need: 3, text: (b) => `Держи ${b('KeyK')} или ${b('KeyJ')}, пока не&nbsp;загорятся три стрелки&nbsp;— сильнее`, ok: (s) => s.power >= 0.9, bad: 'Держи дольше, до&nbsp;трёх стрелок' },
   { id: 'volley', feed: 'alt', kind: 'volley', z: 3.4, need: 3, text: (b) => `У&nbsp;сетки бей с&nbsp;лёта, до&nbsp;отскока: ${b('KeyK')} или ${b('KeyJ')}`, ok: (s) => s.stroke.startsWith('v'), bad: 'С&nbsp;лёта, до&nbsp;отскока' },
   { id: 'smash', feed: 'fh', kind: 'lob', z: 5.2, need: 2, text: (b) => `Высокий мяч&nbsp;— смэш, жми ${b('KeyK')}`, ok: (s) => s.stroke === 'oh', bad: 'Встань под мяч' },
+  { id: 'serve', serve: 'over', need: 3, text: (b, t) => `Подача сверху&nbsp;— ${t ? '«Сверху»' : b('KeyK')}: мяч должен упасть в&nbsp;квадрат по&nbsp;диагонали`, ok: (s, p, g) => s.serve === 'over' && inBox(p, g.box), bad: 'Мимо квадрата' },
+  { id: 'serveU', serve: 'under', need: 2, text: (b, t) => `Подача снизу&nbsp;— ${t ? '«Снизу»' : b('KeyJ')}: медленнее, зато почти всегда в&nbsp;квадрат`, ok: (s, p, g) => s.serve === 'under' && inBox(p, g.box), bad: 'Мимо квадрата' },
 ];
 const FREE = { id: 'free', feed: 'alt', need: Infinity, text: () => 'Все удары пройдены. Дальше вперемешку', ok: () => true };
 const WHY = { 'Сетка': 'Ниже линии', 'Не перелетел': 'Не&nbsp;перелетел', 'Не достал': 'Не&nbsp;достал' };
@@ -81,7 +85,7 @@ export class Practice {
   // Новый шаг урока: Лёва встаёт куда нужно (у сетки — для воллея и смэша), первый мяч через секунду.
   begin(now) {
     const s = this.step;
-    this.n = 0; this.g.lev.place(new THREE.Vector3(0, 0, s.z ?? this.g.lev.home.z));
+    this.n = 0; this.g.lev.place(new THREE.Vector3(0, 0, s.z ?? this.g.lev.home.z)); this.toss = 0;
     this.g.state = 'drill'; this.g.b.live = false; this.g.ballMesh.visible = false;
     this.next = now + 1.2;
     this.show();
@@ -115,7 +119,14 @@ export class Practice {
       if (this.serveAt && now >= this.serveAt) { this.serveAt = null; Object.assign(g, { state: 'serve', lastHitter: null }); this.show(); } // иначе подачу не засчитать: Лёва «уже бил»
       if (g.autoLev && g.state === 'serve') g.serve(g.lev, now); // ?auto: тестировщик подаёт сам
     } else if (this.beginAt && now >= this.beginAt) { this.beginAt = null; this.begin(now); }
-    else if (!this.beginAt && g.state === 'drill' && now >= this.next) this.feed(now);
+    else if (!this.beginAt && g.state === 'drill' && now >= this.next) this.step.serve ? this.toServe() : this.feed(now);
+    if (this.step.serve && g.autoLev && g.state === 'serve') g.serve(g.lev, now, this.step.serve); // ?auto: тестировщик подаёт сам
+  }
+  // Шаг подачи: Лёва за задней линией, по очереди справа и слева от центральной отметки, ждём K или J.
+  toServe() {
+    const g = this.g, court = this.toss++ % 2 ? -1 : 1;
+    Object.assign(g, { court, server: g.lev, serveNo: 1, state: 'serve', lastHitter: null, rally: 0 });
+    g.lev.place(servePos(g.lev, court, true));
   }
 
   // После каждого шага физики: мяч Лёвы долетел до стенки — отражаем (стенка гасит его примерно на треть).
@@ -154,7 +165,7 @@ export class Practice {
   landed(pos) {
     const g = this.g, s = this.step, shot = g.lastShot ?? { stroke: '', power: 0 };
     g.state = 'drill'; this.next = g.now + 1.1;
-    const ok = s.ok(shot, pos);
+    const ok = s.ok(shot, pos, g);
     g.log('drill', { mode: this.mode, step: s.id, ok, stroke: shot.stroke, power: shot.power, at: [+pos.x.toFixed(2), +pos.z.toFixed(2)] });
     if (!ok) return this.ui.flash(s.bad, false);
     this.n++;

@@ -19,6 +19,9 @@
   #hud i { width: 7px; height: 7px; border-radius: 50%; background: transparent; }
   #hud i.on { background: var(--accent); }
   #hud .games { font-size: 13px; opacity: .8; }
+  #hud .games { display: grid; justify-items: center; line-height: 1.2; }
+  #hud #sets { font-size: 11px; opacity: .75; } /* прошлые сеты строкой под геймами: на телефоне в одну строку не влезают */
+  #hud #sets:empty { display: none; }
   /* Выносливость: тонкая полоска под именем, видна, когда меньше ~0,9; на низкой тёплая */
   #hud .nm { display: grid; gap: 3px; }
   #hud .st { height: 2px; border-radius: 1px; background: rgba(255, 255, 255, .14); overflow: hidden; opacity: 0; transition: opacity .5s; }
@@ -32,9 +35,12 @@
   #msg.good { color: var(--accent); }
   #hint { position: fixed; bottom: calc(18px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; text-shadow: var(--shade); pointer-events: none; }
 
-  #start { position: fixed; inset: 0; z-index: 3; display: flex; align-items: flex-end; justify-content: center; padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+  #start, #end { position: fixed; inset: 0; z-index: 3; display: flex; align-items: flex-end; justify-content: center; padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
     background: linear-gradient(to top, rgba(10, 14, 12, .82) 0%, rgba(10, 14, 12, .45) 34%, rgba(10, 14, 12, 0) 62%); transition: opacity .4s; }
   #start.done { opacity: 0; pointer-events: none; }
+  #end[hidden] { display: none; }
+  #end .score { margin: -8px 0 0; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; text-shadow: var(--shade); }
+  #end .modes { grid-template-columns: 1fr; margin-top: -8px; }
   .menu { width: 100%; max-width: 520px; display: grid; gap: 18px; justify-items: center; text-align: center; }
   .title { margin: 0; font-size: 30px; letter-spacing: -.01em; text-shadow: 0 2px 16px rgba(0, 0, 0, .45); }
   .racket[hidden] { display: none; }
@@ -49,14 +55,18 @@
     background: linear-gradient(#ffffff, #dfe3df); box-shadow: 0 2px 0 #8f9690, 0 4px 10px rgba(0, 0, 0, .35); margin-right: 2px; }
   #start .touch-only { display: none; margin: 0; color: rgba(255, 255, 255, .88); }
   button { font: inherit; }
-  #play { width: 100%; max-width: 360px; min-height: 52px; border: 0; border-radius: 14px; background: var(--accent); color: #18210c; font-weight: 700; font-size: 17px; cursor: pointer; box-shadow: 0 8px 24px rgba(214, 239, 60, .28); }
+  #play, #again { width: 100%; max-width: 360px; min-height: 52px; border: 0; border-radius: 14px; background: var(--accent); color: #18210c; font-weight: 700; font-size: 17px; cursor: pointer; box-shadow: 0 8px 24px rgba(214, 239, 60, .28); }
   #play:disabled { opacity: .5; cursor: default; }
-  #play:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+  #play:focus-visible, #again:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
   body.menu #hud, body.menu #hint { opacity: 0; }
   .modes { width: 100%; max-width: 360px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: -8px; }
   .modes button, #pbar button { min-height: 46px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 12px; background: rgba(255, 255, 255, .08); color: #fff; font-weight: 600; cursor: pointer;
     -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
   .modes button:disabled { opacity: .5; cursor: default; }
+  #bestof { margin-top: 0; }
+  #bestof button[aria-pressed="true"] { background: rgba(255, 255, 255, .26); border-color: rgba(255, 255, 255, .85); }
+  #bestof button[aria-pressed="false"] { color: rgba(255, 255, 255, .72); }
+  body.ended #pad, body.ended #joy, body.ended #cbar, body.ended #hint { display: none !important; } /* экран итога: только его кнопки */
   .modes button:active, #pbar button:active { background: rgba(255, 255, 255, .2); }
   /* Тренировка: счёта нет, внизу строка урока с клавишами и точками прогресса, слева сверху «Выйти» и «Дальше» */
   #lesson, #pbar { display: none; }
@@ -101,6 +111,10 @@
   #pad #btop, #pad #bcut, #pad #bdrop { min-width: 64px; min-height: 44px; border-radius: 22px; font-size: 13px; }
   #pad #btop.on, #pad #bcut.on { background: var(--accent); color: #18210c; }
   #pad #bdrop { grid-column: span 2; width: 100%; }
+  /* Подача Лёвы: «Форхенд» и «Бэкхенд» становятся «Сверху» и «Снизу», переключатели не нужны */
+  #pad .s, body.serving #pad .r { display: none; }
+  body.serving #pad .s { display: inline; }
+  body.serving #btop, body.serving #bcut, body.serving #bdrop { visibility: hidden; }
   #joy { position: fixed; left: 0; top: 0; width: 120px; height: 120px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .5); opacity: 0; pointer-events: none; transition: opacity .15s; }
   #joy.on { opacity: 1; }
   #knob { position: absolute; left: 36px; top: 36px; width: 48px; height: 48px; border-radius: 50%; background: rgba(255, 255, 255, .7); }
@@ -111,7 +125,9 @@
     #act { left: auto; right: calc(12px + env(safe-area-inset-right)); bottom: calc(24px + env(safe-area-inset-bottom)); flex-direction: column; align-items: flex-end; gap: 10px; }
     #act button { min-height: 52px; padding: 0 22px; border-radius: 26px; background: rgba(16, 24, 20, .62); font-size: 16px; text-shadow: none; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
     #act button:active { background: rgba(255, 255, 255, .2); }
+    body.ride #act { bottom: calc(108px + env(safe-area-inset-bottom)); } /* в езде внизу руль, газ и тормоз (vehicle.js) */
     #hint { bottom: calc(232px + env(safe-area-inset-bottom)); } /* выше кнопок ударов */
+    body.serving #hint { bottom: auto; top: calc(118px + env(safe-area-inset-top)); } /* подача: Лёва стоит внизу у линии, подсказка под табло */
     body.practice #lesson { bottom: auto; top: calc(66px + env(safe-area-inset-top)); } /* на телефоне внизу кнопки и сам Лёва: урок сверху */
   }
 </style>
@@ -121,7 +137,7 @@
 
 <div id="hud" aria-live="polite">
   <div class="side"><span class="nm"><small id="nl">Лёва</small><span class="st" id="st-l"><span></span></span></span><i id="srv-l"></i><b id="pl">0</b></div>
-  <span class="games"><span id="gl">0</span>&nbsp;:&nbsp;<span id="go">0</span></span>
+  <span class="games"><span><span id="gl">0</span>&nbsp;:&nbsp;<span id="go">0</span></span><small id="sets"></small></span>
   <div class="side"><b id="po">0</b><i id="srv-o"></i><span class="nm"><small>Соперник</small><span class="st" id="st-o"><span></span></span></span></div>
 </div>
 <div id="msg"></div>
@@ -135,8 +151,8 @@
   <button id="btop" aria-pressed="false">Кручёный</button>
   <button id="bcut" aria-pressed="false">Резаный</button>
   <button id="bdrop">Укороч.</button>
-  <button id="bbh">Бэкхенд</button>
-  <button id="bfh">Форхенд</button>
+  <button id="bbh"><span class="r">Бэкхенд</span><span class="s">Снизу</span></button>
+  <button id="bfh"><span class="r">Форхенд</span><span class="s">Сверху</span></button>
 </div>
 <div id="joy"><div id="knob"></div></div>
 
@@ -155,11 +171,20 @@
       <span><kbd>L</kbd> укороченный</span>
       <span><kbd>I</kbd> кручёный</span>
       <span><kbd>U</kbd> резаный</span>
-      <span><kbd>Пробел</kbd> подача</span>
+      <span>подача: <kbd>K</kbd> сверху, <kbd>J</kbd> снизу</span>
     </div>
     <p class="touch-only">Слева ведёшь пальцем&nbsp;— бег, справа&nbsp;— удары</p>
+    <div class="modes" id="bestof" role="group" aria-label="Сколько сетов"><button data-n="1" aria-pressed="true">1&nbsp;сет</button><button data-n="3" aria-pressed="false">До&nbsp;двух сетов</button></div>
     <button id="play" disabled>Играть</button>
     <div class="modes"><button id="pLessons" disabled>Уроки ударов</button><button id="pWall" disabled>Стенка</button></div>
+  </div>
+</div>
+<div id="end" hidden>
+  <div class="menu">
+    <p class="title"><b id="endT"></b></p>
+    <p class="score" id="endS"></p>
+    <button id="again">Ещё матч</button>
+    <div class="modes"><button id="toClub">В&nbsp;клуб</button></div>
   </div>
 </div>
 <div id="loader"><div><p>Лёва выходит на&nbsp;корт</p><i><b></b></i></div></div>

@@ -1,14 +1,18 @@
 // Окружение клуба в альпийской долине: небо и воздух (env-sky.js), горы с лесом (env-mountains.js), клуб вокруг корта
-// (env-club.js), ели и липы, шале с террасой. Деревья — модели Ильдара из проекта Монтероза (см. README).
+// (env-club.js), клубный дом (env-house.js) с террасой, ели и липы. Деревья — модели Ильдара из проекта Монтероза (README).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildMountains, heightAt } from './env-mountains.js';
+import { buildHouse } from './env-house.js';
 import { buildSky, HAZE } from './env-sky.js';
 import { buildClub, pathGap, WIND } from './env-club.js';
 import { buildValley } from './env-valley.js';
 import { buildTerrace } from './props.js';
 export { SUN, HAZE, AIR_DENSITY, outdoorEnv } from './env-sky.js';
+export { groundAt } from './env-mountains.js'; // высота газона с буграми: по ней ходят
+export { door, HOUSE } from './env-house.js'; // дверь клубного дома и его стены для столкновений
 export const HORIZON = HAZE; // старое имя цвета дымки
 
 const rng = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -78,6 +82,48 @@ function treeSpots() {
 }
 const vnoise2 = (x, z) => { const s = Math.sin(x * 1.7 + Math.sin(z * 1.3)) * Math.cos(z * 1.9 + Math.sin(x * 0.7)); return 0.5 + 0.5 * s; };
 
+// Кора: Poly Haven bark_brown_02 (кадр 1 м, CC0) трипланарно по мировым координатам — на стволах Ильдара своя
+// развёртка тянула текстуру 256 px в мутное пятно. Трещины объёмные: карта нормалей теми же тремя проекциями.
+const texL = new THREE.TextureLoader();
+const ptex = (n, data) => { const t = texL.load(`/tex/${n}.webp`); t.colorSpace = data ? THREE.NoColorSpace : THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; };
+let barkT, barkN;
+const TONE = (kind) => (kind.startsWith('tree_') && kind !== 'tree_4' ? '#a8968c' : '#bdb7b0'); // кора елей чуть рыжее, липы серее
+function barkMaterial(color) {
+  barkT ??= ptex('bark'); barkN ??= ptex('bark-n', true);
+  const m = new THREE.MeshStandardMaterial({ map: barkT, color, roughness: 0.95, metalness: 0 });
+  m.customProgramCacheKey = () => 'bark';
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.barkN = { value: barkN };
+    sh.vertexShader = 'varying vec3 vTp, vTn; varying float vBase;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+      vec4 tp = vec4(transformed, 1.); vec3 tn = objectNormal; float base = 0.;
+      #ifdef USE_INSTANCING
+        tp = instanceMatrix * tp; tn = mat3(instanceMatrix) * tn; base = instanceMatrix[3].y;
+      #endif
+      vTp = (modelMatrix * tp).xyz; vTn = normalize(mat3(modelMatrix) * tn); vBase = (modelMatrix * vec4(0., base, 0., 1.)).y + .1;`);
+    sh.fragmentShader = 'uniform sampler2D barkN; varying vec3 vTp, vTn; varying float vBase;\n' + sh.fragmentShader.replace('#include <map_fragment>', `
+      vec3 tw = pow(abs(vTn), vec3(4.)); tw /= tw.x + tw.y + tw.z;
+      vec2 ua = vTp.zy / .9, ub = vTp.xz / .9, uc = vTp.xy / .9;
+      vec4 bk = texture2D(map, ua) * tw.x + texture2D(map, ub) * tw.y + texture2D(map, uc) * tw.z;
+      diffuseColor *= bk;
+      diffuseColor.rgb *= mix(.55, 1., smoothstep(-.05, .45, vTp.y - vBase)); // у земли темнее: сырость, земля на корнях`)
+      .replace('#include <normal_fragment_maps>', `
+      vec2 na = texture2D(barkN, ua).xy * 2. - 1., nb = texture2D(barkN, ub).xy * 2. - 1., nc = texture2D(barkN, uc).xy * 2. - 1.;
+      vec3 pw = vec3(0., na.y, na.x) * tw.x + vec3(nb.x, 0., nb.y) * tw.y + vec3(nc.x, nc.y, 0.) * tw.z;
+      normal = normalize(mat3(viewMatrix) * normalize(vTn + pw * 1.4));`);
+  };
+  return m;
+}
+// Корни: у ствола расширение (верх прячется в стволе) и пять корней веером — сплюснутые конусы, кончиком в землю.
+// Единица — радиус ствола у земли.
+function rootGeometry() {
+  const parts = [new THREE.CylinderGeometry(0.82, 1.45, 0.75, 14, 1, true).translate(0, 0.27, 0)];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + (i % 2) * 0.35, len = 1.4 + 0.4 * ((i * 7) % 3) / 2;
+    parts.push(new THREE.ConeGeometry(0.42, len, 9).rotateZ(-Math.PI / 2 - 0.3).scale(1, 0.55, 1).translate(0.5 + len * 0.42, 0.14, 0).rotateY(a));
+  }
+  return mergeGeometries(parts.map((g) => g.toNonIndexed()));
+}
+
 function trees(group, spots, onAtlas) {
   new GLTFLoader().load('/models/trees.glb', (gltf) => {
     const kinds = {};
@@ -87,7 +133,7 @@ function trees(group, spots, onAtlas) {
       (kinds[name] ??= []).push(o);
       if (o.material.alphaTest > 0 && !o.userData.done) { o.userData.done = true; if (name.startsWith('bb_')) onAtlas?.(o.material.map); }
     });
-    const prepared = new Set();
+    const prepared = new Set(), barkMats = {}, trunkOf = {};
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), r = rng(7);
     const by = {}; for (const s of spots) (by[s[0] + (s[1] < -12 && s[2] > -30 && s[2] < -2 ? '+' : '')] ??= []).push(s); // тень на корт — только от елей у дальней половины: ближняя половина Лёвы на солнце
     for (const [key, list] of Object.entries(by)) {
@@ -97,6 +143,16 @@ function trees(group, spots, onAtlas) {
           prepared.add(part);
           part.material.metalness = 0; part.material.roughness = 0.9; // в glTF металличность по умолчанию 1: листва выходила тёмной
           if (part.material.alphaTest > 0) { shellNormals(part.geometry); foliage(part.material); }
+          else { // ствол: кора и корни по радиусу ствола у земли
+            const k = key.replace('+', ''), tone = TONE(k);
+            part.material = (barkMats[tone] ??= barkMaterial(tone));
+            const p = part.geometry.attributes.position; part.geometry.computeBoundingBox(); const y0 = part.geometry.boundingBox.min.y;
+            let cx = 0, cz = 0, n = 0, rad = 0;
+            for (let i = 0; i < p.count; i++) if (p.getY(i) < y0 + 0.3) { cx += p.getX(i); cz += p.getZ(i); n++; }
+            cx /= n || 1; cz /= n || 1;
+            for (let i = 0; i < p.count; i++) if (p.getY(i) < y0 + 0.3) rad = Math.max(rad, Math.hypot(p.getX(i) - cx, p.getZ(i) - cz));
+            trunkOf[k] = { rad: Math.min(rad, 0.6), cx, cz, y0 };
+          }
         }
         const im = new THREE.InstancedMesh(part.geometry, part.material, list.length);
         list.forEach((s, i) => { const k = s[3]; im.setMatrixAt(i, m4.compose(new THREE.Vector3(s[1], heightAt(s[1], s[2]) - 0.1, s[2]), q.setFromAxisAngle(up, r() * 6.28), new THREE.Vector3(k, k * (0.9 + r() * 0.2), k))); });
@@ -104,6 +160,16 @@ function trees(group, spots, onAtlas) {
         group.add(im);
       }
     }
+    // Корни: один вызов отрисовки на все деревья, масштаб — радиус ствола × размер дерева.
+    const roots = [];
+    for (const s of spots) { const t = trunkOf[s[0]]; if (t && t.rad > 0.05) roots.push([s, t]); }
+    const rim = new THREE.InstancedMesh(rootGeometry(), barkMaterial('#ffffff'), roots.length), rr = rng(13), col = new THREE.Color();
+    roots.forEach(([s, t], i) => {
+      const k = s[3] * t.rad, a = rr() * 6.28;
+      rim.setMatrixAt(i, m4.compose(new THREE.Vector3(s[1] + t.cx * s[3], heightAt(s[1], s[2]) - 0.06, s[2] + t.cz * s[3]), q.setFromAxisAngle(up, a), new THREE.Vector3(k, k, k)));
+      rim.setColorAt(i, col.set(TONE(s[0])));
+    });
+    rim.receiveShadow = true; rim.name = 'roots'; group.add(rim);
   });
 }
 
@@ -111,7 +177,9 @@ function trees(group, spots, onAtlas) {
 // Image to 3D по картинкам GPT (gpt/env/*.png), исходники в ref/meshy/env, ужаты tools/env-pack.sh (README).
 // У моделей Meshy центр в середине коробки и размер около 2 условных единиц: ставим низом на землю и масштабируем
 // по высоте в метрах. Лицо модели смотрит в +z, поворот −π/2 разворачивает его к корту (−x).
-// Тень отбрасывают только крупные: шале, зонты, скамейки, бар. Мелочь без теней — лишний проход по сетке не нужен.
+// Тень отбрасывают только крупные: зонты, скамейки, бар. Мелочь без теней — лишний проход по сетке не нужен.
+// Шале из Meshy (один ком на 3 млн треугольников, после упрощения текстура разъезжалась осколками) 18.11 заменил дом
+// кодом (env-house.js).
 const DECK = 0.15; // настил террасы перед шале
 // Скамейки: две у сетки внутри корта (игроков), две у дорожки за калиткой и одна за спиной Лёвы за забором (зрителей).
 // Все лицом к корту. Модель смотрит в +z, поворот −π/2 — лицом к −x, π — к −z.
@@ -125,7 +193,6 @@ export const SEATS = BENCHES.flatMap(([x, z, rot]) => [-0.4, 0.4].map((s) => ({
 })));
 // Бар, столики, стулья и зонты террасы с 18.11 — кодом (props.js, buildTerrace): с ними можно что-то делать.
 const PLACES = { // имя: [высота, м; тень; [[x, z, поворот, y], …]]
-  chalet: [8.5, true, [[23, -27, -Math.PI / 2]]],
   // У калитки по кадке с двух сторон, на террасе по углам; две за спиной Лёвы — их видно в меню.
   planter: [0.8, false, [[14.1, -19.6, 0.4, DECK], [10.6, -34.4, 2, DECK], [9.95, 2.5, 1], [9.95, 5.5, 2.5], [-6.5, 20.7, 0.5], [6.5, 20.7, 2]]],
   bench: [0.85, true, BENCHES],
@@ -136,32 +203,13 @@ const PLACES = { // имя: [высота, м; тень; [[x, z, поворот,
   roller: [1.15, true, [[-8.1, -18.7, 0.7]]],
 };
 
-// У шале от Meshy штукатурка в серых разводах: светлые и почти серые тексели тянем к ровной белой штукатурке,
-// оставляя немного своей фактуры. Дерево, окна и герань (насыщенные или тёмные) не трогаем. Материал у шале свой
-// (glTF), остальные модели его не делят.
-function cleanPlaster(m) {
-  m.onBeforeCompile = (sh) => {
-    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-      float pl = dot(diffuseColor.rgb, vec3(.3, .59, .11)), mx = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)), mn = min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
-      float plaster = smoothstep(.22, .42, pl) * smoothstep(.25, .1, (mx - mn) / (mx + .001));
-      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.78, .76, .71) * (.94 + .12 * pl), plaster * .75);`)
-      // Стены после упрощения сетки мятые: нормаль штукатурки прижимаем к плоскости стены (шале стоит по осям мира).
-      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-      vec3 nw = normalize((vec4(normal, 0.) * viewMatrix).xyz);
-      if (plaster > .01 && abs(nw.y) < .6) {
-        vec3 ax = abs(nw.x) > abs(nw.z) ? vec3(sign(nw.x), 0., 0.) : vec3(0., 0., sign(nw.z));
-        normal = normalize((viewMatrix * vec4(normalize(mix(nw, ax, plaster * .9)), 0.)).xyz);
-      }`);
-  };
-}
-
 function models(g) {
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   for (const [name, [h, shadow, spots]] of Object.entries(PLACES)) {
     loader.load(`/models/env/${name}.glb`, ({ scene: m }) => {
       const box = new THREE.Box3().setFromObject(m), k = h / (box.max.y - box.min.y), c = box.getCenter(new THREE.Vector3());
       m.scale.setScalar(k); m.position.set(-c.x * k, -box.min.y * k, -c.z * k);
-      m.traverse((o) => { if (o.isMesh) { o.castShadow = shadow; o.receiveShadow = true; if (name === 'chalet') cleanPlaster(o.material); } });
+      m.traverse((o) => { if (o.isMesh) { o.castShadow = shadow; o.receiveShadow = true; } });
       for (const [x, z, rot, y = 0] of spots) {
         const holder = new THREE.Group(); holder.name = name;
         holder.position.set(x, y, z); holder.rotation.y = rot; holder.add(m.clone()); g.add(holder);
@@ -216,7 +264,7 @@ function props() {
 
 export function buildEnv() {
   const g = new THREE.Group(), spots = treeSpots(), club = buildClub(spots), mountains = buildMountains(club.uniforms);
-  g.add(buildSky(), mountains, club.group, buildValley(spots), props());
+  g.add(buildSky(), mountains, club.group, buildValley(spots), props(), buildHouse());
   models(g);
   trees(g, spots, (atlas) => mountains.userData.addForest(atlas)); // лес на склонах ждёт атлас из той же модели
   return g;
