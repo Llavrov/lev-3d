@@ -20,7 +20,7 @@ const clamp = THREE.MathUtils.clamp;
 const rnd = () => Math.random();
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const GZ = (GATE.z0 + GATE.z1) / 2;
-const Q = new URLSearchParams(location.search);
+const Q = new URLSearchParams(typeof location !== 'undefined' ? location.search : ''); // в node (тесты) адреса нет
 
 // Кофе на террасе: где она сидит (у столика PLACES.table в env.js, x 11,7, z −26,2, настил 0,15 м), куда лицом
 // (как netYaw: лицом в (sin yaw, 0, cos yaw)) и высота сиденья над настилом. Стулья переделывает «жизнь клуба» —
@@ -428,7 +428,7 @@ export class Girls {
     this.move(g, 'world', g.c.side, this.world(g));
     Object.assign(g.p, { free: true, idle: false, stroke: null, ground: (x, z) => (this.club.obs ? this.club.ground(x, z) : 0) });
     const [mx, , mz] = MEET.pos, f = V(Math.sin(MEET.yaw), Math.cos(MEET.yaw));
-    g.path = [V(COURT2_X + GATE.x - 0.6, GZ), V(COURT2_X + GATE.x + 0.8, GZ), ...TO_TERRACE, V(mx, mz).addScaledVector(f, 0.55)];
+    g.path = [V(COURT2_X + GATE.x - 0.6, GZ), V(COURT2_X + GATE.x + 0.8, GZ), ...TO_TERRACE, V(mx, mz).addScaledVector(f, 0.45)];
     g.wait = null; g.back = false;
     this.say(g, g.c.id === 'alina' ? 'Иду. Не опаздывай.' : 'Бегу! Займи столик.', 3);
   }
@@ -450,7 +450,7 @@ export class Girls {
           g.path = null;
           if (g.back) return this.home(g); // дошла до калитки корта 2
           const [mx, my, mz] = MEET.pos, f = V(Math.sin(MEET.yaw), Math.cos(MEET.yaw)), r = V(-Math.cos(MEET.yaw), Math.sin(MEET.yaw));
-          p.seat = { at: V(mx, mz, my), from: p.pos.clone(), yaw: MEET.yaw, h: MEET.h, w: 0, feet: [-1, 1].map((s) => V(mx, mz, my).addScaledVector(f, 0.5).addScaledVector(r, s * 0.15)) };
+          p.seat = { at: V(mx, mz, my), from: p.pos.clone(), yaw: MEET.yaw, h: MEET.h, w: 0, feet: [-1, 1].map((s) => V(mx, mz, my).addScaledVector(f, 0.42).addScaledVector(r, s * 0.15)) };
           g.wait = now + 240;
         } else move = d.divideScalar(Math.max(len, 1e-6)).multiplyScalar(g.path.length > 1 ? 1.25 : Math.min(1.25, len * 2.5 + 0.15));
       }
