@@ -271,7 +271,7 @@ export class Girls {
       if (inside) { spot.x = clamp(spot.x, -7.4, 7.4); spot.z = g.c.side > 0 ? clamp(spot.z, 0.8, 17.8) : clamp(spot.z, -17.8, -0.8); } // на корте — со своей половины
       this.sim.hold(g.p, spot, now);
     }
-    this.dlg = { g, asked: {}, kind, at: L.pos.clone() };
+    this.dlg = { g, asked: {}, kind, at: L.pos.clone() }; this.ui.btn.hidden = true;
     this.remember(g, { talks: g.mem.talks + 1 });
     this.show(kind === 'cafe' ? 'cafe' : g.mem.met ? 'hub' : 'hello');
   }

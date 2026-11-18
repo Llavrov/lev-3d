@@ -109,7 +109,7 @@ if (ONLY.some((k) => ['talk', 'match', 'coffee'].includes(k))) for (const [w, h]
       return { match: !!G.match, opp: g.opp === G.girls[0].p, name: document.getElementById('st-o').parentElement.querySelector('small').textContent, club: __lev.club.active, tries };
     });
     check(m.match && m.opp && !m.club, `${tag}: матч с ней на корте 1 (${JSON.stringify(m)})`);
-    await page.evaluate(() => { __lev.game.autoLev = new (__lev.game.ai.constructor)(__lev.game.lev, __lev.game); });
+    await page.evaluate(() => { const g = __lev.game; g.autoLev = new (g.ai.constructor)(g.lev, g); g.resetPoint(g.now); }); // за Лёву ИИ, подачу тоже
     // Кадр матча с ней: камера матча за Лёвой, она на той стороне.
     await page.evaluate(() => { const g = __lev.game; for (let i = 0; i < 400 && !(g.state === 'rally' && g.rally >= 2); i++) __lev.step(0.05); });
     await page.evaluate(() => __lev.render());
