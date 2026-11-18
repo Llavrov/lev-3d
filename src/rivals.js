@@ -25,17 +25,17 @@ let base = null; // обычный соперник (opp.glb), к нему во�
 // rival = null — обратно обычный соперник. Ракетку (rival.racket) одевает main.js (dressAll).
 export async function setOpponent(game, rival) {
   base ??= game.opp;
+  const scene = game.opp.wrap.parent; // в сцене только текущий соперник, прежние из неё убраны
   let p = rival ? cache.get(rival.id) : base;
   if (!p) {
     const gltf = await loader.loadAsync(rival.model);
-    p = new Player(base.wrap.parent, gltf, { side: -1, height: rival.height, racketColor: '#1d4f91' });
+    p = new Player(scene, gltf, { side: -1, height: rival.height, racketColor: '#1d4f91' });
     p.rival = rival; p.style = rival.style;
     p.measure();
     cache.set(rival.id, p);
   }
   const old = game.opp;
   if (p === old) return p;
-  const scene = old.wrap.parent;
   for (const m of [game.pts, game.games]) { m.set(p, m.get(old)); m.delete(old); }
   if (game.server === old) game.server = p;
   if (game.lastHitter === old) game.lastHitter = p;
