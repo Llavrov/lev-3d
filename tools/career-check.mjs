@@ -64,7 +64,8 @@ const BOT = (mode) => {
       return;
     }
     const incoming = b.live && g.state === 'rally' && g.lastHitter === g.opp;
-    if (!incoming) { io.releaseAll(); ball = null; plan = null; pressAt = null; if (!P.stroke || P.stroke.contacted) io.goTo(P, P.home, 0.1, true); return; }
+    // Подача: K держим до srv.at — это сила, не отпускаем вместе со всем.
+    if (!incoming) { if (!srv) io.releaseAll(); ball = null; plan = null; pressAt = null; if (!P.stroke || P.stroke.contacted) io.goTo(P, P.home, 0.1, true); return; }
     if (ball !== g.rally) { ball = g.rally; react = now + 0.18 + rnd() * 0.12; pressAt = null; aim = []; }
     if (now < react) return;
     if (!plan || now >= nextPlan) { plan = P.plan(b, now, 0, 0.5) ?? P.plan(b, now, 0, 0.25); nextPlan = now + 0.1; }
@@ -175,7 +176,12 @@ if (ONLY.includes('end') || ONLY.includes('grow')) for (const [w, h] of [[1440, 
   const before = await page.evaluate(() => { const g = __lev.game; g.setTo = 2; g.ai.fixed = true; g.ai.skill = 0.4; return JSON.stringify(__career.S.rivals.base); });
   // Передышка в начале, потом матч ботом.
   await page.evaluate(() => { __lev.step(0.3); __career.startRest(); __lev.step(3.4); });
-  if (w < 500) { await page.evaluate(() => { const g = __lev.game; g.state = 'over'; g.nextAt = g.now + 9; __lev.step(0.05); }); await page.shot(`brest-${tag}`); await page.evaluate(() => { __lev.game.nextAt = __lev.game.now; }); }
+  if (w < 500) { // подаёт соперник, строка плохого дня и кнопка «Передышка» не налезают друг на друга
+    await page.evaluate(() => { const g = __lev.game; g.tip = 'Сегодня не идёт. Играй надёжно и бери передышку'; g.server = g.opp; g.resetPoint(g.now); __lev.step(0.05); });
+    await page.shot(`brest-${tag}`);
+    const r = await page.evaluate(() => { const a = document.getElementById('hint').getBoundingClientRect(), b = document.getElementById('brest').getBoundingClientRect(); __lev.game.tip = null; return { hint: [a.top, a.bottom], btn: [b.top, b.bottom], shown: !document.getElementById('brest').hidden }; });
+    check(r.shown && r.btn[1] > r.btn[0] && r.hint[1] <= r.btn[0], `390: «Передышка» между очками, строка подсказки над ней ${JSON.stringify(r)}`);
+  }
   const ev = await rally(page, 60, 0.4);
   await page.evaluate(() => { for (let i = 0; i < 40 && document.getElementById('end').hidden; i++) __lev.step(0.1); document.getElementById('end').style.transition = 'none'; });
   const end = await page.evaluate(() => ({ shown: !document.getElementById('end').hidden, t: document.getElementById('endT').textContent, s: document.getElementById('endS').textContent, f: document.getElementById('endF').innerText, again: document.getElementById('again').textContent, scroll: document.documentElement.scrollWidth }));

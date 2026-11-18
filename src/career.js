@@ -435,6 +435,7 @@ const CSS = `
 #tour .go:disabled { opacity: .45; cursor: default; }
 #pad #brest { grid-column: span 2; width: 100%; min-height: 44px; border-radius: 22px; font-size: 14px; }
 #pad #brest[hidden] { display: none; }
+@media (pointer: coarse) { body:not(.serving):has(#brest:not([hidden])) #hint { bottom: calc(286px + env(safe-area-inset-bottom)); } } /* строка подсказки над «Передышкой» */
 #end .fought { margin: -6px 0 0; font-size: 15px; line-height: 1.5; opacity: .92; text-shadow: var(--shade); font-variant-numeric: tabular-nums; }
 #end .fought:empty { display: none; }
 @media (max-width: 640px) { #tour { align-items: flex-end; } #tour .sheet { border-radius: 16px 16px 0 0; } }
