@@ -359,18 +359,20 @@ export class Hands {
 
 // ---------- Терраса и скамейки ----------
 // Сосуды берутся с поверхности и ставятся на свободное место, стулья — сесть (E) или взять (F), зонт — сложить/раскрыть.
+const WORD = { cup: 'кофе', wine: 'бокал', water: 'стакан', carafe: 'графин' };
+// Сосуд: взять, с графином — налить в стакан. lock — не трогать (заказ гостя на столе, jobs.js).
+export function registerVessel(I, hands, v) {
+  return I.register({ get pos() { return v.obj.getWorldPosition(v._p ??= new THREE.Vector3()); }, r: 1.25, y: 0.9,
+    get pri() { return hands.held?.kind === 'carafe' && v.kind === 'water' ? 1 : 0.35; }, // с графином стакан главнее места на стойке
+    label: (st) => {
+      if (!v.spot || st.chair || v.lock) return null; // в руке или стул в руках
+      if (st.held?.kind === 'carafe' && v.kind === 'water' && st.held.fill > 0.05 && v.fill < 0.8) return `налить в${NB}стакан`;
+      return st.held ? null : `взять ${WORD[v.kind]}`;
+    },
+    act: (st) => hands.start(st.held ? hands.pour(v) : hands.take(v)) });
+}
 export function registerTerrace(I, hands, club, T) {
-  const word = { cup: 'кофе', wine: 'бокал', water: 'стакан', carafe: 'графин' };
-  for (const v of T.vessels) {
-    I.register({ get pos() { return v.obj.getWorldPosition(v._p ??= new THREE.Vector3()); }, r: 1.25, y: 0.9,
-      get pri() { return hands.held?.kind === 'carafe' && v.kind === 'water' ? 1 : 0.35; }, // с графином стакан главнее места на стойке
-      label: (st) => {
-        if (!v.spot || st.chair) return null; // в руке или стул в руках
-        if (st.held?.kind === 'carafe' && v.kind === 'water' && st.held.fill > 0.05 && v.fill < 0.8) return `налить в${NB}стакан`;
-        return st.held ? null : `взять ${word[v.kind]}`;
-      },
-      act: (st) => hands.start(st.held ? hands.pour(v) : hands.take(v)) });
-  }
+  for (const v of T.vessels) registerVessel(I, hands, v);
   hands.surfaces = T.surfaces;
   for (const s of T.surfaces) registerSurface(I, hands, s);
   for (const ch of T.chairs) {
