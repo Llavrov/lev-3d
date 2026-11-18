@@ -14,3 +14,4 @@ art/
 cutout.swift
 .DS_Store
 *.log
+.claude/worktrees/

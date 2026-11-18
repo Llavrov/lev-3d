@@ -1,9 +1,12 @@
 // Альпийская долина вокруг клуба: ровное дно с лугами, склоны в еловом лесу, выше альпийские луга, скалы и снег.
 // Рельеф по рецепту «Восхождения» (projects/ascent/src/world.js): вершины с тремя гребнями сливаются мягким максимумом,
 // сверху гребневый шум. Скала там, где склон круче, снег выше линии и на пологом. Корт в центре, долина вдоль оси z.
-// Клуб стоит на пологом холме: площадка ровная, вокруг бугры, вперёд (−z) длинный склон к дну долины на 18 м ниже.
+// Клуб стоит на пологом холме: на площадке мягкие бугры (ровно у кортов, дорожек, дома), к краям газон сходит вниз,
+// вокруг бугры, вперёд (−z) длинный склон к дну долины на 18 м ниже.
 import * as THREE from 'three';
 import { SUN } from './env-sky.js';
+
+const COARSE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches; // телефон: земля клуба крупнее
 
 function hash2(ix, iz) {
   let h = (Math.imul(ix, 374761393) + Math.imul(iz, 668265263)) | 0;
@@ -34,34 +37,78 @@ const PEAKS = [
 ];
 const K = 90; // мягкость слияния вершин, м
 
-// Площадка клуба: тут ровно (y = 0), по ней ходят, на ней корт, шале, дорожки, скамейки.
+// Площадка клуба: по ней ходят, на ней корты, дом, дорожки, скамейки. Ровно только там (FLAT), на газоне бугры.
 export const PAD = { x0: -54, x1: 58, z0: -44, z1: 37 }; // от корта 2 слева до дороги справа: стоянка и вход тоже ровные
 export const DROP = 18; // дно долины ниже площадки клуба, м
+const LIP = 0.45; // к краям площадки газон сходит вниз на столько, м: дальше склон холма
 export const padDist = (x, z) => Math.hypot(Math.max(PAD.x0 - x, 0, x - PAD.x1), Math.max(PAD.z0 - z, 0, z - PAD.z1));
-// Холм клуба: за краем площадки пологие бугры по метру, дальше склон к дну долины — вперёд (−z) длиннее, его видно
-// с корта над забором как бровку, за которой открывается долина.
+const padIn = (x, z) => Math.min(x - PAD.x0, PAD.x1 - x, z - PAD.z0, PAD.z1 - z); // насколько глубоко внутри площадки, м
+// Холм клуба: последние 7 м площадки газон сходит на LIP вниз, за краем пологие бугры по метру, дальше склон к дну
+// долины — вперёд (−z) длиннее, его видно с корта над забором как бровку, за которой открывается долина.
 function knoll(x, z) {
   const d = padDist(x, z);
-  if (d === 0) return 0;
+  if (d === 0) return -LIP * smooth(7, 0, padIn(x, z));
   const reach = 140 + 130 * smooth(0, -220, z);
-  return -DROP * smooth(10, reach, d) + (fbm(x / 24, z / 24, 2) - 0.5) * 3.2 * smooth(1, 16, d) * smooth(220, 60, d);
+  return -LIP - (DROP - LIP) * smooth(10, reach, d) + (fbm(x / 24, z / 24, 2) - 0.5) * 3.2 * smooth(1, 16, d) * smooth(220, 60, d);
 }
 
-export function heightAt(x, z) {
-  let e = 1;
-  for (const p of PEAKS) {
-    const dx = x - p[0], dz = z - p[1], d = Math.sqrt(dx * dx + dz * dz + 1e4);
-    const crest = 1 - Math.abs(Math.sin(1.5 * Math.atan2(dz, dx) + p[4]));
-    e += Math.exp((p[2] * Math.exp((-d * (1 - 0.45 * crest)) / p[3])) / K) - 1;
+// ---------- План клуба (метры) ----------
+// Дорожки: [ширина, [[x, z], …]]. От калитки к дорожке вдоль корта, по ней на террасу (z −19) и назад, к входу в клуб.
+export const PATHS = [
+  [1.2, [[9.2, 3.99], [10.85, 3.99]]],
+  [1.4, [[10.85, 10.2], [10.85, -19.3]]],
+  [1.5, [[10.85, 10.2], [11.4, 15.8], [10.3, 21.6], [6, 24.7], [-2, 25.7], [-12, 25.3], [-23, 23.6], [-25.6, 14], [-26.8, 3.99], [-28.7, 3.99]]], // за спиной Лёвы к калитке корта 2
+  [1.6, [[10.6, 20.4], [15.5, 25.6], [26, 28.8], [38, 30.2], [48.5, 30.6]]], // ко входу с дороги и стоянке
+  [7, [[51.3, 22], [51.3, 32]]], // гравийная стоянка у дороги (дорога на x ≈ 57.5)
+];
+// Насколько точка дальше края дорожки, м (минус — на дорожке). Деревья и камни ставим не ближе пары метров.
+export function pathGap(x, z) {
+  let best = Infinity;
+  for (const [w, pts] of PATHS) for (let i = 1; i < pts.length; i++) {
+    const [ax, az] = pts[i - 1], [bx, bz] = pts[i], dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+    best = Math.min(best, Math.hypot(x - ax - dx * t, z - az - dz * t) - w / 2);
   }
-  let y = Math.log(e) * K;
+  return best;
+}
+// Ровные места без бугров (кроме дорожек): корты с изгородью, терраса с домом — прямоугольники [x0, z0, x1, z1];
+// скамейки, фонари, табличка, флаг, фонтан — круги [x, z, r]. Модули клуба дописывают свои при загрузке модуля
+// (FLAT.circles.push), до постройки мира: высоту (heightAt) спрашивают уже при постройке.
+export const FLAT = { rects: [[-10.5, -21.3, 10.4, 21.2], [-48.4, -21.2, -27.6, 21.2], [9.8, -35.6, 26.6, -18.6]], circles: [] };
+function flatGap(x, z) {
+  let d = pathGap(x, z);
+  for (const [x0, z0, x1, z1] of FLAT.rects) d = Math.min(d, Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(z0 - z, 0, z - z1)));
+  for (const [cx, cz, r] of FLAT.circles) d = Math.min(d, Math.hypot(x - cx, z - cz) - r);
+  return d;
+}
+// Бугры и понижения газона: крупные ~11 м до ±0,4 м, мелкие ~4 м до ±0,12 м (уклон до 6–8°, видно светом); у ровных мест за 3 м сходят на нет,
+// за краем площадки гаснут за 8 м (там свои бугры холма). Только в рамке GRID: там земля мелкой сеткой.
+export const GRID = { x0: PAD.x0 - 8, x1: PAD.x1 + 8, z0: PAD.z0 - 8, z1: PAD.z1 + 8 };
+function relief(x, z) {
+  if (x <= GRID.x0 || x >= GRID.x1 || z <= GRID.z0 || z >= GRID.z1) return 0;
+  const k = smooth(8, 0, padDist(x, z)); if (k === 0) return 0;
+  const b = (vnoise(x / 11 + 3.1, z / 11 - 7.3) - 0.5) * 0.8 + (vnoise(x / 4 - 11, z / 4 + 5) - 0.5) * 0.24;
+  return b * k * smooth(0.4, 3.5, flatGap(x, z));
+}
+// Высота, по которой ходят (газон, дорожки, корт): на ровном месте 0. Земля рисуется на 5 см ниже (heightAt).
+export const groundAt = (x, z) => heightAt(x, z) + 0.05;
+
+export function heightAt(x, z) {
   // Дно долины: ровное у клуба, полкилометра в ширину; хвосты гор на него не заползают.
   const floor = Math.max(smooth(420, 1700, Math.abs(x + 180 * Math.sin(z / 1400))), smooth(2600, 6500, Math.abs(z)));
-  y *= floor;
-  y += (ridged(x / 1300, z / 1300, 5) - 0.42) * 0.5 * y; // рёбра и кулуары пропорционально высоте: дно остаётся ровным
-  y += (ridged(x / 380, z / 380, 4) - 0.42) * 0.22 * y * smooth(400, 1500, y); // выше леса — скальные гребешки и осыпи
+  let y = 0;
+  if (floor > 0) { // на дне долины горы дают ноль: вершины не считаем (земля клуба — десятки тысяч вызовов)
+    let e = 1;
+    for (const p of PEAKS) {
+      const dx = x - p[0], dz = z - p[1], d = Math.sqrt(dx * dx + dz * dz + 1e4);
+      const crest = 1 - Math.abs(Math.sin(1.5 * Math.atan2(dz, dx) + p[4]));
+      e += Math.exp((p[2] * Math.exp((-d * (1 - 0.45 * crest)) / p[3])) / K) - 1;
+    }
+    y = Math.log(e) * K * floor;
+    y += (ridged(x / 1300, z / 1300, 5) - 0.42) * 0.5 * y; // рёбра и кулуары пропорционально высоте: дно остаётся ровным
+    y += (ridged(x / 380, z / 380, 4) - 0.42) * 0.22 * y * smooth(400, 1500, y); // выше леса — скальные гребешки и осыпи
+  }
   y += (fbm(x / 160, z / 160, 3) - 0.47) * 10 * smooth(240, 500, Math.hypot(x, z)); // пологие бугры луга
-  if (Math.abs(x) < 700 && Math.abs(z) < 700) y += knoll(x, z) + DROP; // дальше холм уже сошёл на нет
+  if (Math.abs(x) < 700 && Math.abs(z) < 700) y += knoll(x, z) + DROP + relief(x, z); // дальше холм уже сошёл на нет
   return y - DROP - 0.05;
 }
 
@@ -150,15 +197,20 @@ float ribs(float a, float y, float fine){
 // Цвет склона считается в пикселе: доли из вершин плюс шум, поэтому кромки снега, скал и леса рваные и чёткие,
 // а не размытые по ячейке сетки. На внутреннем кольце (CLUB) вблизи — фото газона, дорожки и клумбы с карты клуба.
 // Солнце на склоне гасят тень гребней (запечена в вершины) и тени облаков, плывущие по горам.
-function terrainMaterial(U, club) {
+// hole — рамка, где кольцо не рисуется: там земля клуба мелкой сеткой (clubGround).
+function terrainMaterial(U, club, hole) {
   const m = new THREE.MeshLambertMaterial();
   if (club) { m.defines = { CLUB: '' }; m.polygonOffset = true; m.polygonOffsetFactor = 1; m.polygonOffsetUnits = 4; } // газон под кортом не мерцает сквозь грунт издали
+  if (hole) m.defines.HOLE = '';
   m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, U, club ?? {});
+    Object.assign(sh.uniforms, U, club ?? {}, hole ? { hole: { value: hole } } : {});
     sh.vertexShader = 'attribute vec4 zone; attribute float sunvis; varying vec4 vZone; varying float vSun; varying vec3 vW, vN;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vZone = zone; vSun = sunvis; vW = position; vN = normal;');
     sh.fragmentShader = `varying vec4 vZone; varying float vSun; varying vec3 vW, vN; uniform float time, bake;
       #ifdef CLUB
-        uniform sampler2D clubMap, grassT, gravelT; uniform vec4 clubRect, pad;
+        uniform sampler2D clubMap, lawnT, lawnN, dirtT, dirtN, gravelT, gravelN; uniform vec4 clubRect, pad;
+      #endif
+      #ifdef HOLE
+        uniform vec4 hole;
       #endif
       ${NOISE}
       ` + sh.fragmentShader.replace('#include <map_fragment>', `
@@ -196,27 +248,44 @@ function terrainMaterial(U, club) {
         vec2 cu = (q - clubRect.xy) / clubRect.z;
         vec3 k = texture2D(clubMap, clamp(cu, 0., 1.)).rgb * step(0., min(cu.x, cu.y)) * step(max(cu.x, cu.y), 1.);
         vec2 pd2 = max(max(pad.xy - q, q - pad.zw), 0.); float pd = length(pd2); // за краем площадки, м
-        // Газон: фото травы двумя плитками разного размера, смешанными пятнами, — без заметного повтора.
-        vec3 ga = texture2D(grassT, q / .9).rgb, gb = texture2D(grassT, mat2(.8, .6, -.6, .8) * q / 1.45 + .37).rgb; // на фото кадр ~1 м газона
-        vec3 lawn = mix(ga, gb, smoothstep(.3, .7, vn(q / 3.7)));
+        // Газон: Poly Haven leafy_grass (кадр 2 м) двумя плитками разного шага и поворота, смешанными пятнами, — без
+        // повтора ни сверху, ни у ног. На фото поверх травы бурые листья: травинки красим в зелень, листья — в клевер.
+        vec2 u1 = q / 1.7, u2 = mat2(.8, .6, -.6, .8) * q / 2.9 + .37;
+        float bl = smoothstep(.25, .75, vn(q / 4.3));
+        vec3 gt = mix(texture2D(lawnT, u1).rgb, texture2D(lawnT, u2).rgb, bl);
+        vec2 gN = mix(texture2D(lawnN, u1).xy * 2. - 1., mat2(.8, -.6, .6, .8) * (texture2D(lawnN, u2).xy * 2. - 1.), bl);
+        float gl = dot(gt, vec3(.3, .59, .11)), gr = clamp((gt.g - gt.r) * 7. + .55, 0., 1.);
+        float clover = smoothstep(.5, .78, vn(q / 2.3 + 13.) * .75 + vn(q / .7) * .25) * .6;
+        vec3 lawn = mix(mix(vec3(.16, .22, .07), vec3(.11, .2, .08), clover), vec3(.2, .3, .08), gr) * gl * 2.1;
+        // Пятна крупно и мелко: суше и желтее / сочнее.
         float pat = vn(q / 13.) * .55 + vn(q / 4.1) * .3 + vn(q / 1.3) * .15;
-        lawn *= mix(vec3(1.15, 1.05, .7), vec3(.8, .92, .86), smoothstep(.3, .7, pat)) * vec3(.5, .37, .5); // суше и желтее / сочнее; фото травы слишком кислотное
-        // Полосы стрижки вдоль корта по 2 м — газон клуба ухоженный. За площадкой газон переходит в некошеный луг.
-        lawn = mix(vec3(dot(lawn, vec3(.3, .59, .11))), lawn, .72); // фото травы насыщеннее живого газона
+        lawn *= mix(vec3(1.08, 1.04, .82), vec3(.9, .97, .92), smoothstep(.3, .7, pat));
+        // Полосы стрижки по 2 м вдоль корта: трава наклонена, поэтому полоса светлее или темнее смотря откуда смотреть,
+        // сверху их почти нет. За площадкой газон переходит в некошеный луг.
         float mown = 1. - smoothstep(0., 5., pd);
-        lawn *= 1. + .045 * mown * (1. - k.b) * (step(.5, fract(q.x / 4. + .1)) * 2. - 1.);
+        lawn *= 1. + .035 * mown * (1. - k.b) * clamp(sin(q.x * 1.5708 + .3) * 2.5, -1., 1.) * normalize(vW - cameraPosition).z;
+        // Бугры светом заметнее: склон к солнцу светлее, от солнца темнее — сверх обычного освещения (оно у газона плоское
+        // из-за сильного рассеянного света неба).
+        lawn *= (1. + clamp(1.6 * (dot(normalize(vN), GSUN) - GSUN.y), -.15, .15)) * vec3(.93, .94, .92);
         float rough = max(k.b, smoothstep(3., 16., pd) * .75);
-        lawn = mix(lawn, lawn * vec3(.92, .86, .6) * (.8 + .4 * vn(q * 1.7)), rough);
-        // Клумба: тёмная земля с корой.
-        lawn = mix(lawn, vec3(.045, .032, .024) * (.6 + .8 * vn(q * 7.)), smoothstep(.4, .6, k.g + (vn(q * 3.) - .5) * .25));
-        // Дорожка из гравия с рваным краем.
-        float pe = k.r + (vn(q * 2.2) - .5) * .3 + (vn(q * 9.) - .5) * .14;
-        vec3 grav = texture2D(gravelT, q / .55).rgb; grav = (grav - .3) * 1.7 + .3; // на фото кадр ~0.5 м: камешки 2–8 мм, контраст сильнее
-        grav = max(grav, 0.) * (.8 + .3 * vn(q / 2.5)) * vec3(.56, .52, .46);
-        lawn = mix(lawn, grav, smoothstep(.47, .55, pe));
+        lawn = mix(lawn, lawn * vec3(.95, .88, .62) * (.8 + .4 * vn(q * 1.7)), rough);
+        // Проплешины — вытоптанная земля пятнами; у стволов и на клумбах тёмная земля (на клумбах ещё темнее, с корой).
+        vec3 soilC = dot(texture2D(dirtT, q / 2.).rgb, vec3(.33)) * vec3(.5, .38, .27);
+        vec2 dN = texture2D(dirtN, q / 2.).xy * 2. - 1.;
+        float bald = smoothstep(.8, .9, vn(q / 2.6 + 2.7) * .6 + vn(q / .9 - 4.) * .4) * smoothstep(.55, .75, vn(q / 17. + 9.)) * mown * (1. - k.b);
+        lawn = mix(lawn, mix(soilC * .9, lawn * .8, smoothstep(.4, .7, vn(q * 2.3))), bald * .8); // земля сквозь редкую траву
+        float soil = smoothstep(.28, .5, k.g + (vn(q * 3.) - .5) * .3);
+        lawn = mix(lawn, soilC * mix(.62, .38, step(.7, k.g)) * (.75 + .5 * vn(q * 7.)), soil);
+        // Дорожка из гравия (Poly Haven gravel_floor_02, кадр 2 м) с рваным краем.
+        float pe = k.r + (vn(q * 2.2) - .5) * .3 + (vn(q * 9.) - .5) * .14, wp = smoothstep(.47, .55, pe);
+        vec3 grav = texture2D(gravelT, q / 2.).rgb * (.8 + .3 * vn(q / 2.5)) * vec3(.8, .77, .72);
+        vec2 rN = texture2D(gravelN, q / 2.).xy * 2. - 1.;
+        lawn = mix(lawn, grav, wp);
         // Вокруг корта крошка, вынесенная обувью, — рыжая кайма за бордюром.
         float cd = min(max(abs(q.x) - 9.3, abs(q.y) - 20.04), max(abs(q.x + 38.) - 9.3, abs(q.y) - 20.04)); // корт 1 и корт 2
-        lawn = mix(lawn, mix(grav, vec3(.42, .17, .08), .55), smoothstep(.7, .1, cd + (vn(q * 3.) - .5) * .5) * step(0., cd + .2) * .8);
+        float kay = smoothstep(.7, .1, cd + (vn(q * 3.) - .5) * .5) * step(0., cd + .2) * .8;
+        lawn = mix(lawn, mix(grav, vec3(.42, .17, .08), .55), kay);
+        vec2 cN = mix(mix(gN * .8, dN, max(bald, soil)), rN * 1.2, max(wp, kay)) * near; // наклон нормали по картам
         c = mix(c, lawn, near);
       #endif
       // Дорога (асфальт 7 м) и река (14 м, в ней небо) по дну долины; у реки берег темнее и сырее.
@@ -229,6 +298,9 @@ function terrainMaterial(U, club) {
       c = mix(c, vec3(.16, .22, .28), smoothstep(7. + fw, 7. - fw, rivD) * low);
       diffuseColor.rgb *= c * vZone.w;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        #ifdef CLUB
+          if (near > .01) normal = normalize(normal + mat3(viewMatrix) * vec3(cN.x, 0., cN.y)); // зерно газона, земли, гравия
+        #endif
         if (bumpK > .001) { // наклон рельефа скалы разностями в мире: по контуру (a) и по высоте (y) — гладко, без ступенек
           float e = max(pix * 1.5, 3.), fine = smoothstep(40., 12., pix);
           float h0 = ribs(along, vW.y, fine), ha = (ribs(along + e, vW.y, fine) - h0) / e, hy = (ribs(along, vW.y + e, fine) - h0) / e;
@@ -240,7 +312,11 @@ function terrainMaterial(U, club) {
         vec2 cs = (vW.xz + SUN_XZ * (3200. - vW.y)) / 2600. + vec2(time * .0035, time * .001);
         float cloud = smoothstep(.55, .75, vn(cs) * .65 + vn(cs * 2.3 + 4.) * .35) * smoothstep(400., 1500., length(vW.xz));
         reflectedLight.directDiffuse *= mix(1., vSun, bake) * (1. - .7 * cloud);`)
-      .replace('void main() {', `const vec2 SUN_XZ = vec2(${(SUN.x / SUN.y).toFixed(4)}, ${(SUN.z / SUN.y).toFixed(4)});\nvoid main() {`);
+      .replace('void main() {', `const vec2 SUN_XZ = vec2(${(SUN.x / SUN.y).toFixed(4)}, ${(SUN.z / SUN.y).toFixed(4)});
+const vec3 GSUN = vec3(${SUN.x.toFixed(4)}, ${SUN.y.toFixed(4)}, ${SUN.z.toFixed(4)});\nvoid main() {
+        #ifdef HOLE
+          if (vW.x > hole.x && vW.x < hole.z && vW.z > hole.y && vW.z < hole.w) discard;
+        #endif`);
   };
   return m;
 }
@@ -300,16 +376,52 @@ function forest(atlas, count) {
   return mesh;
 }
 
-// club: { clubMap, grassT, gravelT, clubRect, pad } — текстуры и карта клуба для внутреннего кольца (env-club.js).
+// Земля клуба мелкой сеткой (0,6 м, на телефоне 0,9) в рамке GRID: бугры газона видны и светом, и тенью; внутреннее
+// кольцо там не рисуется. Нормали — разностями высот, в ложбинке чуть темнее, на бугре светлее (zone.w). По краю
+// юбка на 0,6 м вниз: стык с кольцом без щели.
+// Высоты земли клуба в узлах сетки (считаются один раз) и они же текстурой: по ней трава у камеры встаёт на бугры.
+let HG = null;
+export function groundGrid() {
+  if (HG) return HG;
+  const s = COARSE ? 0.9 : 0.6, nx = Math.round((GRID.x1 - GRID.x0) / s), nz = Math.round((GRID.z1 - GRID.z0) / s);
+  const sx = (GRID.x1 - GRID.x0) / nx, sz = (GRID.z1 - GRID.z0) / nz, h = new Float32Array((nx + 1) * (nz + 1)), h16 = new Uint16Array(h.length);
+  for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) h16[j * (nx + 1) + i] = THREE.DataUtils.toHalfFloat(h[j * (nx + 1) + i] = heightAt(GRID.x0 + i * sx, GRID.z0 + j * sz));
+  const tex = new THREE.DataTexture(h16, nx + 1, nz + 1, THREE.RedFormat, THREE.HalfFloatType);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
+  return (HG = { nx, nz, sx, sz, h, tex });
+}
+function clubGround(mat) {
+  const { nx, nz, sx, sz, h } = groundGrid();
+  const H = (i, j) => h[Math.min(nz, Math.max(0, j)) * (nx + 1) + Math.min(nx, Math.max(0, i))];
+  const W = nx + 3, D = nz + 3, pos = new Float32Array(W * D * 3), nrm = new Float32Array(W * D * 3), zone = new Float32Array(W * D * 4), idx = [];
+  for (let j = -1, k = 0; j <= nz + 1; j++) for (let i = -1; i <= nx + 1; i++, k++) {
+    const ci = Math.min(nx, Math.max(0, i)), cj = Math.min(nz, Math.max(0, j)), y = H(ci, cj);
+    pos.set([GRID.x0 + ci * sx, y - (ci !== i || cj !== j ? 0.6 : 0), GRID.z0 + cj * sz], k * 3);
+    const dx = (H(ci + 1, cj) - H(ci - 1, cj)) / (2 * sx), dz = (H(ci, cj + 1) - H(ci, cj - 1)) / (2 * sz), l = Math.hypot(dx, 1, dz);
+    nrm.set([-dx / l, 1 / l, -dz / l], k * 3);
+    const curv = (H(ci + 1, cj) + H(ci - 1, cj) + H(ci, cj + 1) + H(ci, cj - 1) - 4 * y) / (sx * sz);
+    zone.set([0, 0, 0, Math.min(1.06, Math.max(0.88, 1 - curv * 2.5))], k * 4); // в ложбинке темнее, на бугре светлее
+  }
+  for (let j = 0; j < D - 1; j++) for (let i = 0; i < W - 1; i++) { const a = j * W + i, b = a + W; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute('zone', new THREE.BufferAttribute(zone, 4)); g.setAttribute('sunvis', new THREE.BufferAttribute(new Float32Array(W * D).fill(1), 1));
+  g.setIndex(idx);
+  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.name = 'ground'; m.userData.groundAt = groundAt; // тестам: высота по сцене
+  return m;
+}
+
+// club: { clubMap, lawnT, lawnN, … } — текстуры и карта клуба для земли клуба и внутреннего кольца (env-club.js).
 export function buildMountains(club) {
   if (!club?.clubMap) club = null;
   const g = new THREE.Group(); g.name = 'mountains';
   const U = { time: { value: 0 }, bake: { value: 0 } };
   const geos = [ring(6, 420, 1.07, 128), ring(420, 18000, 1.055, 512)];
   geos.forEach((geo, i) => {
-    const m = new THREE.Mesh(geo, terrainMaterial(U, i === 0 ? club : null)); m.frustumCulled = false; m.receiveShadow = true; g.add(m);
+    const m = new THREE.Mesh(geo, terrainMaterial(U, i === 0 ? club : null, i === 0 && club ? new THREE.Vector4(GRID.x0, GRID.z0, GRID.x1, GRID.z1) : null)); m.frustumCulled = false; m.receiveShadow = true; g.add(m);
     if (i === 0) m.onBeforeRender = () => { U.time.value = performance.now() / 1000; };
   });
+  if (club) g.add(clubGround(terrainMaterial(U, club)));
   bakeSun(geos, U.bake);
   g.userData.addForest = (atlas) => { if (!g.getObjectByName('forest')) g.add(forest(atlas, 5000)); };
   return g;
