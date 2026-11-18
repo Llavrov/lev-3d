@@ -150,7 +150,7 @@ body.jobs-open #act, body.jobs-open #cbar { visibility: hidden; }
 body.job-court #hud { visibility: hidden; }
 body.job-lesson #pad, body.job-lesson #hint { display: none !important; }
 @media (pointer: coarse) { body.job-lesson #jobFeed { display: block; } #jobbar kbd, #jobs .go kbd { display: none; } }
-@media (max-width: 640px) { #jobbar { top: calc(64px + env(safe-area-inset-top)); } #job { top: calc(118px + env(safe-area-inset-top)); } #jobs { align-items: flex-end; } #jobs .sheet { border-radius: 16px 16px 0 0; } }`;
+@media (max-width: 640px) { #jobbar { top: calc(64px + env(safe-area-inset-top)); } #job { top: calc(148px + env(safe-area-inset-top)); } #job p { font-size: 16px; } /* под кошельком (profile.css, 64–135 px) */ #jobs { align-items: flex-end; } #jobs .sheet { border-radius: 16px 16px 0 0; } }`;
 
 function makeUi() {
   const st = document.createElement('style'); st.textContent = CSS; document.head.append(st);
