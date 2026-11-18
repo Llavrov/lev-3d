@@ -1,5 +1,6 @@
 // Теннис: Лёва против соперника на грунте. WASD/стрелки — бег, K — форхенд, J — бэкхенд, L — укороченный,
-// Shift + удар — кручёный, высокий мяч — смэш сам. Направление в момент удара — куда полетит мяч, Пробел — подача.
+// Shift + удар — кручёный, высокий мяч — смэш сам. Направление в момент удара — куда полетит мяч.
+// Подача: K или пробел — сверху (держишь — сильнее), J — снизу; стрелки — широко, в «T» или в тело.
 // На телефоне — джойстик и кнопки. В dev каждый розыгрыш пишется в logs/play-<дата>.jsonl (vite.config.js).
 // Проверка поз: ?pose=fh&s=-0.17&cam=1 (s — секунды от удара). ?auto — Лёвой играет ИИ.
 import * as THREE from 'three';
@@ -238,6 +239,7 @@ const hud = {
     const [a, b] = g.call();
     $('pl').textContent = a; $('po').textContent = b; $('nl').textContent = g.lev.human ? 'Лёва' : 'Замена';
     $('gl').textContent = g.games.get(g.lev); $('go').textContent = g.games.get(g.opp);
+    $('sets').textContent = g.sets.map(([a, b]) => `${a}:${b}`).join(' · '); // прошлые сеты, счёт Лёвы первым
     $('srv-l').classList.toggle('on', g.server === g.lev); $('srv-o').classList.toggle('on', g.server === g.opp);
   },
   stamina(g) {
@@ -249,7 +251,7 @@ const hud = {
     }
   },
   hint(t) { $('hint').textContent = t; },
-  serveHint: matchMedia('(pointer: coarse)').matches ? 'Удар — подача' : 'Пробел — подача', // на телефоне пробела нет, подаёт любая кнопка удара
+  serveHint: matchMedia('(pointer: coarse)').matches ? 'Подача\u00a0— «Сверху» или\u00a0«Снизу»' : 'K\u00a0— подача сверху, J\u00a0— снизу', // на телефоне кнопки ударов на подаче подписаны «Сверху» и «Снизу»
   flash(t, good) {
     const el = $('msg');
     el.textContent = t; el.className = good ? 'show good' : 'show';
@@ -295,7 +297,7 @@ function aimLev() {
   const z = a.y > 0.3 ? -10.6 : a.y < -0.3 ? -6.8 : -9.4;
   return new THREE.Vector3(x, 0, z);
 }
-let game = null, started = false;
+let game = null, started = false, servingUi = false;
 const sound = makeSound();
 
 // Журнал игры: нажатия, удары, промахи, очки и раз в 0,2 с положение и ввод. Читается для настройки управления.
@@ -317,7 +319,12 @@ const log = (() => {
 function hit(kind, drop = false, key = '', spin = null) {
   if (!game || !started || club?.active) return;
   sound.unlock();
-  if (game.state === 'serve' && game.server === game.lev) return game.serve(game.lev, game.now);
+  if (game.state === 'serve' && game.server === game.lev) { // J (бэкхенд) — снизу, остальное — сверху; держишь — копишь силу
+    game.serve(game.lev, game.now, kind === 'bh' ? 'under' : 'over');
+    const st = game.lev.stroke;
+    if (st?.serve === 'over' && game.serving === game.lev) Object.assign(st, { holdTo: null, holdKey: key || 'touch' });
+    return;
+  }
   if (key === 'Space') return; // пробел только подаёт: раньше в розыгрыше он бил форхендом и перебивал нажатый бэкхенд
   const lev = game.lev, cut = !drop && (spin === 'cut' || sliceMode || held('AltLeft', 'AltRight')), top = !drop && !cut && (spin === 'top' || topMode || held('ShiftLeft', 'ShiftRight'));
   if (kind === 'auto') {
@@ -335,6 +342,7 @@ addEventListener('keydown', (e) => {
   if (e.repeat) return;
   keys.add(e.code);
   if (!started && (e.code === 'Space' || e.code === 'Enter')) return start();
+  if (!$('end').hidden && e.code === 'Enter') return again();
   if (!started && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) return switchRacket(e.code === 'ArrowLeft' ? -1 : 1);
   if (clubKey(e.code)) return;
   if (/^(Key[WASD]|Arrow)/.test(e.code)) { if (swinging()) aimOnly.add(e.code); log('key', { k: e.code, down: 1, aim: aimOnly.has(e.code) }); }
@@ -359,7 +367,11 @@ function clubKey(code) {
   if (code === 'KeyE') { if (club.mode === 'sit') club.stand(); else club.sit(); } else if (code === 'KeyV') club.nextView(); else if (code === 'KeyR') club.back(game.now, Q.has('auto')); else return false;
   return true;
 }
-async function leave() { if (club.active || club.leaving) return; club.leaving = true; club.exit(await subReady, game.now); club.leaving = false; } // замена догружается в фоне
+async function leave() {
+  if (club.active || club.leaving) return;
+  if (game.state === 'match-over') { endUi(null); game.newMatch(game.now, false); } // замена начнёт новый матч
+  club.leaving = true; club.exit(await subReady, game.now); club.leaving = false; // замена догружается в фоне
+}
 const walkInput = () => { const a = axes(); return { x: a.x, y: a.y, run: held('ShiftLeft', 'ShiftRight') || stick.length() > 0.95 }; };
 function clubUi(mode, canSit) {
   document.body.classList.toggle('club', !!mode);
@@ -409,14 +421,29 @@ function start(mode = 'match') {
   $('start').classList.add('done');
   document.body.classList.remove('menu');
   court.getObjectByName('fence-near').visible = false; // в игре камера стоит за этой стенкой
-  log('mode', { mode });
-  if (mode === 'match') return game.resetPoint(game.now ?? 0);
+  log('mode', { mode, bestOf });
+  if (mode === 'match') { game.bestOf = bestOf; return game.resetPoint(game.now ?? 0); }
   document.body.classList.add('practice');
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* без памяти — рекорд на эту игру */ } } };
   const ui = { text: (h) => { $('ltext').innerHTML = h; }, dots: (n, need) => { $('ldots').innerHTML = need && need < 9 ? Array.from({ length: need }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('') : ''; }, flash: (h, good) => hud.flash(h.replace(/&nbsp;/g, '\u00a0'), good) };
   game.drill = new Practice(game, mode, { scene, court, ui, store, touch: matchMedia('(pointer: coarse)').matches });
   $('pnext').hidden = mode !== 'lessons';
 }
+// Сколько сетов: 1 или до двух побед (из трёх). Запоминаем выбор на этом устройстве.
+let bestOf = (() => { try { return localStorage.getItem('bestOf') === '3' ? 3 : 1; } catch { return 1; } })();
+const bestOfUi = () => document.querySelectorAll('#bestof button').forEach((b) => b.setAttribute('aria-pressed', +b.dataset.n === bestOf));
+document.querySelectorAll('#bestof button').forEach((b) => b.addEventListener('click', () => { bestOf = +b.dataset.n; try { localStorage.setItem('bestOf', bestOf); } catch { /* без памяти — на эту игру */ } bestOfUi(); }));
+bestOfUi();
+// Конец матча: итог одним экраном. За Лёву играет ИИ или замена (Лёва гуляет по клубу) — следующий матч сам через 3 с.
+function endUi(w) {
+  $('end').hidden = !w; document.body.classList.toggle('ended', !!w);
+  if (!w) return;
+  $('endT').textContent = w === game.lev ? 'Лёва выиграл' : 'Соперник выиграл';
+  $('endS').textContent = game.sets.map(([a, b]) => `${a}:${b}`).join(' · ');
+}
+const again = () => { endUi(null); game.newMatch(game.now); };
+$('again').addEventListener('click', again);
+$('toClub').addEventListener('click', () => { endUi(null); leave(); });
 $('play').addEventListener('click', () => start());
 $('pLessons').addEventListener('click', () => start('lessons'));
 $('pWall').addEventListener('click', () => start('wall'));
@@ -466,8 +493,9 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
   const opp = oppGltf
     ? new Player(scene, oppGltf, { side: -1, height: 1.85, racketColor: '#1d4f91' })
     : new Player(scene, gltf, { side: -1, racketColor: '#1d4f91', cloth: '#22324a' });
-  game = new Game({ lev, opp, ballMesh, hud, sound, aimLev, log, marks, dust });
+  game = new Game({ lev, opp, ballMesh, hud, sound, aimLev, axes: () => axes(), log, marks, dust });
   game.onShot = (p, power, at) => powerFx.shot(p, power, at);
+  game.onMatch = (w) => { if (club.active || game.autoLev) game.restartAt = game.now + 3; else endUi(w); };
   opp.measure();
   log('start', { reach: lev.measure(), opp: !!oppGltf, racket: myRacket, w: innerWidth, h: innerHeight, touch: matchMedia('(pointer: coarse)').matches });
   club = new Club({ game, lev, court, sound, onMode: clubUi });
@@ -582,6 +610,8 @@ renderer.setAnimationLoop(() => {
       game.opp.update(dt, game.now, new THREE.Vector3(), game.b);
     }
     if (club.active) clubCam(dt); else if (started) follow(dt); else menuCam(dt);
+    const srv = started && game.state === 'serve' && game.server === game.lev && !game.autoLev && game.drill?.mode !== 'wall';
+    if (srv !== servingUi) { servingUi = srv; document.body.classList.toggle('serving', srv); } // кнопки ударов на подаче — «Сверху» и «Снизу»
     showLanding(game.now); showSpot(game.now, dt);
     aimGuide.update(dt, game.now);
     powerFx.update(dt, game.now);
