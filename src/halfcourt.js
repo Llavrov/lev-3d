@@ -156,7 +156,6 @@ export class HalfCourt {
   }
   shift(dir) {
     const d = this.O.clone().multiplyScalar(dir);
-    this.court.position.add(d); this.court.updateMatrixWorld(true);
     for (const o of this.scene.children) if (!this.fixed.has(o)) { o.position.add(d); o.updateMatrixWorld(true); }
     if (dir < 0) { this.hidden = (this.hide?.() ?? []).filter((o) => o.visible); for (const o of this.hidden) o.visible = false; }
     else { for (const o of this.hidden ?? []) o.visible = true; this.hidden = null; }
