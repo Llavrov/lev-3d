@@ -567,7 +567,7 @@ export class Rig {
     this.b.Spine2.updateWorldMatrix(true, false);
     const D = this.toPlayer.clone().multiply(this.b.Spine2.getWorldQuaternion(new THREE.Quaternion())).multiply(this.chestRestInv), Di = D.clone().invert();
     const t = u.clone().applyQuaternion(Di), lat = new THREE.Vector3(side === 'Right' ? -1 : 1, 0, 0);
-    const elev = CLAV_UP * THREE.MathUtils.smoothstep(t.y, -0.35, 1);
+    const elev = CLAV_UP * THREE.MathUtils.smoothstep(t.y, -0.35, 1) + (this.shrug ?? 0);
     const prot = CLAV_FWD * THREE.MathUtils.clamp(t.z * 0.5 + Math.max(0, -t.dot(lat)) * 0.9, -0.6, 1);
     const q = new THREE.Quaternion().setFromAxisAngle(lat.clone().cross(up), elev).multiply(new THREE.Quaternion().setFromAxisAngle(lat.clone().cross(ahead), prot));
     this.rotate(bone, D.multiply(q).multiply(Di));
@@ -610,7 +610,7 @@ export class Rig {
     }
     // Голова держит мяч: шея берёт 40 % поворота, голова — 60 %, как у живого человека; корпус крутится под ней.
     this.lh = lerp('lh') || 0; this.lhAt = lerp('lhAt') || 0; // левую кисть на ручку ставит placeRacket
-    this.fist = lerp('fist') || 0;
+    this.fist = lerp('fist') || 0; this.shrug = deg(lerp('shrug') || 0); // shrug — плечи вверх (°), вдох в передышке (career.js)
     const look = deg(lerp('look') || 0), nod = deg(lerp('nod') || 0) - deg(LEAN0); // nod — голова вниз (°), язык тела между очками; добавку наклона голова отдаёт — взгляд не в землю
     this.rotate('Neck', _q.setFromAxisAngle(up, -(this.hipYaw + twist) * 0.55 + look * 0.4).multiply(_q2.setFromAxisAngle(side, nod * 0.4)));
     this.rotate('Head', _q.setFromAxisAngle(up, look * 0.6).multiply(_q2.setFromAxisAngle(side, nod * 0.6)));

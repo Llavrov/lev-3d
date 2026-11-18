@@ -14,6 +14,23 @@ const clamp = THREE.MathUtils.clamp;
 const MAX_SKILL = 1.35;
 // Стиль игрока (rivals.js, p.style 0..1): отклонение от середины −0,5..0,5; без стиля — 0, всё как раньше.
 const lean = (p, k) => (p.style?.[k] ?? 0.5) - 0.5;
+// Чему соперник научился, проигрывая Лёве (career.js, p.adapt 0..1): drop — укороченные, net — Лёва у сетки,
+// angle — острые углы, power — сила, pass — обводки. Без журнала — 0, всё как раньше.
+const ad = (p, k) => p.adapt?.[k] ?? 0;
+// Форма дня (career.js): p.form −1 — плохой день, 1 — хороший; p.relief 0..0.6 — сколько штрафа сняли передышки.
+const badOf = (p) => Math.max(0, -(p.form ?? 0)) * (1 - (p.relief ?? 0)), goodOf = (p) => Math.max(0, p.form ?? 0);
+// Риск удара 0..1: сила удержанием, острый угол, укороченный, свеча и мяч к боковой — рискованно; средняя сила в центр
+// с кручением (выше над сеткой) — надёжно. В плохой день рискованные страдают сильно, надёжные почти нет.
+export function shotRisk(shot, power = 0) {
+  const k = shot.kind, x = Math.abs((shot.aim ?? shot.target).x);
+  let r = 0.1 + 0.9 * power + (k === 'drop' || k === 'angle' ? 0.8 : k === 'lob' ? 0.6 : k === 'volley' || k === 'smash' ? 0.2 : 0);
+  if (x > 2.8 && k !== 'lob') r += 0.25;
+  if (shot.spin > 150) r -= 0.1;
+  return clamp(r, 0, 1);
+}
+// Плохой день: разброс ×(1 + bad·(0,15 + 2,2·риск²)) и до 0,9 м сверху, грубая ошибка — до 25 % у самых рискованных.
+export const formErr = (err, risk, bad, good = 0) => (err * (1 + bad * (0.15 + 2.2 * risk * risk)) + 0.9 * bad * risk * risk) * (1 - 0.15 * good);
+export const formMiss = (risk, bad) => 0.25 * bad * risk * risk;
 
 // ---------- Подача ----------
 // court +1 — подающий справа от центральной отметки (чётная сумма очков в гейме), −1 — слева. Тай-брейка в игре нет.
@@ -56,7 +73,8 @@ export class Game {
     // замена наследует. bestOf — сколько сетов максимум (1 или 3, выбор на старте; турниры зададут своё).
     this.pts = new Map([[lev, 0], [opp, 0]]);
     this.games = new Map([[lev, 0], [opp, 0]]);
-    this.sets = []; this.tb = null; this.bestOf = 1; this.ended = null;
+    // setTo — до скольких геймов сет (тай-брейк при setTo:setTo): 6, в турнире клуба 4 (career.js).
+    this.sets = []; this.tb = null; this.bestOf = 1; this.setTo = 6; this.ended = null;
     this.server = lev;
     this.hook(lev); this.hook(opp);
     this.ai = new AI(opp, this);
@@ -109,13 +127,13 @@ export class Game {
     this.rally = 0;
     this.serveAt = this.server === this.opp || this.autoLev ? now + (second ? 0.9 : 1.3) : null;
     this.hud.score(this);
-    this.hud.hint(this.server === this.lev && !this.autoLev ? this.hud.serveHint : '');
+    this.hud.hint(this.tip || (this.server === this.lev && !this.autoLev ? this.hud.serveHint : '')); // tip — подсказка плохого дня (career.js)
   }
 
   // Подача: kind 'over' — сверху (K, пробел), 'under' — снизу (J); ИИ выбирает сам, чаще сверху. Мяч сначала в левой
   // руке, к выпуску (TOSS_AT) уходит вверх так, чтобы к удару прийти в центр струн. Ноги — в стойку подачи (боком).
   serve(p, now, kind = null) {
-    if (this.state !== 'serve' || p !== this.server) return;
+    if (this.state !== 'serve' || p !== this.server || now < (this.holdUntil ?? 0)) return; // holdUntil — передышка (career.js): подача ждёт
     const ai = this.aiOf(p);
     kind = this.drill?.mode === 'wall' ? 'under' : kind ?? (ai && Math.random() < (this.serveNo === 1 ? 0.08 : 0.2) ? 'under' : 'over'); // в стенку — снизу
     const type = kind === 'over' ? 'srv' : 'srv-u', T = SERVE_T[type];
@@ -153,7 +171,9 @@ export class Game {
     const dir = (!ai && this.axes && dirOf(this.axes(), B)) || st.dir;
     const aim = serveAim(B, S, dir, this.other(p).pos.x), target = aim.clone();
     const sv = ai && S === SERVE.first ? lean(p, 'serve') : 0; // стиль: подающий на первой до +8% скорости и точнее
-    const k = (ai ? 1.15 - 0.25 * Math.min(ai.sk, 1) - 0.15 * ai.boss : 1) * (1 - 0.8 * sv), err = (S.err + S.errP * power) * k; // сильный ИИ точнее
+    const k = (ai ? 1.15 - 0.25 * Math.min(ai.sk, 1) - 0.15 * ai.boss : 1) * (1 - 0.8 * sv); // сильный ИИ точнее
+    // Форма дня: в плохой день сильная подача сверху уходит мимо, снизу и без силы — почти как обычно.
+    const err = (S.err + S.errP * power) * k * (1 + badOf(p) * (0.1 + 1.5 * power)) * (1 - 0.1 * goodOf(p));
     target.x += gauss() * err; target.z += gauss() * err * 1.2;
     return { target, aim, power, dir, speed: S.speed * (1 + S.pw * power) * (1 + 0.2 * sv), spin: S.spin, lob: null, kind: st.serve === 'under' ? 'serve-under' : 'serve' };
   }
@@ -199,7 +219,8 @@ export class Game {
     // Не дотянулся: мяч пролетел мимо ракетки. Босс достаёт до +25% дальше.
     // shortcut: босс промахивался (попадания 0,83–0,9) из-за предела поворота руки — честнее чинить выход к мячу в plan().
     if (d > HIT_R * (p.human ? 1 : 1 + 0.25 * this.ai.boss)) return;
-    const timing = p.human ? clamp(1 - Math.max(0, Math.abs(lead - 0.55) - 0.3) / 0.6, 0.4, 1) : 1;
+    const bad = p.human ? badOf(p) : 0, good = p.human ? goodOf(p) : 0; // форма дня Лёвы: в плохой день окно тайминга уже
+    const timing = p.human ? clamp(1 - Math.max(0, Math.abs(lead - 0.55) - (0.3 - 0.06 * bad + 0.04 * good)) / 0.6, 0.4, 1) : 1;
     let q = 0.5 * Math.min(1, (1 - d / HIT_R) * 1.4) + 0.5 * timing;
     q *= 1 - clamp((run - 1.2) / 4, 0, 0.35); // на бегу удар слабее и кривее
     let err = (1 - q) * 3, pace = 1, miss = false;
@@ -212,12 +233,13 @@ export class Game {
       // Выше 1 (boss 0..1) — почти без невынужденных: разброс до 8 см, грубых ошибок нет, растянутым ошибается вдвое реже.
       // Стиль: защитник реже ошибается растянутым, сильный рискует, бэкхенд — по стилю (подача — в serveShot).
       const bh = /^v?bh/.test(st.type), styleErr = 0.25 * lean(p, 'power') - (bh ? 0.6 * lean(p, 'backhand') : 0);
-      err += (0.2 + 1.2 * (1 - s) - 0.12 * boss + styleErr + 0.5 * stretch * (1 - lean(p, 'defense')) + (Math.random() < 0.05 * (1.3 - s) * (1 - boss) ? 2.2 : 0) + 0.8 * down * stretch) * focus;
+      const ob = badOf(p), og = goodOf(p); // форма дня соперника (career.js): в плохой день ошибается чаще
+      err += (0.2 + 1.2 * (1 - s) - 0.12 * boss + styleErr + 0.5 * stretch * (1 - lean(p, 'defense')) + (Math.random() < 0.05 * (1.3 - s) * (1 - boss) ? 2.2 : 0) + 0.8 * down * stretch) * focus * (1 + 0.6 * ob) * (1 - 0.15 * og);
       if (st.aiPace) err *= 1 - 0.3 * up;
       pace = Math.max(0.6, 0.97 + 0.1 * boss - ran * 0.06 - (1 - s) * 0.15); // босс бьёт до 7% быстрее
       pace *= 1 + 0.12 * lean(p, 'power') + (bh ? 0.08 * lean(p, 'backhand') : 0); // стиль: до +6% темпа
       q = Math.min(q, 0.9);
-      miss = Math.random() < ((0.005 + 0.045 * (1 - s)) * (1 - 0.8 * boss) + 0.06 * stretch + 0.04 * down * stretch) * focus;
+      miss = Math.random() < ((0.005 + 0.045 * (1 - s)) * (1 - 0.8 * boss) + 0.06 * stretch + 0.04 * down * stretch + 0.035 * ob) * focus;
     } else err += 0.5 * down * Math.max(clamp((run - 1) / 3, 0, 1), power); // низкий настрой: под давлением чаще мимо
     // Сила (удержание): стоя, центром струн и вовремя — точно; на бегу, краем или поздно — разброс растёт с силой.
     // «На бегу» — и в момент удара, и пока копил силу (не успел встать): st.vmax — быстрее всего с нажатия.
@@ -227,8 +249,11 @@ export class Game {
     if (st.drop && shot.lob == null) { target.z = -p.side * rnd(2.2, 3.8); err *= 0.5; }
     if (shot.angle) err = (err + 0.35) * (shot.spin > 150 ? 0.6 : shot.spin < -150 ? 1.4 : 1); // острый угол у самой боковой: кручёный ныряет в корт, плоский и резаный рискуют
     err *= p.errScale ?? 1; // техника, усталость и контроль ракетки (profile.js)
+    if (bad || good) { const risk = shotRisk(shot, power); err = formErr(err, risk, bad, good); if (Math.random() < formMiss(risk, bad)) miss = true; }
     target.x += rnd(-1, 1) * err; target.z += rnd(-1, 1) * err * 0.7;
-    if (miss && shot.lob == null && !st.drop) { if (Math.random() < 0.5) target.x = Math.sign(target.x || 1) * rnd(4.4, 5.2); else target.z = -p.side * rnd(12.2, 13); }
+    if (miss && st.drop && shot.lob == null) target.z = p.side * rnd(0.3, 1); // укороченный не перелетел
+    else if (miss && shot.lob != null) target.z = -p.side * rnd(12.4, 13.2); // свеча за заднюю
+    else if (miss) { if (Math.random() < 0.5) target.x = Math.sign(target.x || 1) * rnd(4.4, 5.2); else target.z = -p.side * rnd(12.2, 13); }
     shot.speed *= pace * (st.aiPace ?? 1);
     this.fly(p, st, { ...shot, aim, power }, q, sweet, 0);
   }
@@ -311,7 +336,7 @@ export class Game {
     // матч держится близким. Раньше −0,07 за очко соперника против +0,04 — он слабел, пока Лёва не брал ~64%.
     // Ведёт на сет — как на два гейма: не больше ±3, чтобы матч держался близким и не уходил в разгром.
     const lead = clamp(this.games.get(this.lev) - this.games.get(this.opp) + 2 * this.setLead(), -3, 3);
-    ai.skill = clamp(ai.skill + (w === this.lev ? 0.04 : -0.04) + 0.006 * lead, 0.35, MAX_SKILL);
+    if (!ai.fixed) ai.skill = clamp(ai.skill + (w === this.lev ? 0.04 : -0.04) + 0.006 * lead, 0.35, MAX_SKILL); // fixed — турнир: соперник играет своей силой
     // Кураж: три очка подряд — следующие 2–3 он играет сильнее и почти без ошибок.
     ai.streak = w === this.opp ? ai.streak + 1 : 0;
     if (ai.hot) { ai.hot--; ai.streak = 0; } // очки на кураже в новую серию не идут: кураж не тянется цепочкой
@@ -344,8 +369,9 @@ export class Game {
     const gw = this.games.get(w), gl = this.games.get(l);
     if ((gw + gl) % 2) this.rest();
     this.server = tb ? this.other(tb.first) : this.other(this.server);
-    if (!tb && !(gw >= 6 && gw - gl >= 2)) {
-      if (gw === 6 && gl === 6) { this.tb = { first: this.server }; this.log('tiebreak', { first: this.who(this.server) }); return 'Тай-брейк'; }
+    const n = this.setTo ?? 6;
+    if (!tb && !(gw >= n && gw - gl >= 2)) {
+      if (gw === n && gl === n) { this.tb = { first: this.server }; this.log('tiebreak', { first: this.who(this.server) }); return 'Тай-брейк'; }
       return 'Гейм ' + who;
     }
     this.sets.push([this.games.get(this.lev), this.games.get(this.opp)]);
@@ -380,8 +406,9 @@ export class Game {
     this.now = now;
     // Лёва ушёл с корта, замена ещё идёт к задней линии (club.js ведёт её сам): розыгрыша нет, соперник ждёт на месте.
     if (this.state === 'away') { this.opp.idle = true; this.opp.update(dt, now, new THREE.Vector3(), this.b); return; }
-    if (this.state === 'serve' && this.serveAt && now >= this.serveAt) { this.serveAt = null; this.serve(this.server, now); }
-    if (this.state === 'over' && now >= this.nextAt) { if (this.ended) this.finish(); else this.resetPoint(now); }
+    const held = now < (this.holdUntil ?? 0); // передышка Лёвы (career.js): соперник ждёт, подача не уходит
+    if (this.state === 'serve' && this.serveAt && now >= this.serveAt && !held) { this.serveAt = null; this.serve(this.server, now); }
+    if (this.state === 'over' && now >= this.nextAt && !held) { if (this.ended) this.finish(); else this.resetPoint(now); }
     if (this.state === 'match-over' && this.restartAt && now >= this.restartAt) this.newMatch(now); // за Лёву играет ИИ — следующий матч сам
     if (this.state === 'fault' && now >= this.nextAt) this.resetPoint(now, true);
     const b = this.b;
@@ -481,8 +508,9 @@ export class AI {
   // Сильный соперник читает укороченный по замаху Лёвы и заранее идёт вперёд.
   spot() {
     const L = this.game.other(this.p), P = L.pos, s = this.skill, z = this.p.side, st = L.stroke; // тот, кто бьёт ему (ИИ за Лёву или замену — соперник)
-    if (st && st !== this.readFor) { this.readFor = st; this.reads = st.drop && Math.random() < clamp((s - 0.5) * 1.6, 0, 0.75); }
-    const depth = this.net ? 3.2 : 11.6 - 0.25 * s - 0.6 * clamp((Math.abs(P.z) - 12.2) / 1.5, 0, 1);
+    const p = this.p; // научился против укороченных — чаще читает их и стоит ближе; против силы — чуть глубже
+    if (st && st !== this.readFor) { this.readFor = st; this.reads = st.drop && Math.random() < clamp((s - 0.5) * 1.6 + 0.5 * ad(p, 'drop'), 0, 0.9); }
+    const depth = this.net ? 3.2 : 11.6 - 0.25 * s - 0.6 * clamp((Math.abs(P.z) - 12.2) / 1.5, 0, 1) - 1.0 * ad(p, 'drop') + 0.5 * ad(p, 'power');
     const ext = (sd) => new THREE.Vector3(sd * 4.1, 0, z * (sd * P.x >= 0 ? 11.9 : THREE.MathUtils.lerp(11.9, 6.4, clamp(Math.abs(P.x) / 3, 0, 1)))).sub(P).setY(0).normalize();
     const bis = ext(1).add(ext(-1)), x = P.x + (bis.x * (z * depth - P.z)) / bis.z;
     return new THREE.Vector3(clamp(x, -2.5, 2.5), 0, z * (this.reads && st && !st.contacted ? 7.5 : depth));
@@ -505,7 +533,8 @@ export class AI {
     if (st.type.startsWith('v')) return pick(2.2, 3.4, 5.5, 8.5);
     if (L.z * side < 6.5) { // Лёва у сетки
       // Свеча — когда есть время, босс чаще, если Лёва прилип к сетке.
-      if (Math.random() < (0.12 + 0.33 * s + (L.z * side < 4 ? 0.15 * boss : 0)) * clamp(this.slack / 0.3, 0.3, 1)) { st.aiLob = clamp(0.2 + 0.8 * s - 0.9 * stretch + rnd(-0.15, 0.15), 0, 1); return pick(0, 2, 10, 11, any()); }
+      // Научился против сетки (ad 'net') — свеча чаще.
+      if (Math.random() < (0.12 + 0.33 * s + (L.z * side < 4 ? 0.15 * boss : 0) + 0.25 * ad(p, 'net')) * clamp(this.slack / 0.3, 0.3, 1)) { st.aiLob = clamp(0.2 + 0.8 * s - 0.9 * stretch + rnd(-0.15, 0.15), 0, 1); return pick(0, 2, 10, 11, any()); }
       // Босс — в ноги: кручёный ныряет в 1,2–1,8 м перед Лёвой, воллей снизу вверх.
       if (Math.random() < 0.5 * boss) { st.aiKind = 'feet'; return new THREE.Vector3(L.x + rnd(-0.25, 0.25), 0, side * clamp(L.z * side - rnd(1.2, 1.8), 1.2, 5)); }
       st.aiKind = 'pass';
@@ -525,8 +554,8 @@ export class AI {
     if (this.net && Math.abs(p.pos.z) > 9) this.net = false; // откинули назад свечой — снова сзади
     if (this.net || this.netTried || shot.lob != null || st.drop) return;
     const deep = Math.abs(aim.z) > 9.6 && this.ran < 3;
-    // Стиль: сеточник выходит заметно чаще, защитник реже.
-    if (Math.random() < (this.levShort && this.ran < 2.5 ? 0.25 + 0.4 * s : deep ? 0.03 + 0.07 * s : 0) * (1 + 1.6 * lean(p, 'net'))) { this.net = this.netTried = true; this.game.log('approach', { short: this.levShort }); }
+    // Стиль: сеточник выходит заметно чаще, защитник реже; обводили (ad 'pass') — осторожнее.
+    if (Math.random() < (this.levShort && this.ran < 2.5 ? 0.25 + 0.4 * s : deep ? 0.03 + 0.07 * s : 0) * (1 + 1.6 * lean(p, 'net')) * (1 - 0.6 * ad(p, 'pass'))) { this.net = this.netTried = true; this.game.log('approach', { short: this.levShort }); }
   }
 
   update(now) {
@@ -536,10 +565,12 @@ export class AI {
     // и реагирует до 0,1 с. План точки удара он считает по скорости 1 (player.plan): запас времени, а не опоздание.
     const boss = this.boss, s1 = Math.min(s, 1);
     const def = lean(p, 'defense'); // стиль: защитник быстрее, раньше срывается и дальше тянется
-    p.speedScale = 0.62 + 0.38 * s1 + 0.06 * boss + 0.08 * def; p.accelScale = 1 + 0.25 * boss + 0.2 * def;
-    p.defend = Math.max(0, 0.25 * Math.max(0, s1 - 0.6) + 0.15 * boss + 0.2 * def); // сильный дальше тянется в защите: до +10 см выпада, босс до +25
+    const ang = ad(p, 'angle'); // научился против углов — быстрее в сторону и дальше тянется
+    p.speedScale = 0.62 + 0.38 * s1 + 0.06 * boss + 0.08 * def + 0.04 * ang; p.accelScale = 1 + 0.25 * boss + 0.2 * def + 0.1 * ang;
+    p.defend = Math.max(0, 0.25 * Math.max(0, s1 - 0.6) + 0.15 * boss + 0.2 * def + 0.15 * ang); // сильный дальше тянется в защите: до +10 см выпада, босс до +25
     if (g.state === 'serve' || g.serving) { this.planned = null; return new THREE.Vector3(); } // к подаче оба стоят на своих местах
-    const react = Math.max(0.08, 0.48 - 0.28 * s - 0.08 * def) + 0.08 * p.tired; // уставший реагирует позже
+    // Уставший и в плохой день реагирует позже; против силы Лёвы — раньше, если научился.
+    const react = Math.max(0.08, 0.48 - 0.28 * s - 0.08 * def - (g.lastShot?.power > 0.5 ? 0.06 * ad(p, 'power') : 0)) + 0.08 * p.tired + 0.04 * badOf(p);
     const incoming = b.live && g.state === 'rally' && g.lastHitter && g.lastHitter !== p;
     if (incoming && now >= this.next) {
       this.next = now + 0.12;
