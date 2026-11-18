@@ -422,7 +422,7 @@ function street(group, obs, rooms, mats) {
   const { x0, x1, z0, z1 } = STREET;
   const cob = cobbleTex(); cob.repeat.set((x1 - x0) / 3, (z1 - z0) / 3); // камни ~15 × 18 см
   const top = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: cob, roughness: 0.85 }));
-  top.position.set((x0 + x1) / 2, TOWN_Y, (z0 + z1) / 2); // асфальт дороги кончается на x0 top.receiveShadow = true; top.userData.town = true; group.add(top);
+  top.position.set((x0 + x1) / 2, TOWN_Y, (z0 + z1) / 2); top.receiveShadow = true; top.userData.town = true; group.add(top); // асфальт дороги кончается на x0
   const base = new THREE.Mesh(box(x1 - x0 + 0.2, 1.2, z1 - z0 + 0.2, 0, -0.61, 0), mats.stone);
   base.position.copy(top.position); base.receiveShadow = true; base.userData.town = true; group.add(base);
   rooms.push({ rect: [x0 - 0.3, z0 + 0.05, x1, z1 - 0.05], y: TOWN_Y, street: true });
@@ -493,6 +493,7 @@ export class Town {
     this.terrain = terrainSampler(scene);
     this.obs = { segs: [], circles: [], boxes: [] };
     this.rooms = []; this.doors = [];
+    this.points = { shop, cafe, gymStations, bed }; // те же точки, что в экспортах: для систем, которые получают город готовым
     const mats = materials();
     this.road = buildRoad(this.terrain);
     roadMeshes(this.road, this.terrain, this.group, this.obs);
