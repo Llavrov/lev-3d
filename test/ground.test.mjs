@@ -13,22 +13,40 @@ test('ровно на кортах, дорожках, террасе, в дом�
   }
 });
 
-test('на газоне бугры до полуметра, к краям площадки газон сходит вниз', () => {
-  let big = 0, max = 0;
-  for (let x = 16; x < 50; x += 1.3) for (let z = -10; z < 20; z += 1.7) { const y = Math.abs(groundAt(x, z)); if (y > 0.1) big++; max = Math.max(max, y); }
-  assert.ok(big > 40, `заметных бугров ${big}`); assert.ok(max < 0.6, `самый высокий ${max}`);
-  assert.ok(groundAt(PAD.x1 - 0.5, 0) < -0.3, `у края площадки ${groundAt(PAD.x1 - 0.5, 0)}`);
+test('на газоне холмы до 1,5 м и ложбины', () => {
+  let big = 0, max = 0, min = 0;
+  for (let x = PAD.x0 + 8; x < PAD.x1 - 8; x += 1.3) for (let z = PAD.z0 + 8; z < PAD.z1 - 8; z += 1.7) { const y = groundAt(x, z); if (Math.abs(y) > 0.3) big++; max = Math.max(max, y); min = Math.min(min, y); }
+  assert.ok(big > 300, `заметных бугров ${big}`); assert.ok(max > 0.8 && max < 1.8, `самый высокий ${max}`); assert.ok(min < -0.3, `самая низкая ${min}`);
 });
 
-test('без ступенек: шаг 10 см меняет высоту меньше чем на 3 см, и на краю сетки земли', () => {
+test('край площадки, стоянка и дорога как были: рельеф только внутри', () => {
+  for (let t = 0; t <= 1; t += 0.01) {
+    const pts = [[PAD.x0 + t * (PAD.x1 - PAD.x0), PAD.z0], [PAD.x0 + t * (PAD.x1 - PAD.x0), PAD.z1], [PAD.x0, PAD.z0 + t * (PAD.z1 - PAD.z0)], [PAD.x1, PAD.z0 + t * (PAD.z1 - PAD.z0)]];
+    for (const [x, z] of pts) assert.ok(Math.abs(groundAt(x, z)) < 1e-9, `край (${x.toFixed(1)}, ${z.toFixed(1)}): ${groundAt(x, z)}`);
+  }
+  for (const [x, z] of [[54, 27], [57, 33], [51.3, 22], [48, 30.6], [56, -30]]) assert.ok(Math.abs(groundAt(x, z)) < 1e-9, `у дороги (${x}, ${z}): ${groundAt(x, z)}`);
+  // За краем (до 1 м) холм клуба ещё ровный — значит, никакого уступа от площадки к склону.
+  for (const [x, z] of [[PAD.x1 + 0.6, 0], [PAD.x0 - 0.6, 10], [20, PAD.z0 - 0.6], [-5, PAD.z1 + 0.6]]) assert.ok(Math.abs(groundAt(x, z)) < 1e-9, `за краем (${x}, ${z})`);
+});
+
+test('без ступенек: шаг 10 см меняет высоту меньше чем на 4 см, и на краю сетки земли', () => {
   for (const [x0, z0, dx, dz] of [[14, -40, 0, 1], [GRID.x0 - 3, 5, 1, 0], [30, GRID.z1 - 6, 0, 1], [PAD.x1 - 10, -20, 1, 0], [-60, -48, 1, 0.4]]) {
     let prev = groundAt(x0, z0);
     for (let i = 1; i < 200; i++) {
       const y = groundAt(x0 + dx * i * 0.1, z0 + dz * i * 0.1);
-      assert.ok(Math.abs(y - prev) < 0.03, `скачок ${(y - prev).toFixed(3)} у (${(x0 + dx * i * 0.1).toFixed(1)}, ${(z0 + dz * i * 0.1).toFixed(1)})`);
+      assert.ok(Math.abs(y - prev) < 0.04, `скачок ${(y - prev).toFixed(3)} у (${(x0 + dx * i * 0.1).toFixed(1)}, ${(z0 + dz * i * 0.1).toFixed(1)})`);
       prev = y;
     }
   }
+});
+
+test('камера прогулки (4,2 м сзади, 2,3 м над Лёвой) не уходит в склон', () => {
+  let worst = 9;
+  for (let x = PAD.x0 + 2; x < PAD.x1 - 2; x += 1.1) for (let z = PAD.z0 + 2; z < PAD.z1 - 2; z += 1.3) for (let a = 0; a < 6.28; a += 0.785) {
+    const y = groundAt(x, z), ex = x - Math.sin(a) * 4.2, ez = z - Math.cos(a) * 4.2;
+    worst = Math.min(worst, y + 2.3 - groundAt(ex, ez));
+  }
+  assert.ok(worst > 0.6, `камера над склоном всего ${worst.toFixed(2)} м`);
 });
 
 // Идём шагами по 3 см из a к b сквозь стены дома.

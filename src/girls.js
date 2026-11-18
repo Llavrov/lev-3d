@@ -4,13 +4,14 @@
 // на COURT2_X. Вне кадра корт 2 шагает 15 раз в секунду (девушки отсекаются по кадру), издалека — без настоящих
 // теней (пятно под ногами).
 // Разговор: «E — поговорить» у калитки корта 2 или рядом с девушкой в паузе, диалог внизу экрана (1–3 или нажатие),
-// память в localStorage. «Сыграем?» — матч с ней на корте 1 вместо соперника до двух геймов; «Кофе» — она идёт
-// на террасу к точке MEET и садится.
+// память в localStorage. «Сыграем?» — сет с ней на корте 1 вместо соперника (счёт и итог — game.js и экран итога
+// main.js); «Кофе» — она идёт на террасу к точке MEET и садится. Во время разговора Лёва и она стоят лицом друг к другу.
 // При слиянии с interact.js: near() ищет, с кем говорить (калитка корта 2, девушка рядом, столик) — заменить на
 // register({ pos, r, label: () => 'Поговорить', act: () => this.act() }) для калитки и каждой девушки, кнопку #ctalk убрать.
 import * as THREE from 'three';
 import { Player } from './player.js';
-import { Game, AI } from './game.js';
+import { Game, AI, servePos } from './game.js';
+import { WALK, mix } from './swing.js';
 import { COURT, GATE, COURT2_X } from './court.js';
 import { step, solveShot, BALL_R } from './physics.js';
 import { buildBall } from './ball.js';
@@ -22,6 +23,13 @@ const rnd = () => Math.random();
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const GZ = (GATE.z0 + GATE.z1) / 2;
 const Q = new URLSearchParams(typeof location !== 'undefined' ? location.search : ''); // в node (тесты) адреса нет
+const S = THREE.MathUtils.smoothstep;
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const D = (x, y, z) => new THREE.Vector3(-x, y, z).normalize(); // направление в осях скелета, x вправо (как V в swing.js)
+// Наклон за мячом: присед с прямой спиной (наклон в тазу), левая рука вниз-вперёд к мячу, голова вниз, ракетка в правой
+// справа у колена головкой вверх-вперёд (вниз — упиралась бы в грунт, перед собой — закрывала лицо). Точно к мячу кисть доводит armTo (Rally2.pickPose).
+const PICK = { ...WALK, lean: 50, nod: 20, crouch: 0.55, lh: -1,
+  lUp: D(-0.12, -0.92, 0.38), lFo: D(-0.02, -0.9, 0.44), rUp: D(0.35, -0.85, 0.2), rFo: D(0.35, 0, 0.94), rk: D(0.55, 0.35, 0.75), face: D(1, 0, 0) };
 
 // Кофе на террасе: стул у столика (PLACES.table в env.js, 11,7; −26,2): середина сиденья на настиле 0,15 м, куда лицом
 // (как netYaw: лицом в (sin yaw, 0, cos yaw), к столу) и высота сиденья над настилом. Замер по модели столика со стульями;
@@ -46,14 +54,15 @@ export const typo = (s) => s.replace(RE_SHORT, '$1$2 ').replace(RE_SHORT, '$1$2
 // ждёт на своём месте, розыгрыша нет.
 class Rally2 extends Game {
   constructor(o) { super(o); this.held = new Map(); this.go = false; this.calm = 0; }
+  finish() { this.newMatch(this.now); } // сет сыгран — сразу следующий (через ходьбу к подаче)
   // Любительский уровень: ошибки чаще, чем у соперника Лёвы (сила 0,7), розыгрыши по 4–10 ударов.
   get level() { return [0.38, 0.5]; }
   resetPoint(now, second = false) {
     if (second || this.go) { this.go = false; for (const p of [this.lev, this.opp]) p.free = false; return super.resetPoint(now, second); }
     this.state = 'walk'; this.calm = 0;
     const b = this.b;
-    this.picker = Math.abs(b.pos.x) < 8.6 && Math.abs(b.pos.z) < 19 ? (b.pos.z * this.lev.side > 0 ? this.lev : this.opp) : null;
-    if (this.picker) this.ballMesh.visible = true;
+    this.picker = this.inFence(b) ? (b.pos.z * this.lev.side > 0 ? this.lev : this.opp) : null;
+    if (this.picker) { this.ballMesh.visible = true; this.picker.pick = this.picker.pickU = null; }
     for (const p of [this.lev, this.opp]) if (this.held.get(p) !== 'away') Object.assign(p, { free: true, idle: false, stroke: null, split: null, sliding: 0 });
   }
   // Невынужденная ошибка любителя: ~9% ударов в сетку, в аут или за боковую (у ИИ корта 1 их почти нет).
@@ -65,7 +74,34 @@ class Rally2 extends Game {
     if (r < 0.4) t.z = -p.side * 0.4; else if (r < 0.7) t.z = -p.side * (12.4 + rnd()); else t.x = Math.sign(rnd() - 0.5) * (4.4 + rnd() * 0.8);
     b.vel.copy(solveShot(b.pos, t, b.vel.length() * (r < 0.4 ? 0.85 : 1), b.spin));
   }
-  spotOf(p) { return p.home.clone().add(V(p === this.server ? 0.5 * p.side : -0.3 * p.side, 0)); }
+  // Мяч остался в загородке (у забора тоже): его подберут. Перелетел забор — нет, из кармана новый.
+  inFence(b) { const ok = Math.abs(b.pos.x) < 9.1 && Math.abs(b.pos.z) < 19.85 && (b.live || b.pos.y < 0.3); if (ok && !b.live) { b.pos.x = clamp(b.pos.x, -8.95, 8.95); b.pos.z = clamp(b.pos.z, -19.7, 19.7); b.pos.y = BALL_R; this.ballMesh.position.copy(b.pos).y += BALL_R * 0.7; } return ok; }
+  // Где встать к следующему очку — там же, куда ставит resetPoint (подача по квадрату, стороны по счёту, game.js).
+  spotOf(p) { return servePos(p, this.courtSide(), p === this.server); }
+  // Куда встать, чтобы мяч оказался под левой кистью в наклоне (pickOff — замер позы PICK у этой модели).
+  pickSpot(p, ball) {
+    const u = ball.clone().sub(p.pos).setY(0);
+    if (u.lengthSq() > 0.36 || !p.pickU) p.pickU = u.normalize(); // в последних 60 см направление не крутим
+    const U = p.pickU, o = p.pickOff;
+    return ball.clone().setY(0).addScaledVector(U, -o.f).addScaledVector(V(-U.z, U.x), -o.r);
+  }
+  // Наклон за мячом поверх позы ходьбы (1,45 с): вниз 0,55 с, мяч в руку, вверх, к 1,2 с мяч в кармане.
+  pickPose(p, now, dt) {
+    const t = now - p.pick.t0, w = S(t, 0, 0.55) * (1 - S(t, 0.8, 1.4)), K = mix(p.lastPose, PICK, w), ball = this.ballMesh.position;
+    if (t < 0.4 && p.pickU) p.bodyTurn += clamp(wrap(Math.atan2(p.pickU.x, p.pickU.z) - p.netYaw - p.bodyTurn), -3 * dt, 3 * dt); // доворот к мячу
+    const fl = (f) => ({ pos: f.pos, yaw: wrap(f.yaw - p.bodyTurn), lift: f.lift });
+    const r = p.rig.pose(K, K, 0, { Left: fl(p.feet.Left), Right: fl(p.feet.Right), crouch: 0.03, dt });
+    p.rig.placeRacket(r.rk, r.face);
+    const aw = S(t, 0.2, 0.5) * (1 - S(t, 0.7, 1.0));
+    if (!p.pick.got && aw > 0) { // кисть к мячу: ладонь чуть над ним
+      const wr = p.rig.b.LeftHand.getWorldPosition(new THREE.Vector3()), W = ball.clone().setY(ball.y + 0.035).sub(p.rig.palm('Left').sub(wr));
+      p.rig.armTo('Left', wr.lerp(W, aw)); p.rig.grip('Left', 0.4 + 0.5 * S(t, 0.45, 0.6));
+    }
+    if (t >= 0.55) p.pick.got = true;
+    if (p.pick.got && t < 1.2) ball.copy(p.rig.palm('Left')); // мяч в руке
+    if (t >= 1.2) this.ballMesh.visible = false; // в кармане юбки
+    if (t >= 1.45) { p.pick = null; this.picker = null; }
+  }
   // Пауза сразу: розыгрыш обрывается без очка (её окликнули — мяч ловят рукой), дальше пешком.
   hold(p, what, now) { this.held.set(p, what); if (this.state !== 'walk') this.resetPoint(now); }
   update(dt, now) {
@@ -75,21 +111,23 @@ class Rally2 extends Game {
     const b = this.b;
     if (b.live) { // мяч докатывается
       for (let i = 0; i < 4; i++) step(b, dt / 4);
-      if ((b.vel.lengthSq() < 0.05 && b.pos.y < 0.05) || Math.abs(b.pos.z) > 19.5 || Math.abs(b.pos.x) > 9) { b.live = false; if (Math.abs(b.pos.x) > 8.6 || Math.abs(b.pos.z) > 19) { this.picker = null; this.ballMesh.visible = false; } }
+      if ((b.vel.lengthSq() < 0.05 && b.pos.y < 0.05) || Math.abs(b.pos.z) > 19.5 || Math.abs(b.pos.x) > 9) { b.live = false; if (!this.inFence(b)) { this.picker = null; this.ballMesh.visible = false; } }
       this.ballMesh.position.copy(b.pos).y += BALL_R * 0.7;
     }
     let busy = false;
     for (const p of [this.lev, this.opp]) {
       const h = this.held.get(p);
       if (h === 'away') { busy = true; continue; } // её ведёт Girls (матч, кофе)
-      let to = h ?? (p === this.picker ? b.pos.clone().setY(0) : this.spotOf(p));
-      if (p === this.picker && p.pos.distanceTo(to) < 0.45) { this.picker = null; this.ballMesh.visible = false; to = this.spotOf(p); } // подобрала
+      if (h && p.pick) { p.pick = null; this.picker = null; this.ballMesh.visible = false; } // окликнули посреди наклона — мяч уже в кармане
+      let to = h ?? (p === this.picker ? (p.pick ? p.pos.clone() : this.pickSpot(p, this.ballMesh.position)) : this.spotOf(p));
+      if (p === this.picker && !p.pick && !b.live && p.pos.distanceTo(to) < 0.15) { p.pick = { t0: now }; p.vel.set(0, 0, 0); } // встала у мяча — наклон
       const x = p.pos.z * to.z < 0 ? p.pos.x + ((to.x - p.pos.x) * p.pos.z) / (p.pos.z - to.z) : null; // где путь пересекает сетку
       if (x !== null && Math.abs(x) < 7.2) to = V(7.7 * Math.sign(to.x || x || 1), Math.sign(p.pos.z) * 0.4); // в обход столба, не сквозь сетку
       const d = to.clone().sub(p.pos).setY(0), len = d.length(), there = len < 0.18;
-      if (!there) p.free = true; else if (!h) p.free = false; // на месте — разворот к сетке; у Лёвы стоит, как подошла
+      if (!there) p.free = true; else if (!h && p !== this.picker) p.free = false; // на месте — разворот к сетке; у Лёвы и у мяча стоит, как подошла
       if (!there || h || p === this.picker) busy = true;
       p.update(dt, now, there ? new THREE.Vector3() : d.divideScalar(len).multiplyScalar(Math.min(1.3, len * 2 + 0.25)), b.live ? b : null);
+      if (p.pick) this.pickPose(p, now, dt);
     }
     this.calm = busy ? 0 : this.calm + dt;
     if (this.calm > 0.6) { this.go = true; this.resetPoint(now); }
@@ -124,6 +162,14 @@ function makeUi() {
   box.innerHTML = '<p class="who"></p><p class="say"></p><div class="opts"></div><button class="x" aria-label="Закрыть"><svg width="18" height="18" viewBox="0 0 18 18"><path d="M3 3l12 12M15 3L3 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>';
   document.body.append(box);
   return { btn, box, who: box.querySelector('.who'), say: box.querySelector('.say'), opts: box.querySelector('.opts'), x: box.querySelector('.x') };
+}
+
+// Где левая ладонь в наклоне PICK относительно тела (вправо, вперёд, высота) — куда встать, чтобы мяч был под рукой.
+function pickOff(p) {
+  const r = p.rig.pose(PICK, PICK, 0, { Left: p.feet.Left, Right: p.feet.Right, crouch: 0.03 });
+  p.rig.placeRacket(r.rk, r.face);
+  const d = p.rig.palm('Left').sub(p.pos);
+  return { r: d.dot(p.right), f: d.dot(p.fwd), y: d.y };
 }
 
 // Пятно тени под ногами на корте 2 издалека, где настоящие тени выключены.
@@ -178,6 +224,7 @@ export class Girls {
       const p = new Player(this.stage, gltf, { side: c.side, height: c.height, racketColor: '#e8e8e8', cloth: [m1, m2][i] ? null : c.cloth });
       if (rackets[c.racket]) dressRacket(p.racket, rackets[c.racket].clone(true));
       p.measure();
+      p.pickOff = pickOff(p);
       p.rig.reachK = 0.97; // левая отпускает ракетку чуть раньше: у Сони после смэша рука вытягивалась в струну (playtest poses)
       const g = { c, p, i, where: 'court', job: null, mem: { ...fresh(), ...this.mem[c.id] }, blob: blob(), meshes: [] };
       // Отсекать по кадру (у игроков корта 1 отсечение выключено): сфера по позе покоя с запасом на руки и ракетку.
@@ -215,8 +262,19 @@ export class Girls {
       this.stage.position.x = COURT2_X; this.stage.updateMatrixWorld();
     }
     for (const g of this.girls) if (g.where === 'world' && g.job !== 'match') this.stroll(g, dt, now);
+    const d = this.dlg; // разговор: Лёва поворачивается к ней, она (подошла и стоит) — к нему
+    if (d && !d.post) {
+      const L = this.club.lev, at = this.world(d.g);
+      this.face(L, at.x, at.z, dt);
+      if (d.g.where === 'court') this.face(d.g.p, L.pos.x - COURT2_X, L.pos.z, dt);
+    }
     if (this.match) this.watchMatch(now);
     this.near(now);
+  }
+  // Повернуть стоящего корпусом к точке (x, z в его осях) не быстрее 2,5 рад/с; ступни переступят сами (player.footwork).
+  face(p, x, z, dt) {
+    if (p.vel.length() > 0.3 || p.seat || Math.hypot(x - p.pos.x, z - p.pos.z) < 0.3) return;
+    p.bodyTurn += clamp(wrap(Math.atan2(x - p.pos.x, z - p.pos.z) - p.netYaw - p.bodyTurn), -2.5 * dt, 2.5 * dt);
   }
   shade(g, on) { for (const m of g.meshes) m.castShadow = on; g.p.racket.traverse((o) => { if (o.isMesh) o.castShadow = on; }); g.blob.visible = !on && g.where === 'court'; }
 
@@ -365,50 +423,66 @@ export class Girls {
   }
 
   // ---------- Матч с ней на корте 1 ----------
-  // Соперник уходит со сцены, она встаёт на его место (сторона −1), счёт с нуля, до двух геймов; сила чуть ниже
-  // обычного соперника (0,7). После матча — всё обратно: соперник, его счёт и подача, она — на корт 2.
+  // Соперник уходит со сцены, она встаёт на его место (сторона −1), сила чуть ниже обычного соперника (0,7). Счёт —
+  // game.js: сет с нуля (bestOf 1, до 6 геймов, тай-брейк при 6:6), подаёт Лёва. Конец сета — экран итога main.js
+  // («Ещё матч» — реванш с ней, «В клуб» — расходимся). Ушёл с корта (Q, «В клуб») — всё обратно: соперник, его счёт,
+  // сеты и подача, она — на корт 2.
   startMatch(g, now) {
     const G = this.game, c = this.club;
     this.dlg = null; this.ui.box.hidden = true;
     if (c.active) c.back(now);
     const old = G.opp, lev = G.lev;
-    this.match = { g, old, ai: G.ai, pts: [G.pts.get(lev), G.pts.get(old)], games: [G.games.get(lev), G.games.get(old)], levServed: G.server === lev, t0: now };
+    this.match = { g, old, ai: G.ai, pts: [G.pts.get(lev), G.pts.get(old)], games: [G.games.get(lev), G.games.get(old)], levServed: G.server === lev,
+      sets: G.sets, tb: G.tb, bestOf: G.bestOf, ended: G.ended, onMatch: G.onMatch, over: false };
     g.job = 'match'; this.sim.hold(g.p, 'away', this.sim.now);
     this.move(g, 'world', -1, V(0, -(COURT.len / 2 + 0.8)));
     Object.assign(g.p, { free: false, seat: null, stamina: 1, mood: 0, idle: false });
     old.wrap.visible = old.racket.visible = false; old.onContact = old.onStep = old.onPlant = old.onSlide = null;
     G.opp = g.p; G.hook(g.p);
     G.pts = new Map([[lev, 0], [g.p, 0]]); G.games = new Map([[lev, 0], [g.p, 0]]);
-    G.server = rnd() < 0.5 ? lev : g.p;
     G.ai = new AI(g.p, G); G.ai.skill = g.c.skill;
+    G.bestOf = 1;
+    // Итог на экране main.js, только имя победительницы — её.
+    G.onMatch = (w) => { this.match?.onMatch?.(w); if (w === g.p) { const t = document.getElementById('endT'); if (t) t.textContent = `${g.c.name} выиграла`; } };
     this.oppName(g.c.name);
-    G.resetPoint(now);
-    G.hud.flash(typo(`Матч с ${g.c.id === 'alina' ? 'Алиной' : 'Соней'} до двух геймов`), true);
+    G.newMatch(now);
+    G.hud.flash(typo(`Сет с ${g.c.id === 'alina' ? 'Алиной' : 'Соней'}`), true);
   }
   watchMatch(now) {
     const M = this.match, G = this.game, g = M.g;
     G.ai.skill = Math.min(G.ai.skill, g.c.skill + 0.2); // не «босс»: слабее обычного соперника
-    const left = this.club.active, a = G.games.get(G.lev) ?? 0, b = G.games.get(g.p) ?? 0;
-    if (!left && !(G.state === 'over' && (a >= 2 || b >= 2) && now > G.nextAt - 0.4)) return;
-    this.endMatch(left ? 'left' : a > b ? 'won' : 'lost', now);
+    if (G.state === 'match-over' && G.ended && !M.over) { // сет сыгран: итог в память, её реплика на экране итога
+      M.over = true;
+      const res = G.ended === g.p ? 'lost' : 'won', A = g.c.id === 'alina';
+      this.remember(g, { played: g.mem.played + 1, won: g.mem.won + (res === 'won'), lost: g.mem.lost + (res === 'lost'), last: res });
+      this.endLine(res === 'won' ? (A ? 'Ладно, ты сильнее. Пока что.' : 'Нечестно, ты же каждый день тут играешь!')
+        : (A ? 'Неплохо. Подачу поставишь — приходи ещё.' : 'Я выиграла? Я выиграла! Алина, ты видела?'));
+    }
+    if (G.state !== 'match-over' && M.over) { M.over = false; this.endLine(null); } // «Ещё матч» — реванш
+    if (this.club.active) this.endMatch(now);
   }
-  endMatch(res, now) {
+  // Её реплика под счётом на экране итога (#end из index.html); null — убрать.
+  endLine(t) {
+    const box = document.querySelector('#end .menu');
+    let el = document.getElementById('endG');
+    if (!t) return el?.remove();
+    if (!box) return;
+    if (!el) { el = document.createElement('p'); el.id = 'endG'; el.style.cssText = 'margin: 0 0 14px; opacity: .85'; box.querySelector('#endS')?.after(el); }
+    el.textContent = typo(`${this.match.g.c.name}: «${t}»`);
+  }
+  endMatch(now) {
     const M = this.match, G = this.game, g = M.g, old = M.old;
-    this.match = null;
+    const mid = !M.over && [...G.pts.values(), ...G.games.values()].some((v) => v > 0); // ушёл посреди сета
+    this.match = null; this.endLine(null);
     g.p.onContact = g.p.onStep = g.p.onPlant = g.p.onSlide = null;
-    G.opp = old; G.hook(old); G.ai = M.ai;
+    G.opp = old; G.hook(old); G.ai = M.ai; G.onMatch = M.onMatch;
     G.pts = new Map([[G.lev, M.pts[0]], [old, M.pts[1]]]); G.games = new Map([[G.lev, M.games[0]], [old, M.games[1]]]);
-    G.server = M.levServed ? G.lev : old;
+    Object.assign(G, { sets: M.sets, tb: M.tb, bestOf: M.bestOf, ended: M.ended, server: M.levServed ? G.lev : old });
     old.wrap.visible = old.racket.visible = true; old.place(old.home);
     this.oppName('Соперник');
     if (G.state !== 'away') G.resetPoint(now); else G.hud.score(G);
     this.home(g);
-    if (res !== 'left') this.remember(g, { played: g.mem.played + 1, won: g.mem.won + (res === 'won'), lost: g.mem.lost + (res === 'lost'), last: res });
-    const A = g.c.id === 'alina';
-    this.say(g, res === 'won' ? (A ? 'Ладно, ты сильнее. Пока что.' : 'Нечестно, ты же каждый день тут играешь!')
-      : res === 'lost' ? (A ? 'Подача снизу тебя подводит. Приходи ещё.' : 'Я выиграла? Я выиграла! Алина, ты видела?')
-        : (A ? 'Сбежал? Засчитаю как победу.' : 'Эй, мы не доиграли!'));
-    G.hud.flash(res === 'won' ? 'Победа' : res === 'lost' ? typo(`${g.c.name} выиграла`) : 'Матч не доигран', res === 'won');
+    if (mid) this.say(g, g.c.id === 'alina' ? 'Сбежал? Засчитаю как победу.' : 'Эй, мы не доиграли!');
   }
   oppName(t) { const el = document.getElementById('st-o')?.parentElement?.querySelector('small'); if (el) el.textContent = t; }
   // Назад на корт 2: у калитки изнутри, дальше сама идёт на своё место.
