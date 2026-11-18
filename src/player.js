@@ -526,6 +526,7 @@ export class Player {
     const pivot = (f) => (f === back ? toe * deg(18) * f.sign : 0);
     const fl = (f) => ({ pos: f.pos, yaw: wrapAngle(f.yaw - this.bodyTurn) + pivot(f), lift: f.lift + jump, toe: f === back ? toe : 0 }); // поворот ступни на корте — от лица тела (в ±π: на прогулке корпус крутится кругом)
     this.wrap.position.copy(this.pos).add(this.lunge);
+    if (this.hands) K = this.hands.pose(K, now, dt); // предметы в руках на прогулке (interact.js)
     this.lastPose = K;
     // Прогулка и скамейка (club.js): идёт — прямее в коленях; сидя ступни перед сиденьем, таз на высоте сиденья.
     const sw = this.free ? this.sitW() : 0;
@@ -533,6 +534,7 @@ export class Player {
     const low = this.free ? THREE.MathUtils.lerp(crouch - 0.045, this.hipH - (this.seat?.h ?? 0) - SIT_HIP + this.pos.y, sw) : crouch + (k ? this.lungeDrop ?? 0 : 0);
     const { rk, face } = this.rig.pose(K, K, 0, { Left: foot(this.feet.Left), Right: foot(this.feet.Right), crouch: low, dt });
     this.rig.placeRacket(rk, face);
+    this.hands?.place(now); // левая кисть держит предмет, предмет — в кисти (interact.js)
     this.sweetPrev = this.sweetNow ?? null; this.sweetNow = this.rig.sweet(); // центр струн в начале и в конце кадра — для касания
 
     if (st && !st.contacted && now >= st.tContact) { // кадр, внутри которого момент удара: касание ищем по всему кадру

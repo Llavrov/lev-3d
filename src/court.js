@@ -53,7 +53,7 @@ function macroTexture() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.NoColorSpace; t.anisotropy = 8;
   return t;
 }
-function clayMaterial() {
+export function clayMaterial() {
   const load = new THREE.TextureLoader(), rep = [W_ALL / 2.5, L_ALL / 2.5];
   const tex = (url, srgb) => {
     const t = load.load(url); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...rep); t.anisotropy = 8;
@@ -83,7 +83,7 @@ function clayMaterial() {
 
 // Линии: белая лента, края присыпаны крошкой и чуть размыты, по ленте пыль.
 // Плитка — 6 м ленты: на ней места, где крошку замело на ленту пятнами, — по видео линии на грунте не белоснежные.
-function lineMaterial() {
+export function lineMaterial() {
   const c = document.createElement('canvas'); c.width = 64; c.height = 1024;
   const g = c.getContext('2d');
   const gr = g.createLinearGradient(0, 0, 64, 0);

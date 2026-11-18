@@ -7,6 +7,7 @@ import { buildMountains, heightAt } from './env-mountains.js';
 import { buildSky, HAZE } from './env-sky.js';
 import { buildClub, pathGap, WIND } from './env-club.js';
 import { buildValley } from './env-valley.js';
+import { buildTerrace } from './props.js';
 export { SUN, HAZE, AIR_DENSITY, outdoorEnv } from './env-sky.js';
 export const HORIZON = HAZE; // старое имя цвета дымки
 
@@ -122,11 +123,9 @@ const SEAT_H = 0.44; // высота сиденья скамейки над зе
 export const SEATS = BENCHES.flatMap(([x, z, rot]) => [-0.4, 0.4].map((s) => ({
   pos: [x + Math.cos(rot) * s + Math.sin(rot) * 0.1, SEAT_H, z - Math.sin(rot) * s + Math.cos(rot) * 0.1], yaw: rot,
 })));
+// Бар, столики, стулья и зонты террасы с 18.11 — кодом (props.js, buildTerrace): с ними можно что-то делать.
 const PLACES = { // имя: [высота, м; тень; [[x, z, поворот, y], …]]
   chalet: [8.5, true, [[23, -27, -Math.PI / 2]]],
-  bar: [1.25, true, [[13.6, -21.8, -Math.PI / 2, DECK]]],
-  umbrella: [2.6, true, [[11.7, -26.2, 0.3, DECK], [11.7, -31.4, 1.1, DECK]]],
-  table: [0.92, false, [[11.7, -26.2, -1.2, DECK], [11.7, -31.4, -2.1, DECK]]],
   // У калитки по кадке с двух сторон, на террасе по углам; две за спиной Лёвы — их видно в меню.
   planter: [0.8, false, [[14.1, -19.6, 0.4, DECK], [10.6, -34.4, 2, DECK], [9.95, 2.5, 1], [9.95, 5.5, 2.5], [-6.5, 20.7, 0.5], [6.5, 20.7, 2]]],
   bench: [0.85, true, BENCHES],
@@ -182,6 +181,7 @@ function models(g) {
   const pt = new THREE.CanvasTexture(planks); pt.colorSpace = THREE.SRGBColorSpace; pt.wrapS = pt.wrapT = THREE.RepeatWrapping; pt.repeat.set(4.4 / 1.4, 16 / 2.8); pt.anisotropy = 8;
   const deck = new THREE.Mesh(new THREE.BoxGeometry(4.4, DECK, 16), new THREE.MeshStandardMaterial({ map: pt, roughness: 0.85 }));
   deck.position.set(12.4, DECK / 2, -27); deck.receiveShadow = true; g.add(deck);
+  const T = buildTerrace(DECK); T.group.userData.T = T; g.add(T.group); // предметы для interact.js: court.getObjectByName('terrace').userData.T
 }
 
 // ---------- У корта ----------

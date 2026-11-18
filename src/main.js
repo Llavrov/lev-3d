@@ -17,6 +17,8 @@ import { fitRacketModel, dressRacket } from './racket.js';
 import { Player, POWER, holdOf, powerOf } from './player.js';
 import { Game, AI } from './game.js';
 import { Club } from './club.js';
+import { Interact, Hands, registerTerrace, registerBenches, registerSurface } from './interact.js';
+import { HalfCourt } from './halfcourt.js';
 import { Practice } from './practice.js';
 import { STROKES, sample } from './swing.js';
 import { makeSound } from './sound.js';
@@ -315,7 +317,7 @@ const log = (() => {
 
 // kind 'auto' — форхенд или бэкхенд по стороне, где будет мяч (укороченный, кручёный I, резаный U). spin — 'top' | 'cut'.
 function hit(kind, drop = false, key = '', spin = null) {
-  if (!game || !started || club?.active) return;
+  if (!game || !started || (club?.active && club.mode !== 'wall')) return; // на стенке полукорта бьёт как в матче
   sound.unlock();
   if (game.state === 'serve' && game.server === game.lev) return game.serve(game.lev, game.now);
   if (key === 'Space') return; // пробел только подаёт: раньше в розыгрыше он бил форхендом и перебивал нажатый бэкхенд
@@ -349,25 +351,40 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Space') hit('fh', false, e.code);
 });
 // ---------- Прогулка по клубу (club.js) ----------
-// Q — уйти с корта, E — сесть на скамейку или встать, V — вид (со скамейки → ТВ → крупно за заменой), R — вернуться на корт.
-// Те же действия кнопками (#cbar), ходьба — WASD или джойстик, Shift или джойстик до упора — бегом.
-let club = null, sub = null, subReady = null;
+// Q — уйти с корта, E — действие с предметом перед Лёвой (взять, выпить, поставить, сесть, встать — interact.js),
+// F — второе действие (выпить, взять стул), V — вид (со скамейки → ТВ → крупно за заменой), R — вернуться на корт.
+// На полукорте со стенкой (halfcourt.js) — удары как в матче, Q — обратно на прогулку.
+// Те же действия кнопками (#cbar, #act), ходьба — WASD или джойстик, Shift или джойстик до упора — бегом.
+let club = null, sub = null, subReady = null, half = null;
 function clubKey(code) {
-  if (!started || !game || game.drill) return false;
+  if (!started || !game || !club) return false;
+  if (club.mode === 'wall') { if (code === 'KeyQ') { wallExit(); return true; } return false; }
+  if (game.drill) return false;
   if (code === 'KeyQ' && !club.active) return leave(), true;
   if (!club.active) return false;
-  if (code === 'KeyE') { if (club.mode === 'sit') club.stand(); else club.sit(); } else if (code === 'KeyV') club.nextView(); else if (code === 'KeyR') club.back(game.now, Q.has('auto')); else return false;
+  if (code === 'KeyE' || code === 'KeyF') club.interact.press(code === 'KeyF' ? 'F' : 'E', game.now);
+  else if (code === 'KeyV') club.nextView();
+  else if (code === 'KeyR') { club.hands.reset(); club.back(game.now, Q.has('auto')); } else return false;
   return true;
 }
 async function leave() { if (club.active || club.leaving) return; club.leaving = true; club.exit(await subReady, game.now); club.leaving = false; } // замена догружается в фоне
 const walkInput = () => { const a = axes(); return { x: a.x, y: a.y, run: held('ShiftLeft', 'ShiftRight') || stick.length() > 0.95 }; };
-function clubUi(mode, canSit) {
-  document.body.classList.toggle('club', !!mode);
+function clubUi(mode) {
+  const wall = mode === 'wall';
+  document.body.classList.toggle('club', !!mode && !wall);
+  document.body.classList.toggle('practice', wall); // стенка полукорта: строка серии и «Выйти» как у тренировки
   $('cexit').hidden = !!mode; $('cback').hidden = !mode; $('cview').hidden = mode !== 'sit';
-  $('csit').hidden = !(mode === 'sit' || (mode === 'walk' && canSit)); $('csit').firstChild.textContent = mode === 'sit' ? 'Встать' : 'Сесть';
+  if (wall) $('pnext').hidden = true;
   if (!mode) court.getObjectByName('fence-near').visible = false; // снова матч: камера за этой стенкой
 }
-for (const [id, code] of [['cexit', 'KeyQ'], ['csit', 'KeyE'], ['cview', 'KeyV'], ['cback', 'KeyR']]) $(id).addEventListener('click', (e) => { e.currentTarget.blur(); clubKey(code); });
+for (const [id, code] of [['cexit', 'KeyQ'], ['cview', 'KeyV'], ['cback', 'KeyR']]) $(id).addEventListener('click', (e) => { e.currentTarget.blur(); clubKey(code); });
+// Подсказка действия: на ноутбуке строка внизу «E взять кофе», на телефоне кнопки справа внизу.
+const TOUCH = matchMedia('(pointer: coarse)').matches;
+const actUi = { show(e, f) { for (const [id, t] of [['actE', e], ['actF', f]]) { const b = $(id); b.hidden = !t; if (t) b.lastChild.textContent = TOUCH ? t[0].toUpperCase() + t.slice(1) : t; } } };
+for (const [id, code] of [['actE', 'KeyE'], ['actF', 'KeyF']]) $(id).addEventListener('click', (e) => { e.currentTarget.blur(); clubKey(code); });
+// Стенка на полукорте: войти (E на площадке) и выйти (Q, «Выйти») на прогулку там же.
+function wallEnter(now) { if (club.mode !== 'walk' || club.hands.busy) return; half.enter(now); hud.hint(''); $('pexit').innerHTML = 'Выйти<kbd>Q</kbd>'; club.set('wall'); }
+function wallExit() { half.exit(game.now); $('pexit').textContent = 'Выйти'; club.camYaw = Math.PI; club.fresh = true; club.set('walk'); }
 const clubCam = (dt) => { court.getObjectByName('fence-near').visible = club.camera(dt, camera, follow); };
 
 // Отпустил клавишу удара (или тач-кнопку) — сила дальше не растёт.
@@ -412,16 +429,17 @@ function start(mode = 'match') {
   log('mode', { mode });
   if (mode === 'match') return game.resetPoint(game.now ?? 0);
   document.body.classList.add('practice');
-  const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* без памяти — рекорд на эту игру */ } } };
-  const ui = { text: (h) => { $('ltext').innerHTML = h; }, dots: (n, need) => { $('ldots').innerHTML = need && need < 9 ? Array.from({ length: need }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('') : ''; }, flash: (h, good) => hud.flash(h.replace(/&nbsp;/g, '\u00a0'), good) };
-  game.drill = new Practice(game, mode, { scene, court, ui, store, touch: matchMedia('(pointer: coarse)').matches });
+  game.drill = new Practice(game, mode, { scene, court, ui: practiceUi, store, touch: TOUCH });
   $('pnext').hidden = mode !== 'lessons';
 }
 $('play').addEventListener('click', () => start());
 $('pLessons').addEventListener('click', () => start('lessons'));
 $('pWall').addEventListener('click', () => start('wall'));
 $('pnext').addEventListener('click', () => game?.drill?.skip());
-$('pexit').addEventListener('click', () => location.reload()); // shortcut: выход — перезагрузка в меню; сцена после тренировки не чистится
+$('pexit').addEventListener('click', (e) => { e.currentTarget.blur(); if (club?.mode === 'wall') wallExit(); else location.reload(); }); // shortcut: выход из тренировки — перезагрузка в меню; сцена после неё не чистится
+// Тренировка и стенка полукорта: строка урока, точки, вспышка; рекорд стенки — в памяти браузера.
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* без памяти — рекорд на эту игру */ } } };
+const practiceUi = { text: (h) => { $('ltext').innerHTML = h; }, dots: (n, need) => { $('ldots').innerHTML = need && need < 9 ? Array.from({ length: need }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('') : ''; }, flash: (h, good) => hud.flash(h.replace(/&nbsp;/g, '\u00a0'), good) };
 
 // ---------- Модели ----------
 const bar = document.querySelector('#loader b');
@@ -471,6 +489,15 @@ loader.load(`/models/lev${RIG}.glb`, async (gltf) => {
   opp.measure();
   log('start', { reach: lev.measure(), opp: !!oppGltf, racket: myRacket, w: innerWidth, h: innerHeight, touch: matchMedia('(pointer: coarse)').matches });
   club = new Club({ game, lev, court, sound, onMode: clubUi });
+  // Предметы террасы, скамейки и стенка полукорта (interact.js, props.js, halfcourt.js).
+  const T = court.getObjectByName('terrace').userData.T;
+  const interact = new Interact({ lev, ui: actUi }), hands = new Hands({ lev, club, root: T.group });
+  Object.assign(club, { interact, hands, chairs: T.chairs, terrace: T }); Object.assign(interact, { hands, stand: () => club.stand() });
+  registerTerrace(interact, hands, club, T); registerBenches(interact, club);
+  half = club.half = new HalfCourt({ game, club, court, scene, marks, ui: practiceUi, store, touch: TOUCH });
+  interact.register({ get pos() { return half.inside(lev.pos) ? lev.pos.clone().add(new THREE.Vector3(Math.sin(lev.netYaw + lev.bodyTurn), 0, Math.cos(lev.netYaw + lev.bodyTurn)).multiplyScalar(0.3)) : half.O; },
+    r: 1, label: (st) => (half.inside(lev.pos) && !st.held && !st.chair && !st.seated ? 'бить об\u00a0стенку' : null), act: (st, now) => wallEnter(now) });
+  registerSurface(interact, hands, half.bench);
   // Замена (club.js): модель из Meshy грузится после старта, без неё — соперник в голубом.
   subReady = loadOpt('/models/sub.glb').then((g) => {
     sub = new Player(scene, g ?? oppGltf ?? gltf, { side: 1, height: 1.8, racketColor: '#2f7d4f', cloth: g ? null : '#86bfe6' });
@@ -596,6 +623,7 @@ if (Q.has('debug')) window.__lev = {
     for (let i = 0; i < Math.max(1, Math.round(sec / h)); i++) { game.now += h; game.update(h, game.now, a ? new THREE.Vector3(a.x, 0, -a.y) : levMove()); club.update(h, game.now, a ?? walkInput()); powerFx.track(game.now); }
   },
   get club() { return club; },
+  get half() { return half; },
   render() { window.__camHold = false; if (club.active) { club.snap(camera, follow); clubCam(0); } else follow(1); showLanding(game.now); showSpot(game.now, 1); aimGuide.update(0.2, game.now); powerFx.update(0, game.now); draw(); }, // кадр сразу, не дожидаясь requestAnimationFrame
   shot(eye, at) { window.__camHold = true; camera.position.fromArray(eye); camera.lookAt(new THREE.Vector3(...at)); draw(); }, // кадр с любой точки — смотреть соперника и ракетки
   // Поза удара в момент s (с от удара) на месте, без игры: смотреть руки, кисти, ноги крупно.
