@@ -1,10 +1,11 @@
 #!/bin/zsh
 # Модели окружения из Meshy (ref/meshy/env/*.glb) → public/models/env: упрощение до заданного числа треугольников,
-# meshopt, текстуры 1024 webp.   zsh tools/env-pack.sh chalet 60000   (без аргументов — все)
+# meshopt, текстуры 1024 webp.   zsh tools/env-pack.sh bench 10000   (без аргументов — все)
+# Шале из Meshy убрано 18.11: дом теперь кодом (src/env-house.js), исходник ref/meshy/env/chalet.glb остался.
 set -e
 cd "${0:A:h}/.."
-typeset -A S=(chalet 2048)  # шале большое: в 1024 окна и крыша расплывались
-typeset -A T=(chalet 60000 bar 25000 table 20000 umbrella 8000 balls 20000 bike 30000 bench 10000 planter 30000 fountain 25000 roller 12000)  # planter.glb — уже Remesh 30K в Meshy, исходник planter-raw.glb
+typeset -A S=()  # своя сторона текстуры, если 1024 мало
+typeset -A T=(bar 25000 table 20000 umbrella 8000 balls 20000 bike 30000 bench 10000 planter 30000 fountain 25000 roller 12000)  # planter.glb — уже Remesh 30K в Meshy, исходник planter-raw.glb
 for n in ${1:-${(k)T}}; do
   src=ref/meshy/env/$n.glb; [[ -f $src ]] || { echo "нет $src"; continue; }
   tris=$(npx -y @gltf-transform/cli@4 inspect $src 2>/dev/null | awk -F'│' '/TRIANGLES/ {gsub(/[ ,]/,"",$6); s+=$6} END {print s}')
