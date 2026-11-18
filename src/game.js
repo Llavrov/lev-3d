@@ -161,7 +161,7 @@ export class Game {
     this.lastHitter = p; this.bounces = 0; this.b.bounces = 0; this.serving = null;
     if (p === this.lev) { this.ai.readDrop = !!st.drop && shot.lob == null; this.ai.levShort = false; } // укороченный видно по замаху: соперник срывается раньше
     else if (!served) this.ai.afterShot(st, shot, aim);
-    else if (served === 1 && Math.random() < 0.8 * lean(p, 'net')) { this.ai.net = this.ai.netTried = true; this.log('approach', { serve: 1 }); } // стиль: сеточник идёт вперёд за первой подачей
+    else if (served === 1 && lean(p, 'net') > 0 && Math.random() < 0.8 * lean(p, 'net')) { this.ai.net = this.ai.netTried = true; this.log('approach', { serve: 1 }); } // стиль: сеточник идёт вперёд за первой подачей
     this.log('shot', { who: this.who(p), stroke: st.type, kind: shot.kind, drop: !!st.drop && shot.lob == null, lob: shot.lob != null ? r2(shot.lob) : null, power: r2(power), serve: served, speed: r2(b.vel.length()), spin: r2(shot.spin), aim: [r2(aim.x), r2(aim.z)], target: [r2(target.x), r2(target.z)], opp: [r2(this.opp.pos.x), r2(this.opp.pos.z)], lev: [r2(this.lev.pos.x), r2(this.lev.pos.z)], net: this.ai.net });
     if (p === this.lev) this.lastShot = { stroke: st.type, drop: !!st.drop && shot.lob == null, power, kind: shot.kind };
     this.landing = null;
