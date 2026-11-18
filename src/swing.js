@@ -701,7 +701,7 @@ export class Rig {
     // Не тянемся к горлу дальше, чем достаёт согнутая рука: иначе рука выпрямляется в струну, плечо выкручивается и локоть
     // на коже выглядит вывернутым (Лёва поймал на стартовом экране 17.11). Далеко — кисть съезжает по ручке к правой
     // (двуручный хват остаётся), а если не достать и туда — отпускает ракетку, если ключ не требует держать.
-    const S = this.b.LeftArm.getWorldPosition(new THREE.Vector3()), [L1, L2] = this.armLen.Left, arm = L1 + L2 + 0.08;
+    const S = this.b.LeftArm.getWorldPosition(new THREE.Vector3()), [L1, L2] = this.armLen.Left, arm = (L1 + L2 + 0.08) * (this.reachK ?? 1); // reachK < 1 — отпускать раньше (девушки, girls.js)
     const reachAt = (a) => S.distanceTo(o.clone().addScaledVector(Y, a)) / arm;
     const slide = THREE.MathUtils.smoothstep(reachAt(along), 0.84, 0.95);
     const T = o.clone().addScaledVector(Y, THREE.MathUtils.lerp(along, 0.015, slide)), near = 1 - THREE.MathUtils.smoothstep(lp.distanceTo(T), 0.1, 0.3);

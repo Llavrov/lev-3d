@@ -178,6 +178,7 @@ export class Girls {
       const p = new Player(this.stage, gltf, { side: c.side, height: c.height, racketColor: '#e8e8e8', cloth: [m1, m2][i] ? null : c.cloth });
       if (rackets[c.racket]) dressRacket(p.racket, rackets[c.racket].clone(true));
       p.measure();
+      p.rig.reachK = 0.97; // левая отпускает ракетку чуть раньше: у Сони после смэша рука вытягивалась в струну (playtest poses)
       const g = { c, p, i, where: 'court', job: null, mem: { ...fresh(), ...this.mem[c.id] }, blob: blob(), meshes: [] };
       // Отсекать по кадру (у игроков корта 1 отсечение выключено): сфера по позе покоя с запасом на руки и ракетку.
       p.wrap.traverse((o) => { if (!o.isMesh) return; g.meshes.push(o); if (o.isSkinnedMesh) { o.computeBoundingSphere(); o.boundingSphere.radius *= 1.6; o.frustumCulled = true; } });
