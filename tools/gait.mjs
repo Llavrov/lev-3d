@@ -98,18 +98,18 @@ async function capture(name, c, dir) {
         return { t: +(g.now - t0).toFixed(4), pos: P.pos.toArray(), vel: P.vel.toArray(), turn: P.bodyTurn, bones: B, rk,
           right: new V(1, 0, 0).applyQuaternion(P.wrap.quaternion).toArray(),
           feet: Object.fromEntries(Object.entries(P.feet).map(([k, f]) => [k, { pos: f.pos.toArray(), lift: f.lift, step: !!f.step }])),
-          kneeBack: a.Left.kneeBack || a.Right.kneeBack, elbowBack: a.Left.elbowBack || a.Right.elbowBack, grip: a.gripGap };
+          sliding: P.sliding, kneeBack: a.Left.kneeBack || a.Right.kneeBack, elbowBack: a.Left.elbowBack || a.Right.elbowBack, grip: a.gripGap };
       },
       cam(view, i) {
         const p = P.pos, f = Math.sin(P.netYaw) < 0 ? -1 : 1;
-        if (c.cam === 'top') return __lev.shot([p.x, 9, p.z + 2.5 * s], [p.x, 0.5, p.z]);
+        if (c.cam === 'top') return view === 'top' ? __lev.shot([p.x, 5.5, p.z + 1.2 * s], [p.x, 0.3, p.z]) : __lev.shot([p.x, 2.6, p.z + 4.8 * s], [p.x, 0.8, p.z - 0.4 * s]); // сверху и как камера игры
         const C = c.cam === 'fixed' ? new V(c.at[0] * s, 0, c.at[1] * s) : p;
         if (view === 'back') __lev.shot([C.x, 1.5, C.z + 4.4 * s], [C.x, 0.85, C.z - 0.5 * s]);
         else __lev.shot([C.x + 4.6 * s, 1.1, C.z], [C.x, 0.85, C.z]);
       },
     };
   }, [c, BONES, WHO]);
-  const frames = [], views = c.cam === 'top' ? ['top'] : ['side', 'back'];
+  const frames = [], views = c.cam === 'top' ? ['top', 'back'] : ['side', 'back'];
   for (let i = 0; i < c.dur * FPS; i++) {
     frames.push(await page.evaluate((SUB) => { for (let k = 0; k < SUB; k++) __mo.tick(); return __mo.frame(); }, SUB));
     if (!PNG || i % STEP) continue;
@@ -133,7 +133,7 @@ function metrics(F) {
     const y = F.map((f) => f.bones[s + 'ToeBase'][1]), lo = Math.min(...y);
     let start = null;
     for (let i = 0; i <= F.length; i++) {
-      const on = i < F.length && y[i] < lo + 0.012 && !F[i].feet[s].step;
+      const on = i < F.length && y[i] < lo + 0.012 && !F[i].feet[s].step && !(F[i].sliding > 0.3); // скольжение по грунту на торможении — нарочно
       if (on && start == null) start = i;
       if (!on && start != null) {
         if (i - start >= 3) { let mx = 0; for (let j = start; j < i; j++) mx = Math.max(mx, d2(F[j].bones[s + 'ToeBase'], F[start].bones[s + 'ToeBase'])); slips.push(mx * 100); }

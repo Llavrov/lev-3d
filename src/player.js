@@ -401,7 +401,10 @@ export class Player {
     for (const f of F) {
       const t0 = td(f), lift = (t0 + P.duty) % 1, s = (((g.phase - t0) % 1) + 1) % 1 / P.duty;
       if (!f.step && s < 1) f.heel = Math.max(f.heel ?? 0, smooth(s, 0.55, 1) * P.heel); // к отрыву пятка встаёт, подушечка на месте
-      if (!crossed(lift) || f.step) continue;
+      // До касания по фазе: на отрыве — весь мах; если ступня стоит, а по фазе ей пора быть в махе (вход в бег с двух ног),
+      // она отрывается сразу, а не ждёт следующего круга: иначе на 6 м/с опорная стояла 0,4 с и оставалась в 2 м позади.
+      const left = (((t0 - g.phase) % 1) + 1) % 1;
+      if (f.step || !(crossed(lift) || (s >= 1 && left > 0.25 * (1 - P.duty)))) continue;
       // Где будет таз к касанию — с ускорением (в разгоне и торможении), не дальше точки остановки: при постоянной скорости
       // в торможении ступня вставала далеко впереди, и таз падал на 6 см за кадр, чтобы до неё дотянуться.
       const aim = (t) => {
@@ -411,7 +414,7 @@ export class Player {
         else { const top = Math.max(sp, this.wantV ?? sp), v1 = Math.min(sp + a * t, top), ta = a > 0 ? Math.min(t, (v1 - sp) / a) : t; go = sp * ta + 0.5 * a * ta * ta + v1 * (t - ta); }
         return this.pos.clone().addScaledVector(u.divideScalar(Math.max(sp, 1e-3)), go + P.ahead + this.hipFwd).addScaledVector(bodyRight, f.sign * P.half);
       };
-      const dur = (1 - P.duty) * P.T, k0 = this.legFK(f, P, 0, dt);
+      const dur = Math.max(0.12, Math.min(1 - P.duty, left) * P.T), k0 = this.legFK(f, P, 0, dt);
       f.step = { t0: now, dur, from: f.pos.clone(), to: apart(f, aim(dur)), aim, P, c0: f.pos.clone().sub(k0.pos), l0: k0.lift - 0.07 * (f.heel ?? 0), heel: f.heel ?? 0, yaw: head };
       this.onStep?.(f);
     }
