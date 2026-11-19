@@ -547,7 +547,9 @@ export class Rides {
   sync() {
     const ride = !!this.active; // «Сесть на велосипед», «Слезть» — подсказка и кнопка действия из interact.js (main.js)
     document.body.classList.toggle('ride', ride);
-    this.hbBtn ??= document.querySelector('#vpad .hb'); this.hbBtn.hidden = !(ride && this.active.kind === 'car');
+    const car = ride && this.active.kind === 'car';
+    document.body.classList.toggle('car', car); // в машине над газом «Ручник» — кнопка действия поднимается над ним (index.html)
+    this.hbBtn ??= document.querySelector('#vpad .hb'); this.hbBtn.hidden = !car;
     if (!ride) Object.assign(this.btn, { l: 0, r: 0, g: 0, b: 0, h: 0 });
   }
 }

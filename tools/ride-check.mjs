@@ -99,11 +99,11 @@ for (const [w, h] of [[1440, 900], [390, 844]].filter(([w]) => !ONLY || String(w
   check(!ac.bad, `${tag}: поза за рулём без нарушений ${JSON.stringify(ac.a)}`);
   const carView = async (name, side, back, hgt) => { await page.evaluate(([side, back, hgt]) => { const v = __lev.club.ride.active, l = v.left, f = v.fwd; const at = v.pos.clone().addScaledVector(l, 0.33).addScaledVector(f, -0.3).setY(v.pos.y + 0.9); __lev.shot([at.x + l.x * side - f.x * back, at.y + hgt, at.z + l.z * side - f.z * back], [at.x, at.y, at.z]); }, [side, back, hgt]); await page.screenshot({ path: join(OUT, `${name}-${tag}.png`) }); };
   await carView('car-window', 2.6, 0.3, 0.25); await carView('car-front', -0.6, -4.2, 0.6); await carView('car-back34', 3.2, 4.2, 1.2);
-  if (phone) { // кнопки руля и газа: видны, зона от 44 px, «Газ» везёт, «Тормоз» останавливает
+  if (phone) { // кнопки руля, газа и ручника: видны, зона от 44 px, «Газ» везёт, «Тормоз» останавливает
     const pad = await page.evaluate(() => [...document.querySelectorAll('#vpad button')].map((b) => { const r = b.getBoundingClientRect(); return [b.dataset.k, Math.round(r.width), Math.round(r.height), r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight]; }));
     const hold = (k, sec) => page.evaluate(([k, sec]) => { const b = document.querySelector(`#vpad [data-k="${k}"]`); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); __lev.step(sec, null, 1 / 60); b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); return +__lev.club.ride.active.v.toFixed(2); }, [k, sec]);
     const vg = await hold('g', 1), vb = await hold('b', 1.5);
-    check(pad.length === 4 && pad.every(([, w, h, ok]) => w >= 44 && h >= 44 && ok) && vg > 1 && vb < 0.3, `${tag}: кнопки езды ${JSON.stringify(pad)}, газ → ${vg} м/с, тормоз → ${vb} м/с`);
+    check(pad.length === 5 && pad.every(([, w, h, ok]) => w >= 44 && h >= 44 && ok) && vg > 1 && vb < 0.3, `${tag}: кнопки езды ${JSON.stringify(pad)}, газ → ${vg} м/с, тормоз → ${vb} м/с`);
     await shot('car-buttons');
   }
   // По серпантину до улицы: точки оси дороги через 8 м.
