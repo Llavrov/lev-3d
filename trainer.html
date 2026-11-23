@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#17181b" />
+  <title>Тренер</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root { --bg: #17181b; --fg: #f2f2f0; --mute: #a3a6ad; --btn: #26282d; --btn-on: #f2f2f0; --gut: 16px; }
+    * { box-sizing: border-box; margin: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; }
+    body { font: 16px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+    #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    #top, #bottom { position: fixed; left: 0; right: 0; padding-left: max(var(--gut), env(safe-area-inset-left)); padding-right: max(var(--gut), env(safe-area-inset-right)); pointer-events: none; }
+    #top { top: 0; padding-top: max(14px, env(safe-area-inset-top)); }
+    #bottom { bottom: 0; padding-bottom: max(14px, env(safe-area-inset-bottom)); display: grid; gap: 10px; }
+    h1 { font-size: 20px; font-weight: 700; line-height: 1.25; }
+    #ex { pointer-events: auto; max-width: 100%; min-height: 44px; margin-left: -4px; padding: 0 30px 0 4px; border: 0; border-radius: 10px; background: transparent no-repeat right 6px center / 14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 5l4 4 4-4' fill='none' stroke='%23f2f2f0' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); color: inherit; font: inherit; -webkit-appearance: none; appearance: none; cursor: pointer; text-overflow: ellipsis; }
+    #ex:focus-visible { outline: 2px solid #8ab4ff; }
+    #ex option { background: #26282d; color: #f2f2f0; font-size: 16px; font-weight: 400; }
+    body.fail #bottom, body.fail #ex { display: none; }
+    #cue { margin-top: 6px; font-size: 22px; line-height: 1.3; max-width: 34ch; min-height: 2.6em; }
+    #legend { list-style: none; padding: 0; display: grid; gap: 4px; }
+    #legend li { display: flex; gap: 10px; align-items: baseline; transition: opacity .3s; }
+    #legend li.dim { opacity: .5; }
+    #legend i { flex: none; width: 12px; height: 12px; border-radius: 3px; transform: translateY(1px); }
+    #legend b { font-weight: 600; }
+    #legend.all { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px; }
+    .row { display: flex; gap: 8px; pointer-events: auto; }
+    button { flex: 1; min-height: 44px; padding: 0 10px; border: 0; border-radius: 12px; background: var(--btn); color: var(--fg); font: inherit; font-size: 16px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    button[aria-pressed="true"] { background: var(--btn-on); color: #111; }
+    button:focus-visible { outline: 2px solid #8ab4ff; outline-offset: 2px; }
+    @media (min-width: 760px) {
+      #top { padding-top: 24px; padding-left: 32px; }
+      h1 { font-size: 24px; }
+      #cue { font-size: 26px; }
+      #bottom { left: 32px; right: auto; width: 440px; padding-bottom: 24px; padding-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c" aria-label="Модель показывает упражнение"></canvas>
+  <div id="top">
+    <h1><select id="ex" aria-label="Упражнение"></select></h1>
+    <p id="cue" aria-live="polite"></p>
+  </div>
+  <div id="bottom">
+    <ul id="legend"></ul>
+    <div class="row">
+      <button type="button" id="pause" aria-pressed="false">Пауза</button>
+      <button type="button" id="slow" aria-pressed="false">Медленно</button>
+    </div>
+    <div class="row">
+      <button type="button" data-view="front">Спереди</button>
+      <button type="button" data-view="side">Сбоку</button>
+      <button type="button" data-view="back">Сзади</button>
+    </div>
+  </div>
+  <script>
+    // Страница целиком на 3D. Без WebGL2 (старая видеокарта, удалённый стол) или в старом Safari (ниже 16.4 модуль
+    // не разбирается) экран остался бы пустым: вместо этого честно говорим, что нужно. Как в index.html.
+    window.__ready = false; // main.js ставит true, когда модель загрузилась
+    (function () {
+      var fail = function () {
+        if (window.__ready) return;
+        document.body.className += ' fail';
+        document.getElementById('cue').innerHTML = 'Тренер не&nbsp;запустился в&nbsp;этом браузере. Открой в&nbsp;свежем Chrome, Safari или Firefox с&nbsp;включённой 3D-графикой.';
+      };
+      var c = document.createElement('canvas');
+      if (!c.getContext('webgl2')) return fail();
+      addEventListener('error', function () { setTimeout(fail, 3000); });
+      setTimeout(fail, 45000);
+    })();
+  </script>
+  <script type="module" src="/src/trainer/main.js"></script>
+</body>
+</html>

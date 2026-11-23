@@ -206,11 +206,16 @@ def clean():
         ix = np.floor((s * pts[:, 0] - x0) / px).astype(int); iy = np.floor((pts[:, 1] - y0) / px).astype(int)
         nx, ny = int(0.11 / px), int(0.35 / px); ok = (ix >= 0) & (ix < nx) & (iy >= 0) & (iy < ny)
         occ = np.zeros((ny, nx), bool); occ[iy[ok], ix[ok]] = True
+        miss = 0
         for r in range(ny):
             idx = np.where(occ[r])[0]
             run = np.diff(idx) - 1 if len(idx) > 1 else np.zeros(1, int)  # пустота между занятыми: бок слева, рука справа
-            if run.max() >= 2: ap = (y0 + (r + 0.5) * px, x0 + (idx[run.argmax()] + idx[run.argmax() + 1] + 1) / 2 * px)
-            elif ap: break
+            if run.max() >= 2: ap = (y0 + (r + 0.5) * px, x0 + (idx[run.argmax()] + idx[run.argmax() + 1] + 1) / 2 * px); miss = 0
+            elif ap:
+                # У мускулистой модели рука касается широчайшей на 1–3 см ниже подмышки: короткое касание пропускаем,
+                # иначе подмышка находится на 12 см ниже настоящей (coach, 23.11: слева 1.142 вместо 1.26).
+                miss += 1
+                if miss > 8: break
         y_ap, x_ap = ap or (S[1] - 0.16, Sx - 0.005)
         slope = (Sx - 0.02 - x_ap) / (S[1] + 0.05 - y_ap)
         L = xs - (x_ap + (y - y_ap) * slope)

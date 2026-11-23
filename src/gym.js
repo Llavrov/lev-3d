@@ -213,7 +213,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const w = (L, n) => L.rig.b[n].getWorldPosition(new THREE.Vector3());
 const local = (st, x, y, z) => new THREE.Vector3(x, y, z).applyAxisAngle(UP, st.yaw).add(st.pos);
 // Ладони на точки грифа: запястье туда, где ладонь ляжет на гриф, кисть по грифу (R — к другой руке), пальцы в кулак.
-function grab(L, s, G, R) {
+export function grab(L, s, G, R) {
   const rig = L.rig;
   for (let i = 0; i < 2; i++) {
     const wr = w(L, s + 'Hand'), W = G.clone().sub(rig.palm(s).sub(wr));
@@ -227,7 +227,7 @@ function shift(L, bone, want) {
   L.wrap.position.add(err); L.wrap.updateMatrixWorld(true);
 }
 const mid = (L, a, b) => w(L, a).add(w(L, b)).multiplyScalar(0.5);
-function placeBar(L, bar, group) {
+export function placeBar(L, bar, group) {
   const pr = L.rig.palm('Right'), pl = L.rig.palm('Left'), c = pr.clone().add(pl).multiplyScalar(0.5), ax = pl.sub(pr).normalize();
   group.updateMatrixWorld(true);
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), ax); // гриф вдоль x

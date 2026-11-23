@@ -21,4 +21,5 @@ const playLog = () => ({
   },
 });
 
-export default { plugins: [playLog()], server: { watch: { ignored: ['**/logs/**', '**/test-out/**', '**/backup/**'] } } };
+// trainer.html — страница «Тренер» (src/trainer), отдельный вход сборки.
+export default { plugins: [playLog()], build: { rollupOptions: { input: { main: 'index.html', trainer: 'trainer.html' } } }, server: { watch: { ignored: ['**/logs/**', '**/test-out/**', '**/backup/**'] } } };
