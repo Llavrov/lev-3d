@@ -2,18 +2,19 @@
 // placeBar). Стопы чуть шире плеч, носки наружу на 20°, колени по линии носков, таз назад и вниз до параллели бедра с полом,
 // корпус наклоняется ровно настолько, чтобы гриф стоял над серединой стопы, спина прямая, пятки на полу.
 import * as THREE from 'three';
-import { barbell, grab, placeBar } from '../../gym.js';
-import { V, lerp, smooth, w, mid, key, SIDES, sgn, ruSide, cm, stand, feet, trunk, placeHips, kneeOverToe, kneeIn, look, baseAudit } from '../poses.js';
+import { barbell, placeBar } from '../../gym.js';
+import { V, lerp, smooth, w, mid, key, SIDES, sgn, ruSide, cm, stand, feet, trunk, placeHips, kneeOverToe, kneeIn, look, palmTo, baseAudit } from '../poses.js';
 
 const TOE = 0.35; // носки наружу, рад (20°)
 const MIDFOOT = 0.05; // середина стопы впереди щиколотки, м
-const K = key({ rUp: V(0.75, -0.4, -0.5), rFo: V(0.2, 0.85, -0.3), lUp: V(-0.75, -0.4, -0.5), lFo: V(-0.2, 0.85, -0.3) });
+const K = key({ rUp: V(0.5, -0.8, -0.2), rFo: V(0.3, 0.9, 0.1), lUp: V(-0.5, -0.8, -0.2), lFo: V(-0.3, 0.9, 0.1) });
+const GRIP = 0.42; // кисти от середины грифа, м
 
 // Гриф на трапециях: середина плеч, чуть назад и вверх, как в gym.js.
 function barPoint(rig) {
   const up = w(rig, 'Neck').sub(w(rig, 'Spine1')).normalize(), lat = w(rig, 'LeftArm').sub(w(rig, 'RightArm')).normalize();
   const back = new THREE.Vector3().crossVectors(up, lat).normalize();
-  return { c: mid(rig, 'LeftArm', 'RightArm').addScaledVector(back, 0.085).addScaledVector(up, 0.045), lat };
+  return { c: mid(rig, 'LeftArm', 'RightArm').addScaledVector(back, 0.085).addScaledVector(up, 0.045), lat, up, back };
 }
 // Поза при высоте таза y (середина тазобедренных) и наклоне корпуса el: таз по горизонтали так, чтобы гриф был над серединой стопы.
 function body(T, y, el) {
@@ -54,9 +55,13 @@ export default {
     const { rig } = T;
     body(T, lerp(T.topY, T.bottomY, depth), lerp(84, 50, depth));
     look(T, new THREE.Vector3(0, 0, 3));
-    const { c, lat } = barPoint(rig);
-    grab(T, 'Right', c.clone().addScaledVector(lat, -0.42), lat);
-    grab(T, 'Left', c.clone().addScaledVector(lat, 0.42), lat.clone().negate());
+    // Кисти на гриф, локти под грифом: вниз вдоль корпуса, чуть назад и наружу. Раньше локоть брался из исходной позы
+    // (grab из gym.js) и вставал выше плеча позади него: плечо отведено назад на 79°, так человек не может.
+    const { c, lat, up, back } = barPoint(rig);
+    for (const s of SIDES) {
+      const out = lat.clone().multiplyScalar(sgn(s)), pole = up.clone().negate().addScaledVector(back, 0.3).addScaledVector(out, 0.25);
+      palmTo(T, s, c.clone().addScaledVector(out, GRIP), out.clone().negate(), pole);
+    }
     rig.grip('Right', 1); rig.grip('Left', 1);
     placeBar(T, T.bar, T.gear);
   },

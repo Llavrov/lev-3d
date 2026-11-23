@@ -72,6 +72,10 @@ export function setupBody(T) {
   const hq = rig.b.Head.getWorldQuaternion(new THREE.Quaternion()).invert();
   T.face = FWD.clone().applyQuaternion(hq); // «вперёд» лица в осях головы
   T.headUp = UP.clone().applyQuaternion(hq);
+  // «Перед» бедра в осях его кости: туда на коже смотрит колено, голень сгибается только в обратную сторону. По нему
+  // проверка колена не зависит от того, стоит тело, лежит или смотрит в пол (проверка Rig.audit меряет от пола и в упоре врёт).
+  rig.legFront = {};
+  for (const s of SIDES) rig.legFront[s] = FWD.clone().applyQuaternion(rig.b[s + 'UpLeg'].getWorldQuaternion(new THREE.Quaternion()).invert());
   T.footFlat = {}; // ступня плоско и носком в +Z в мире (поза покоя стоя)
   for (const s of SIDES) T.footFlat[s] = rig.b[s + 'Foot'].getWorldQuaternion(new THREE.Quaternion());
 }
@@ -172,8 +176,11 @@ export function baseAudit(T, opt = {}) {
   const { rig } = T, bad = [], m = {}, a = rig.audit();
   for (const s of SIDES) {
     if (a[s].elbowBack) bad.push(`${ruSide(s)} локоть гнётся назад`);
-    if (a[s].kneeBack) bad.push(`${ruSide(s)} колено гнётся назад`);
     const hip = w(rig, s + 'UpLeg'), knee = w(rig, s + 'Leg'), ank = w(rig, s + 'Foot');
+    const th = knee.clone().sub(hip).normalize(), sh = ank.clone().sub(knee).normalize(), bend = sh.clone().addScaledVector(th, -sh.dot(th));
+    const kf = rig.legFront[s].clone().applyQuaternion(rig.b[s + 'UpLeg'].getWorldQuaternion(new THREE.Quaternion())); kf.addScaledVector(th, -kf.dot(th)).normalize();
+    m['kneeFace' + s[0]] = bend.lengthSq() > 1e-6 ? +bend.clone().normalize().dot(kf).toFixed(2) : 0; // −1: голень уходит ровно назад от колена, +1: вперёд
+    if (rad(th.angleTo(sh)) > 12 && m['kneeFace' + s[0]] > 0.3) bad.push(`${ruSide(s)} колено гнётся назад`);
     m['knee' + s[0]] = Math.round(rad(knee.clone().sub(hip).angleTo(ank.clone().sub(knee))));
     m['elbow' + s[0]] = a[s].elbow;
     const db = T.db?.[s];
@@ -182,6 +189,20 @@ export function baseAudit(T, opt = {}) {
       m['grip' + s[0]] = cm(off);
       if (off > 0.02 || Math.abs(along) > DB.grip / 2) bad.push(`${ruSide(s, true)} кисть не на рукояти (${cm(off)} см)`);
     }
+  }
+  // Плечевой сустав. th — подъём плеча от «висит вдоль корпуса» (0°) через «в сторону или вперёд» (90°) до «вверх» (180°),
+  // back — насколько плечо позади плоскости корпуса. У человека назад рука идёт на 50–60° только опущенной; на уровне плеча
+  // уже около 30°, над головой около 15°. Присед 23.11: локоть стоял позади плеча на 79° при подъёме 101° — «руки заломлены».
+  const axis = w(rig, 'Neck').sub(w(rig, 'Hips')).normalize(), across = w(rig, 'LeftArm').sub(w(rig, 'RightArm')).normalize();
+  const front = new THREE.Vector3().crossVectors(across, axis).normalize();
+  for (const s of SIDES) {
+    const u = w(rig, s + 'ForeArm').sub(w(rig, s + 'Arm')).normalize();
+    const th = rad(u.angleTo(axis.clone().negate())), back = rad(Math.asin(clamp(-u.dot(front), -1, 1)));
+    const lim = th < 45 ? 55 : th < 110 ? lerp(55, 30, (th - 45) / 65) : lerp(30, 15, Math.min(1, (th - 110) / 50));
+    m['armUp' + s[0]] = Math.round(th); m['armBack' + s[0]] = Math.round(back);
+    if (back > lim) bad.push(`${ruSide(s, true)} рука заломлена назад: плечо на ${Math.round(back)}° позади корпуса при подъёме ${Math.round(th)}° (предел ${Math.round(lim)}°)`);
+    if (a[s].wrist > 50) bad.push(`${ruSide(s, true)} кисть сломана в запястье: ${a[s].wrist}°`);
+    m['wrist' + s[0]] = a[s].wrist;
   }
   for (const n of opt.feet ?? ['LeftFoot', 'RightFoot']) {
     const ref = T.ref?.[n];
