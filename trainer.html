@@ -29,6 +29,7 @@
     #bottom::before { content: ''; position: absolute; z-index: -1; inset: -56px 0 0; background: linear-gradient(to top, var(--bg) 62%, transparent); }
     #cue { font-size: 22px; font-weight: 500; line-height: 1.3; max-width: 34ch; }
     #cue b { font-weight: 700; }
+    #pace { font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--mute); } /* с какой скоростью идёт показ и как делать в жизни */
     #cue span { opacity: 0; transition: opacity .35s ease; }
     #cue span.on { opacity: 1; }
     #cue i { display: block; margin-bottom: 6px; font-style: normal; font-size: 17px; color: var(--mute); } /* вопрос голосом */
@@ -56,6 +57,7 @@
   </div>
   <div id="bottom">
     <ul id="legend" hidden></ul>
+    <p id="pace"></p>
     <p id="cue" aria-live="polite"></p>
   </div>
   <script>

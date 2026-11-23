@@ -53,6 +53,7 @@ export default {
   dose: { sets: '2', reps: '18 м на сторону', rest_s: 30 },
   mistakes: ['Плечи крутятся вместе с тазом', 'Ноги цепляются друг за друга'],
   view: 'front',
+  pace: 'Начни в этом темпе, потом быстрее', // показ идёт медленнее или короче, чем делают в жизни
   wide: true,
   flat: 'front',
   setup(T) { measureFeet(T); T.S = build(T); },

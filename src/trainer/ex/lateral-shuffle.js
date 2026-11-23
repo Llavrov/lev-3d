@@ -42,6 +42,7 @@ export default {
   dose: { sets: '3', reps: '2 × 18 м', rest_s: 45 },
   mistakes: ['Стопы сходятся вместе', 'Высокая стойка, таз прыгает', 'Ноги скрещиваются'],
   view: 'front',
+  pace: 'В жизни быстрее, стойку не поднимай', // показ идёт медленнее или короче, чем делают в жизни
   wide: true,
   flat: 'front',
   setup(T) { measureFeet(T); T.S = build(T); },

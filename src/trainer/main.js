@@ -80,6 +80,7 @@ function setStep(i, at = 0) {
   si = (i % steps.length + steps.length) % steps.length; tau = at; manual = false; dbgT = null;
   const st = steps[si];
   caption((st.kind === 'phase' ? `<b>${esc(typo(st.title))}.</b> ` : '') + spell(st.text));
+  $('pace').textContent = typo(st.speed < 1 ? 'Замедленно в 2 раза' : ex.pace ?? 'В рабочем темпе'); // Лёва 23.11: «не понимаю, с какой скоростью выполнять»
   tell();
 }
 // Родителю (приложение): что сейчас на экране. Он кладёт это в контекст голосового вопроса.

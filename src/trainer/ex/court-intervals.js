@@ -47,6 +47,7 @@ export default {
   dose: { sets: '3', reps: '6–8 очков: 12 с работы, 20 с отдыха', rest_s: 90 },
   mistakes: ['Слишком короткий отдых', 'Ленивая работа без сплит-степа'],
   view: 'front',
+  pace: 'Работа на максимуме, отдых шагом', // показ идёт медленнее или короче, чем делают в жизни
   wide: true,
   flat: 'front',
   setup(T) { measureFeet(T); T.S = build(T); },

@@ -41,6 +41,7 @@ export default {
   dose: { sets: '2', reps: '6 на сторону', rest_s: 45 },
   mistakes: ['Шаг назад перед стартом', 'Высокий центр тяжести'],
   view: 'front',
+  pace: 'В жизни первый шаг взрывной', // показ идёт медленнее или короче, чем делают в жизни
   wide: true,
   flat: 'front',
   setup(T) { measureFeet(T); T.S = build(T); },
