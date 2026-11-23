@@ -31,6 +31,7 @@ export default {
     { name: 'держи', cue: 'Тело одной линией, дыши ровно', tempo_s: 30 },
   ],
   dose: { sets: '2', reps: '20–30 с на сторону', rest_s: 30 },
+  mistakes: ['Таз провисает', 'Корпус заваливается вперёд'],
   view: 'front',
   motion: () => 0,
   setup(T) {

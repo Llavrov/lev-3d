@@ -36,6 +36,7 @@ export default {
     { name: 'возврат', cue: 'Медленно назад', tempo_s: 2, stretch: true },
   ],
   dose: { sets: '3', reps: '8–10 на сторону', rest_s: 60 },
+  mistakes: ['Тянут одни руки', 'Скрут в пояснице без таза'],
   view: 'front',
   sideFrom: 'left', // блок справа закрыл бы человека
   motion(i, u) { const e = smooth(u); return i === 0 ? 0.35 * e : i === 1 ? 0.35 + 0.65 * e : 1 - e; },

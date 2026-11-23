@@ -16,5 +16,16 @@ import birdDog from './bird-dog.js';
 import gluteBridge from './single-leg-glute-bridge.js';
 import swimmer from './superman-swimmer.js';
 import ytwl from './ytwl-raise.js';
+// Работа ног под теннис (23.11.2026, исполнитель A): шаги по полу, помощник ../steps.js.
+import shuffle from './lateral-shuffle.js';
+import carioca from './carioca.js';
+import crossover from './crossover-step-drill.js';
+import spider from './spider-drill.js';
+import intervals from './court-intervals.js';
+// Работа ног под теннис (23.11.2026, исполнитель B): прыжки и торможение, помощник ../jump.js.
+import splitStep from './split-step-reaction.js';
+import bound from './lateral-bound-stick.js';
+import decel from './deceleration-lunge.js';
+import balance from './single-leg-balance.js';
 
-export default [rdl, squat, bench, row, lunge, plank, chop, hamStretch, hip9090, spiderman, deadBug, birdDog, gluteBridge, swimmer, ytwl];
+export default [rdl, squat, bench, row, lunge, plank, chop, hamStretch, hip9090, spiderman, deadBug, birdDog, gluteBridge, swimmer, ytwl, shuffle, carioca, crossover, spider, intervals, splitStep, bound, decel, balance];

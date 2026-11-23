@@ -44,6 +44,7 @@ export default {
     { name: 'возврат', cue: 'Медленно, без прогиба', tempo_s: 2 },
   ],
   dose: { sets: '2', reps: '10 на сторону', rest_s: 30 },
+  mistakes: ['Поясница отрывается', 'Слишком быстрый темп'],
   view: 'side',
   flat: 'side',
   span: 2,

@@ -53,6 +53,7 @@ export default {
     { name: 'смена', cue: 'Плавно меняй стороны', tempo_s: 1 },
   ],
   dose: { sets: '2', reps: '20', rest_s: 30 },
+  mistakes: ['Сильный прогиб в шее', 'Рывки вместо плавности'],
   view: 'side',
   flat: 'side',
   span: 2,

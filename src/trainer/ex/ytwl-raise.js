@@ -67,6 +67,7 @@ export default {
     { name: 'L', cue: 'Локти у боков, кисти наружу, L', tempo_s: 2 },
   ],
   dose: { sets: '2', reps: '8 на букву', rest_s: 45 },
+  mistakes: ['Тяжёлый вес', 'Подъём плечами к ушам'],
   view: 'side',
   setup(T) {
     T.feetAt = feet(T, T.hipHalf);

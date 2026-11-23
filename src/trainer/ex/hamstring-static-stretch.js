@@ -53,6 +53,7 @@ export default {
     { name: 'растяжка', cue: 'Наклон от таза, колено почти прямое', tempo_s: 30, stretch: true },
   ],
   dose: { sets: '2', reps: '30 с на ногу', rest_s: 15 },
+  mistakes: ['Круглая спина', 'Растяжка до разминки'],
   view: 'side',
   setup(T) {
     const { rig } = T;

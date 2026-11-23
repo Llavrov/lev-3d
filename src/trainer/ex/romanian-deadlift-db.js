@@ -54,11 +54,12 @@ export default {
   name: 'Румынская тяга с гантелями',
   muscles: { work: ['hamstrings', 'glutes', 'lower_back'], stretch: ['hamstrings', 'glutes'], careful: ['lower_back'] },
   phases: [
-    { name: 'Вниз', cue: 'Таз назад, гантели скользят вниз по ногам', tempo_s: 3, stretch: true },
-    { name: 'Пауза', cue: 'Спина прямая, задняя поверхность бедра натянута', tempo_s: 1, stretch: true },
-    { name: 'Вверх', cue: 'Таз вперёд, сожми ягодицы, без прогиба назад', tempo_s: 2 },
+    { name: 'Вниз', cue: 'Таз назад, гантели вдоль ног', tempo_s: 3, stretch: true },
+    { name: 'Пауза', cue: 'Спина прямая, бедро сзади натянуто', tempo_s: 1, stretch: true },
+    { name: 'Вверх', cue: 'Таз вперёд, сожми ягодицы', tempo_s: 2 },
   ],
   dose: { sets: 3, reps: 10, rest_s: 90 },
+  mistakes: ['Круглая спина', 'Гантели далеко от ног'],
   view: 'side',
   setup(T) { dumbbells(T); T.feetAt = feet(T, T.hipHalf); },
   pose(T, { depth }) {

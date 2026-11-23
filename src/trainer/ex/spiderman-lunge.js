@@ -53,6 +53,7 @@ export default {
     { name: 'смена', cue: 'Стопа назад, другая нога', tempo_s: 1 },
   ],
   dose: { sets: '2', reps: '6 на сторону', rest_s: 30 },
+  mistakes: ['Колено за носком', 'Круглая спина'],
   view: 'side',
   flat: 'side',
   span: 2,

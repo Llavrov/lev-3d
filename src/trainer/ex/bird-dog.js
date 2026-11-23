@@ -46,6 +46,7 @@ export default {
     { name: 'возврат', cue: 'Медленно на четвереньки', tempo_s: 2 },
   ],
   dose: { sets: '3', reps: '10 на сторону', rest_s: 30 },
+  mistakes: ['Таз раскрывается', 'Прогиб в пояснице'],
   view: 'side',
   flat: 'side',
   span: 2,

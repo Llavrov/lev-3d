@@ -15,11 +15,11 @@ export const wordsShown = (tau) => Math.max(0, Math.floor((tau - LEAD) / WORD) +
 
 // Шаг: kind (whole, phase, careful), title, text, отрезок цикла from..to в секундах, speed (доля обычного темпа),
 // dur — длина шага, focus — { role: work | stretch | careful, list } или null (тело целиком).
-export function buildSteps(ex) {
+export function buildSteps(ex, dose) { // dose — дозировка из плана тренировки вместо своей
   const cyc = cycleOf(ex), m = ex.muscles, work = m.work.filter((x) => !m.careful.includes(x)), main = work.length ? work : m.work;
   const mk = (o, max = MAX) => ({ ...o, dur: Math.max(readTime(o.text), Math.min((o.to - o.from) / o.speed, max)) });
   const steps = [mk({ kind: 'whole', title: 'Целиком', from: 0, to: cyc * (cyc < 5 ? 2 : 1), speed: 1, focus: null, // короткое движение — дважды
-    text: `${ex.dose.sets} × ${ex.dose.reps}, отдых ${ex.dose.rest_s} с. Работают ${names(main)}.` })];
+    text: `${dose || `${ex.dose.sets} × ${ex.dose.reps}, отдых ${ex.dose.rest_s} с`}. Работают ${names(main)}.` })];
   let t = 0;
   for (const p of ex.phases) {
     const st = !!p.stretch && m.stretch.length > 0, list = st ? m.stretch : main;
@@ -29,6 +29,8 @@ export function buildSteps(ex) {
   }
   if (m.careful.length) steps.push(mk({ kind: 'careful', title: 'Беречь', from: 0, to: cyc, speed: 1, focus: { role: 'careful', list: m.careful },
     text: `Беречь: ${names(m.careful)}.` }, 6));
+  if (ex.mistakes?.length) steps.push(mk({ kind: 'whole', title: 'Ошибки', from: 0, to: cyc, speed: 1, focus: null,
+    text: `Ошибки: ${ex.mistakes.map((s) => s[0].toLowerCase() + s.slice(1)).join('; ')}.` }, 6));
   return steps;
 }
 // Секунда цикла в момент tau шага: движение идёт своим темпом и стоит в конце отрезка, пока дочитывается подпись.

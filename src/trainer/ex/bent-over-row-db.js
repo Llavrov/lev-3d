@@ -14,11 +14,12 @@ export default {
   name: 'Тяга гантелей в наклоне',
   muscles: { work: ['lats', 'rhomboids', 'traps', 'delts_rear', 'biceps'], stretch: ['lats', 'rhomboids'], careful: ['lower_back'] },
   phases: [
-    { name: 'тяга', cue: 'Локти назад вдоль корпуса, гантели к низу рёбер', tempo_s: 1 },
+    { name: 'тяга', cue: 'Локти назад, гантели к рёбрам', tempo_s: 1 },
     { name: 'пауза', cue: 'Сведи лопатки, корпус неподвижен', tempo_s: 1 },
     { name: 'вниз', cue: 'Медленно опусти, спина прямая', tempo_s: 2, stretch: true },
   ],
   dose: { sets: 3, reps: 10, rest_s: 90 },
+  mistakes: ['Рывок корпусом', 'Круглая спина'],
   view: 'side',
   setup(T) { dumbbells(T); T.feetAt = feet(T, T.hipHalf + 0.02); },
   motion(i, u) { const e = smooth(u); return i === 0 ? e : i === 1 ? 1 : 1 - e; },

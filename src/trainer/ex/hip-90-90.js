@@ -46,6 +46,7 @@ export default {
     { name: 'держи', cue: 'Наклон к передней голени, спина прямая', tempo_s: 20, stretch: true },
   ],
   dose: { sets: '2', reps: '6 смен', rest_s: 30 },
+  mistakes: ['Опора на руки сзади', 'Круглая спина'],
   view: 'front',
   flat: 'front',
   span: 2,

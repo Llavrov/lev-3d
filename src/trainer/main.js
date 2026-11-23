@@ -20,9 +20,10 @@ import { buildSteps, cycleTime, wordsShown, words } from './show.js';
 const Q = new URLSearchParams(location.search), DEBUG = Q.has('debug');
 let SHOW = Q.get('muscles') === 'all' ? MUSCLES : Q.get('muscles') === 'off' ? [''] : (Q.get('muscles') ?? '').split(',').filter((m) => MUSCLES.includes(m)); let ALL = SHOW.length > 0;
 const MODEL = /^[\w-]+$/.test(Q.get('model') ?? '') ? Q.get('model') : 'coach-v2';
-const ex = exerciseById(Q.get('ex')), steps = buildSteps(ex);
+const PLAN = Q.has('plan'); // показ тренировки по очереди: имя и стрелки рисует приложение, сюда приходит дозировка из плана
+const ex = exerciseById(Q.get('ex')), steps = buildSteps(ex, Q.get('dose'));
 const COL = { work: '#ff4d2e', stretch: '#2aa8ff', careful: '#ffc21a' };
-const VIEWS = { front: 0, side: ex.sideFrom === 'left' ? Math.PI / 2 : -Math.PI / 2, back: Math.PI }; // азимут камеры: тело смотрит в +Z, сбоку — с правой стороны (−X), если снаряд не там
+const VIEWS = { front: 0, side: ex.sideFrom === 'left' ? Math.PI / 2 : -Math.PI / 2, back: Math.PI, quarter: -Math.PI / 4 }; // quarter — спереди-сбоку: путь вперёд короче в кадре, человек крупнее // азимут камеры: тело смотрит в +Z, сбоку — с правой стороны (−X), если снаряд не там
 const EL = 0.1; // камера чуть сверху
 const $ = (id) => document.getElementById(id);
 const mobile = matchMedia('(pointer: coarse)').matches;
@@ -54,6 +55,9 @@ const pick = $('ex');
 pick.innerHTML = EXERCISES.map((e) => `<option value="${e.id}"${e === ex ? ' selected' : ''}>${typo(e.name)}</option>`).join('');
 const openEx = (id) => { const q = new URLSearchParams(location.search); q.set('ex', id); location.search = q.toString(); };
 pick.addEventListener('change', () => openEx(pick.value));
+if (PLAN) document.body.classList.add('plan');
+// Соседнее упражнение: в показе тренировки его открывает приложение (type: 'nav'), иначе листаем весь список.
+const nav = (d) => (PLAN ? parent.postMessage({ source: 'trainer', type: 'nav', d }, location.origin) : openEx(EXERCISES[(EXERCISES.indexOf(ex) + d + EXERCISES.length) % EXERCISES.length].id));
 document.title = ex.name;
 $('bars').innerHTML = steps.map(() => '<i><b></b></i>').join('');
 const fills = [...$('bars').querySelectorAll('b')];
@@ -182,8 +186,11 @@ function release(e, cancel) {
   if (p.hold) { held = false; return; }
   if (cancel) return;
   if (ask) { if (ask.state === 'answer' || ask.state === 'error') setAsk({ state: 'idle' }); return; }
-  if (Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy)) return openEx(EXERCISES[(EXERCISES.indexOf(ex) + (dx < 0 ? 1 : -1) + EXERCISES.length) % EXERCISES.length].id);
-  if (!p.moved) setStep(si + (e.clientX < innerWidth * 0.33 ? -1 : 1));
+  if (Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy)) return nav(dx < 0 ? 1 : -1);
+  if (p.moved) return;
+  const d = e.clientX < innerWidth * 0.33 ? -1 : 1;
+  if (PLAN && (si + d < 0 || si + d >= steps.length)) return nav(d); // за последним шагом — следующее упражнение тренировки
+  setStep(si + d);
 }
 canvas.addEventListener('pointerup', (e) => release(e, false));
 canvas.addEventListener('pointercancel', (e) => release(e, true));
@@ -213,9 +220,9 @@ function show(dt) {
   setTargets(map);
   setJoints(T.rig, ALL ? [] : whole ? ex.muscles.careful : st.focus.role === 'careful' ? st.focus.list : [], pulse);
   stepMuscles(dt);
-  focusK += ((whole ? 0 : 1) - focusK) * (dt == null ? 1 : 1 - Math.exp(-dt / 0.35));
+  focusK += ((whole || ex.wide ? 0 : 1) - focusK) * (dt == null ? 1 : 1 - Math.exp(-dt / 0.35));
   U.uFocus.value = focusK;
-  if (whole) wholeGoal(); else focusGoal(st.focus.list);
+  if (whole || ex.wide) wholeGoal(); else focusGoal(st.focus.list); // wide — упражнение идёт по полу: на фазах важны стопы и всё тело, крупный план мышцы там не читается
 }
 // Габарит движения за цикл: кости и снаряды в 24 точках (у поочерёдных упражнений — за оба цикла), плюс толщина тела.
 function measure() {

@@ -37,6 +37,7 @@ export default {
     { name: 'вверх', cue: 'Толкай пол всей стопой', tempo_s: 1 },
   ],
   dose: { sets: '4', reps: '5–6', rest_s: 150 },
+  mistakes: ['Колени заваливаются внутрь', 'Пятки отрываются от пола', 'Круглая поясница внизу'],
   view: 'side',
   setup(T) {
     const { rig } = T;

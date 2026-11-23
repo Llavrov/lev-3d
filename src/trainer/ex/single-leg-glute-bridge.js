@@ -41,6 +41,7 @@ export default {
     { name: 'вниз', cue: 'Опусти медленно', tempo_s: 2 },
   ],
   dose: { sets: '3', reps: '10 на ногу', rest_s: 45 },
+  mistakes: ['Таз перекашивается', 'Прогиб в пояснице'],
   view: 'side',
   flat: 'side',
   motion(i, u) { const e = smooth(u); return i === 0 ? e : i === 1 ? 1 : 1 - e; },

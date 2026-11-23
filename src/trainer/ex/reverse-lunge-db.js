@@ -18,6 +18,7 @@ export default {
     { name: 'возврат', cue: 'Толкай передней ногой', tempo_s: 1 },
   ],
   dose: { sets: '3', reps: '8 на ногу', rest_s: 75 },
+  mistakes: ['Переднее колено уходит внутрь', 'Толчок задней ногой'],
   view: 'side',
   span: 2,
   setup(T) { dumbbells(T); },

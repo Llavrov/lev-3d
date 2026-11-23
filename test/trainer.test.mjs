@@ -35,18 +35,19 @@ import { buildSteps, cycleTime, wordsShown, words, readTime } from '../src/train
 
 test('показ румынской тяги: целиком, три фазы медленно, беречь; тексты целиком', () => {
   const st = buildSteps(ex);
-  assert.deepEqual(st.map((x) => x.kind), ['whole', 'phase', 'phase', 'phase', 'careful']);
+  assert.deepEqual(st.map((x) => x.kind), ['whole', 'phase', 'phase', 'phase', 'careful', 'whole']);
   assert.deepEqual(st.map((x) => x.text), [
     '3\u00a0×\u00a010, отдых 90 с. Работают задняя поверхность бедра, ягодицы.',
-    'Таз назад, гантели скользят вниз по ногам. Тянутся задняя поверхность бедра, ягодицы.',
-    'Спина прямая, задняя поверхность бедра натянута. Тянутся задняя поверхность бедра, ягодицы.',
-    'Таз вперёд, сожми ягодицы, без прогиба назад. Работают задняя поверхность бедра, ягодицы.',
-    'Беречь: поясница.']);
+    'Таз назад, гантели вдоль ног. Тянутся задняя поверхность бедра, ягодицы.',
+    'Спина прямая, бедро сзади натянуто. Тянутся задняя поверхность бедра, ягодицы.',
+    'Таз вперёд, сожми ягодицы. Работают задняя поверхность бедра, ягодицы.',
+    'Беречь: поясница.',
+    'Ошибки: круглая спина; гантели далеко от ног.']);
   assert.equal(st[0].focus, null);
   assert.deepEqual(st[1].focus, { role: 'stretch', list: ['hamstrings', 'glutes'] });
   assert.deepEqual(st[3].focus, { role: 'work', list: ['hamstrings', 'glutes'] }); // поясница в «беречь», в работающих её не показываем
   assert.deepEqual(st[4].focus, { role: 'careful', list: ['lower_back'] });
-  assert.deepEqual(st.map((x) => [x.from, x.to, x.speed]), [[0, 6, 1], [0, 3, 0.5], [3, 4, 0.5], [4, 6, 0.5], [0, 6, 1]]);
+  assert.deepEqual(st.map((x) => [x.from, x.to, x.speed]), [[0, 6, 1], [0, 3, 0.5], [3, 4, 0.5], [4, 6, 0.5], [0, 6, 1], [0, 6, 1]]);
 });
 
 test('показ: шаг не короче чтения подписи, движение стоит в конце отрезка, слова идут по одному', () => {
@@ -59,6 +60,6 @@ test('показ: шаг не короче чтения подписи, движ
     assert.ok(wordsShown(s.dur - 1) >= words(s.text).length, `${e.id} ${s.title}: подпись дочитана за секунду до конца шага`);
   }
   assert.equal(wordsShown(0), 0); assert.equal(wordsShown(0.35), 1); assert.equal(wordsShown(1), 3);
-  assert.equal(buildSteps(exerciseById('side-plank')).length, 4); // у планки две фазы
+  assert.equal(buildSteps(exerciseById('side-plank')).length, 5); // у планки две фазы, целиком, «беречь» и «ошибки»
   assert.deepEqual(words('отдых 90 с. Таз назад и в пол'), ['отдых', '90\u00a0с.', 'Таз', 'назад', 'и\u00a0в\u00a0пол']); // предлог и единица не отрываются
 });
