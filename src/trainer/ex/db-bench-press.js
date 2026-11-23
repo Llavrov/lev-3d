@@ -38,6 +38,7 @@ export default {
   ],
   dose: { sets: '3', reps: '8–10', rest_s: 90 },
   view: 'front',
+  flat: 'side', // плоская фигурка виджета: спереди лежащий сливается в пятно
   setup(T) {
     T.add(bench()); dumbbells(T);
     T.retract = 12; // лопатки сведены сильнее, чем стоя

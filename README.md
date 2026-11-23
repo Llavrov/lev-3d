@@ -193,4 +193,14 @@
 - Подсветка (`src/trainer/muscles.js`): мышца вершины считается при загрузке по главной кости, сектору вокруг её оси и доле длины; высоты туловища меряются от тазобедренного и плечевого суставов. Красный — работает, синий — тянется (на фазах с `stretch: true`), жёлтый с пульсацией — беречь.
 - Новое упражнение сдавать так: `audit()` в 8 точках цикла без нарушений, листы и ролик скиллом `scene-shoot` (`test-out/trainer/`), три ракурса, ширины 375 и 1440.
 - Модель `coach` (23.11): Лёва без лица, голый торс, чёрные шорты. Опорные кадры из его видео `ref/body-2026-11/`, виды и промпты GPT `gpt/trainer/`, Meshy 7.1 Multi-view, Ultra 2K, текстура 4K (35 кредитов), сетка 103 тыс., рост 1,82 м → `ref/meshy/coach-rigged.glb`, `tools/rig-build.sh coach` → `public/models/coach-v2.glb` (2 МБ). Метку Groin в риге Meshy не опускать: это высота кости Hips (1,00 м), с опущенной меткой нога гнулась посередине бедра.
-- Не сделано: кнопка «показать» в карточке тренировки бота, проверка на настоящем телефоне и в браузере Telegram.
+- В мини-аппе Lev Pro Max (23.11): `npm run build:app` собирает только тренера с базой `/trainer-app/` в `../lev-pro-max-app/public/trainer-app/` и кладёт туда `coach-v2.glb`; страница аппа `/trainer?ex=<id>` показывает его в iframe на весь экран, ссылка `t.me/lionarr_pro_max_bot?startapp=go_trainer__<id>` (без `__<id>` первое упражнение). После правок тренера пересобрать этой командой и выложить апп. Путь модели идёт от `import.meta.env.BASE_URL`, поэтому обе сборки берут её со своего адреса; `?model=` в аппе работает только для `coach-v2`.
+- Виджет «Техника» в боте Lev Pro Max (23.11): в виджете Telegram нет WebGL и сети, поэтому там плоская фигурка по позам этого тренера. `window.__trainer.keys()` (страница с `?debug`) отдаёт суставы и снаряды в плоскости ракурса (`flat` у упражнения, иначе `view`), по две позы на фазу. Снять все упражнения и собрать файл для бота:
+  ```bash
+  S=~/.claude/skills/scene-shoot/shoot.mjs; U=http://localhost:3961/trainer.html
+  node $S serve --adapter plain --dir "$PWD" --cmd "npx vite --port 3961 --strictPort" --port 3961
+  URLS=$(for e in $(ls src/trainer/ex | grep -v index | sed 's/\.js$//'); do printf "%s?debug&ex=%s," $U $e; done | sed 's/,$//')
+  node $S frames --adapter plain --url "$URLS" --widths 375 --wait-for "body.ready" --read "JSON.stringify(window.__trainer.keys())" --name keys --out "$PWD/test-out/trainer-keys"
+  node tools/trainer-keys.mjs && node $S stop --adapter plain --port 3961
+  ```
+  Файл ложится в `../voice-bot/trainer_keys.json`, виджет собирает `voice-bot/workout_tech.py`. После нового упражнения переснять позы и прогнать `voice-bot/tests/test_workout_tech.py`: виджет на всю тренировку обязан уложиться в 4096 байт после сжатия (семь упражнений занимают 3946). Лежащего и стоящего на руках показывать сбоку (`flat: 'side'`): спереди плоская фигурка сливается в пятно.
+- Не сделано: проверка на настоящем телефоне и в браузере Telegram.

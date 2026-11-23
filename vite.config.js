@@ -22,4 +22,9 @@ const playLog = () => ({
 });
 
 // trainer.html — страница «Тренер» (src/trainer), отдельный вход сборки.
-export default { plugins: [playLog()], build: { rollupOptions: { input: { main: 'index.html', trainer: 'trainer.html' } } }, server: { watch: { ignored: ['**/logs/**', '**/test-out/**', '**/backup/**'] } } };
+// `vite build --mode app` (npm run build:app): только тренер, с базой /trainer-app/ прямо в public/ мини-аппа Lev Pro Max;
+// папку public игры не копируем (43 МБ моделей), нужную модель кладёт сам скрипт build:app.
+const APP_OUT = '../lev-pro-max-app/public/trainer-app';
+export default ({ mode }) => mode === 'app'
+  ? { base: '/trainer-app/', publicDir: false, build: { outDir: APP_OUT, emptyOutDir: true, rollupOptions: { input: { trainer: 'trainer.html' } } } }
+  : { plugins: [playLog()], build: { rollupOptions: { input: { main: 'index.html', trainer: 'trainer.html' } } }, server: { watch: { ignored: ['**/logs/**', '**/test-out/**', '**/backup/**'] } } };

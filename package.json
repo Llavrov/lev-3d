@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:app": "vite build --mode app && mkdir -p ../lev-pro-max-app/public/trainer-app/models && cp public/models/coach-v2.glb ../lev-pro-max-app/public/trainer-app/models/",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {

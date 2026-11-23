@@ -153,7 +153,7 @@ function measure() {
 }
 
 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-loader.load(`/models/${MODEL}.glb`, (gltf) => {
+loader.load(`${import.meta.env.BASE_URL}models/${MODEL}.glb`, (gltf) => {
   const model = gltf.scene;
   model.traverse((o) => {
     if (!o.isMesh) return;
@@ -183,6 +183,50 @@ loader.load(`/models/${MODEL}.glb`, (gltf) => {
     pose(name) { setPause(true); testPose(T, name); },
     muscles(list) { SHOW = list; ALL = list.length > 0; show(null); }, // карта по одной мышце без перезагрузки
     audit() { const r = ex.audit(T); return { violations: r.bad, ...r.m }; },
+    // Позы для виджета Telegram (voice-bot/workout_tech.py): суставы и снаряды в плоскости ракурса, метры, y от пола.
+    // По две точки на фазу (начало и середина), у поочерёдных упражнений только первый цикл. Сборка: tools/trainer-keys.mjs.
+    keys(name = ex.flat ?? ex.view ?? 'side') {
+      const az = VIEWS[name], R = new THREE.Vector3(Math.cos(az), 0, -Math.sin(az));
+      const P = (p) => [+p.dot(R).toFixed(3), +p.y.toFixed(3)], B = (n) => T.rig.b[n].getWorldPosition(new THREE.Vector3());
+      const rect = (o) => { // габарит объекта в плоскости ракурса: [минимум, максимум]
+        const b = new THREE.Box3().setFromObject(o, true), lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+        for (let i = 0; i < 8; i++) { const q = P(new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z)); for (const k of [0, 1]) { lo[k] = Math.min(lo[k], q[k]); hi[k] = Math.max(hi[k], q[k]); } }
+        return [lo, hi];
+      };
+      const thin = (o) => o.isMesh && o.geometry.parameters?.radiusTop < 0.006; // трос: рисуем линией, а не габаритом
+      const gear = T.gear.children.filter((o) => o.visible), seen = gear.map(() => new Set()), frames = [];
+      let s0 = 0;
+      for (const ph of ex.phases) {
+        for (const u of [0, 0.5]) {
+          poseAt(s0 + ph.tempo_s * u); T.wrap.updateMatrixWorld(true); T.gear.updateMatrixWorld(true);
+          const head = T.rig.b.HeadTop_End ? B('Head').lerp(B('HeadTop_End'), 0.5) : B('Head').multiplyScalar(2).sub(B('Neck'));
+          const pts = [head, B('Spine1')];
+          for (const s of ['Left', 'Right']) pts.push(B(s + 'Arm'), B(s + 'ForeArm'), B(s + 'Hand'));
+          for (const s of ['Left', 'Right']) pts.push(B(s + 'UpLeg'), B(s + 'Leg'), B(s + 'Foot'), B(s + 'ToeBase'));
+          const row = pts.map(P);
+          gear.forEach((o, i) => {
+            const pair = thin(o) ? [P(o.localToWorld(new THREE.Vector3(0, -0.5, 0))), P(o.localToWorld(new THREE.Vector3(0, 0.5, 0)))] : rect(o);
+            seen[i].add(JSON.stringify(pair)); row.push(...pair);
+          });
+          frames.push(row);
+        }
+        s0 += ph.tempo_s;
+      }
+      // Неподвижные снаряды (скамья, стойка блока) отдаём один раз и по частям, подвижные остаются точками в кадрах.
+      const fixed = [], moving = [], drop = new Set();
+      gear.forEach((o, i) => {
+        if (seen[i].size > 1) return moving.push({ line: thin(o), at: 16 + 2 * i });
+        drop.add(16 + 2 * i).add(17 + 2 * i);
+        o.traverse((m) => { if (m.isMesh) fixed.push(rect(m).flat()); });
+      });
+      const keep = frames[0].map((_, i) => i).filter((i) => !drop.has(i));
+      for (const g of moving) g.at = keep.indexOf(g.at);
+      show(null);
+      return { id: ex.id, name: ex.name, view: name, near: name === 'side' ? (ex.sideFrom === 'left' ? 'L' : 'R') : '', muscles: ex.muscles,
+        ru: Object.fromEntries(Object.values(ex.muscles).flat().map((m) => [m, RU[m] ?? m])),
+        phases: ex.phases.map((p) => ({ name: p.name, cue: p.cue, tempo_s: p.tempo_s, stretch: !!p.stretch })),
+        frames: frames.map((f) => keep.map((i) => f[i])), moving, fixed };
+    },
     bounds: () => T.bounds,
     cycle: cycleOf(ex) * (ex.span ?? 1),
     legR: T.legR,
