@@ -108,6 +108,7 @@ export function mapMuscles(mesh) {
   const label = new Uint8Array(n).fill(NONE);
   const axis = new THREE.Vector3(), r = new THREE.Vector3(), f = new THREE.Vector3(), out = new THREE.Vector3();
   const legR = { thigh: new Array(10).fill(0).map(() => []), shin: new Array(10).fill(0).map(() => []) };
+  const fib = new Float32Array(n * 2); // косинус и синус угла вокруг оси кости: по нему в просвете идут волокна вдоль мышцы
   for (let i = 0; i < n; i++) {
     const nm = names[main[i]], [seg, child] = segOf[main[i]], x = xyz[i * 3], y = xyz[i * 3 + 1], z = xyz[i * 3 + 2];
     let m = null;
@@ -116,6 +117,7 @@ export function mapMuscles(mesh) {
       const cz = e[0] < Infinity ? (e[0] + e[1]) / 2 : 0, hd = e[0] < Infinity ? Math.max(1e-3, (e[1] - e[0]) / 2) : 0.1 * T, hw = Math.max(1e-3, e[2]);
       const xn = Math.min(1.2, Math.abs(x) / hw), zn = (z - cz) / hd;
       m = torso(rOf(y / T), THREE.MathUtils.radToDeg(Math.atan2(xn, zn)), xn);
+      const fa = Math.atan2(x / hw, zn); fib[i * 2] = Math.cos(fa); fib[i * 2 + 1] = Math.sin(fa);
     } else if (seg) {
       const a = bindPos[main[i]], c = J(child) ?? a;
       axis.copy(c).sub(a); const len = axis.length(); axis.normalize();
@@ -128,6 +130,7 @@ export function mapMuscles(mesh) {
       const ang = THREE.MathUtils.radToDeg(Math.atan2(r.dot(out), r.dot(f))); // 0 перед, 90 снаружи, ±180 зад, −90 внутри
       const sec = Math.abs(ang) < 50 ? 'front' : Math.abs(ang) > 130 ? 'back' : ang > 0 ? 'out' : 'in';
       m = limb(seg, t, sec, ang);
+      fib[i * 2] = Math.cos(ang * Math.PI / 180); fib[i * 2 + 1] = Math.sin(ang * Math.PI / 180);
       if ((seg === 'thigh' || seg === 'shin') && Math.abs(ang) < 40 && t >= 0 && t < 1) legR[seg][Math.floor(t * 10)].push(r.length() / height * 1.82); // в метрах модели ростом 1,82
     }
     if (m) label[i] = ID[m];
@@ -194,6 +197,11 @@ export function mapMuscles(mesh) {
     musc.set([a, b, wa / s, wb / s], i * 4);
   }
   g.setAttribute('musc', new THREE.BufferAttribute(musc, 4));
+  g.setAttribute('fib', new THREE.BufferAttribute(fib, 2));
+  // Точки для наведения камеры (muscleFocus): вершины, где мышца главная с долей от 0,6, до 48 на мышцу, ровно по списку.
+  const own = MUSCLES.map(() => []);
+  for (let i = 0; i < n; i++) if (musc[i * 4] < N && musc[i * 4 + 2] >= 0.6) own[musc[i * 4]].push(i);
+  mesh.userData.muscleSamples = Object.fromEntries(MUSCLES.map((m, k) => [m, own[k].filter((_, j) => j % Math.ceil(own[k].length / 48) === 0)]));
   const med = (a) => (a.length ? a.sort((x, y) => x - y)[Math.floor(a.length * 0.6)] : null);
   const radius = (seg) => { const m = legR[seg].map(med); const fb = m.find((x) => x != null) ?? 0.06; return m.map((x) => x ?? fb); };
   return { dims: { T, A, height, spine: ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftArm'].map((b) => +(B(J(b))[1] / T).toFixed(3)) }, thigh: radius('thigh'), shin: radius('shin'), counts: MUSCLES.map((m, k) => [m, label.reduce((s, l) => s + (l === k), 0)]) };
@@ -208,25 +216,31 @@ export const U = {
   uJoint: { value: Array.from({ length: 10 }, () => new THREE.Vector4(0, -100, 0, 0)) },
   uJointCol: { value: new THREE.Color('#ffc21a') },
   uJointR: { value: 0.09 },
+  uFocus: { value: 0 }, // 0 — обычная подсветка, 1 — просвет: тело тёмное и без цвета, мышца светится (и под одеждой)
 };
 export function patchMaterial(m) {
   const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
   m.onBeforeCompile = function (sh, r) {
     prev.call(this, sh, r);
     Object.assign(sh.uniforms, U);
-    sh.vertexShader = `attribute vec4 musc;\nuniform vec4 uMus[${N + 1}];\nvarying vec4 vMus;\nvarying vec3 vMusW;\n` + sh.vertexShader
+    sh.vertexShader = `attribute vec4 musc;\nattribute vec2 fib;\nuniform vec4 uMus[${N + 1}];\nvarying vec4 vMus;\nvarying vec3 vMusW;\nvarying vec2 vFib;\n` + sh.vertexShader
       .replace('#include <begin_vertex>', `#include <begin_vertex>
   vec4 mA = uMus[int(musc.x + 0.5)], mB = uMus[int(musc.y + 0.5)];
-  vMus = vec4(mA.rgb * mA.a * musc.z + mB.rgb * mB.a * musc.w, mA.a * musc.z + mB.a * musc.w);`)
+  vMus = vec4(mA.rgb * mA.a * musc.z + mB.rgb * mB.a * musc.w, mA.a * musc.z + mB.a * musc.w);
+  vFib = fib;`)
       .replace('#include <project_vertex>', '#include <project_vertex>\n  vMusW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = `uniform vec4 uJoint[10];\nuniform vec3 uJointCol;\nuniform float uJointR;\nvarying vec4 vMus;\nvarying vec3 vMusW;\n` + sh.fragmentShader
+    sh.fragmentShader = `uniform vec4 uJoint[10];\nuniform vec3 uJointCol;\nuniform float uJointR;\nuniform float uFocus;\nvarying vec4 vMus;\nvarying vec3 vMusW;\nvarying vec2 vFib;\n` + sh.fragmentShader
       .replace('#include <map_fragment>', `#include <map_fragment>
   vec3 musC = vMus.rgb / max(vMus.a, 1e-4); float musK = clamp(vMus.a, 0.0, 1.0), jk = 0.0;
   for (int i = 0; i < 10; i++) jk = max(jk, uJoint[i].w * (1.0 - smoothstep(uJointR * 0.35, uJointR, distance(vMusW, uJoint[i].xyz))));
   musC = mix(musC, uJointCol, jk / max(musK + jk, 1e-4)); musK = max(musK, jk);
   float musL = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-  diffuseColor.rgb = mix(diffuseColor.rgb, musC * (0.42 + 0.75 * musL), musK * 0.8);`)
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += musC * musK * 0.07;');
+  diffuseColor.rgb = mix(diffuseColor.rgb, musC * (0.42 + 0.75 * musL), musK * 0.8);
+  float musFib = 0.5 + 0.5 * sin(atan(vFib.y, vFib.x) * 44.0); // волокна вдоль кости: угол вокруг оси, 44 полоски на круг
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(musL) * 0.2, musC * (0.42 + 0.26 * musFib + 0.5 * musL), musK), uFocus);`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  float musRim = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 2.0); // край мышцы ярче: читается как свечение изнутри
+  totalEmissiveRadiance += musC * musK * (0.07 + uFocus * (0.22 + 0.5 * musRim));`);
   };
   m.customProgramCacheKey = function () { return prevKey.call(this) + '|muscles'; };
   m.needsUpdate = true;
@@ -246,6 +260,21 @@ export function stepMuscles(dt) {
     v.lerp(t.w > 0 ? t : new THREE.Vector4(v.x, v.y, v.z, 0), a);
   });
 }
+// Куда смотреть, чтобы показать мышцы list в текущей позе: точки кожи этих мышц в мире и средняя нормаль наружу.
+// Кожу считаем тем же скиннингом, что шейдер (линейным): для камеры этого хватает. null — у модели таких мышц нет.
+const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _n = new THREE.Vector3();
+export function muscleFocus(mesh, list) {
+  const S = mesh.userData.muscleSamples, pos = mesh.geometry.attributes.position, nor = mesh.geometry.attributes.normal;
+  const points = [], normal = new THREE.Vector3();
+  mesh.updateMatrixWorld(true);
+  for (const m of list) for (const i of S?.[m] ?? []) {
+    _p.fromBufferAttribute(pos, i); _q.copy(_p).addScaledVector(_n.fromBufferAttribute(nor, i), 0.02);
+    mesh.applyBoneTransform(i, _p).applyMatrix4(mesh.matrixWorld); mesh.applyBoneTransform(i, _q).applyMatrix4(mesh.matrixWorld);
+    points.push(_p.clone()); normal.add(_q.sub(_p).normalize());
+  }
+  return points.length ? { points, normal: normal.lengthSq() > 1e-6 ? normal.normalize() : null } : null;
+}
+
 // Суставы «беречь»: кости по имени, точка — сустав в мире.
 export const JOINT_BONES = { knee: 'Leg', ankle: 'Foot', shoulder_joint: 'Arm', elbow: 'ForeArm', wrist: 'Hand' };
 export function setJoints(rig, list, k) {

@@ -29,3 +29,36 @@ test('типограф: предлоги и «не» не висят, тире �
   assert.equal(typo('не гни спину и в пол смотри — 2 м вперёд'), 'не гни спину и в пол смотри — 2 м вперёд');
   assert.equal(typo('отдых 90 с'), 'отдых 90 с');
 });
+
+// ---------- Показ шагами (show.js) ----------
+import { buildSteps, cycleTime, wordsShown, words, readTime } from '../src/trainer/show.js';
+
+test('показ румынской тяги: целиком, три фазы медленно, беречь; тексты целиком', () => {
+  const st = buildSteps(ex);
+  assert.deepEqual(st.map((x) => x.kind), ['whole', 'phase', 'phase', 'phase', 'careful']);
+  assert.deepEqual(st.map((x) => x.text), [
+    '3\u00a0×\u00a010, отдых 90 с. Работают задняя поверхность бедра, ягодицы.',
+    'Таз назад, гантели скользят вниз по ногам. Тянутся задняя поверхность бедра, ягодицы.',
+    'Спина прямая, задняя поверхность бедра натянута. Тянутся задняя поверхность бедра, ягодицы.',
+    'Таз вперёд, сожми ягодицы, без прогиба назад. Работают задняя поверхность бедра, ягодицы.',
+    'Беречь: поясница.']);
+  assert.equal(st[0].focus, null);
+  assert.deepEqual(st[1].focus, { role: 'stretch', list: ['hamstrings', 'glutes'] });
+  assert.deepEqual(st[3].focus, { role: 'work', list: ['hamstrings', 'glutes'] }); // поясница в «беречь», в работающих её не показываем
+  assert.deepEqual(st[4].focus, { role: 'careful', list: ['lower_back'] });
+  assert.deepEqual(st.map((x) => [x.from, x.to, x.speed]), [[0, 6, 1], [0, 3, 0.5], [3, 4, 0.5], [4, 6, 0.5], [0, 6, 1]]);
+});
+
+test('показ: шаг не короче чтения подписи, движение стоит в конце отрезка, слова идут по одному', () => {
+  for (const e of EXERCISES) for (const s of buildSteps(e)) {
+    assert.ok(s.dur >= readTime(s.text) - 1e-9 && s.dur <= 9, `${e.id} ${s.title} ${s.dur}`);
+    assert.ok(s.text.length <= 95 && words(s.text).length <= 14, `${e.id}: ${s.text}`); // четыре строки на телефоне
+    assert.equal(cycleTime(s, 0), s.from);
+    assert.ok(cycleTime(s, s.dur) <= s.to + 1e-9 && cycleTime(s, 1e3) === s.to);
+    assert.equal(wordsShown(s.dur), Math.floor((s.dur - 0.35) / 0.3) + 1);
+    assert.ok(wordsShown(s.dur - 1) >= words(s.text).length, `${e.id} ${s.title}: подпись дочитана за секунду до конца шага`);
+  }
+  assert.equal(wordsShown(0), 0); assert.equal(wordsShown(0.35), 1); assert.equal(wordsShown(1), 3);
+  assert.equal(buildSteps(exerciseById('side-plank')).length, 4); // у планки две фазы
+  assert.deepEqual(words('отдых 90 с. Таз назад и в пол'), ['отдых', '90\u00a0с.', 'Таз', 'назад', 'и\u00a0в\u00a0пол']); // предлог и единица не отрываются
+});

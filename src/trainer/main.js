@@ -1,26 +1,33 @@
-// Тренер: 3D-человек показывает упражнение в движении, мышцы подсвечены тремя цветами, подсказка по фазам.
+// Тренер: 3D-человек показывает упражнение шагами, как сторис. Сначала движение целиком в обычном темпе, потом каждая
+// фаза медленно: камера подъезжает к мышцам фазы, тело темнеет, мышца светится (и под одеждой); в конце — что беречь.
+// Подпись внизу появляется слово за словом. Тап справа — следующий шаг, слева — предыдущий, удержание — пауза (и можно
+// покрутить камеру), свайп вбок — другое упражнение. Расписание шагов и текст: show.js.
 // ?ex=<id> — упражнение (src/trainer/ex), ?model=<имя> — модель из /models (по умолчанию coach-v2), ?muscles=all — карта мышц
-// каждой своим цветом (?muscles=quads,glutes — только эти, off — без подсветки), ?debug — window.__trainer: set(t), view(имя),
-// pause(bool), audit(), cam(…), pose(имя), muscles([…]).
+// каждой своим цветом (?muscles=quads,glutes — только эти, off — без подсветки), ?debug — window.__trainer: set(t), step(i, u),
+// view(имя), pause(bool), audit(), keys(), cam(…), pose(имя), muscles([…]).
+// В приложении Lev Pro Max страница стоит в iframe: шаг и упражнение уходят родителю (postMessage, type: 'state'), а он
+// присылает ход голосового вопроса (type: 'ask'): показ встаёт, вопрос и ответ идут в ту же подпись.
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { Rig } from '../swing.js';
 import { useDQS } from '../dqs.js';
 import { EXERCISES, exerciseById, phaseAt, cycleOf, typo, RU, MUSCLES } from './exercises.js';
-import { mapMuscles, patchMaterial, setTargets, stepMuscles, setJoints, DEBUG_COLORS } from './muscles.js';
+import { mapMuscles, patchMaterial, setTargets, stepMuscles, setJoints, muscleFocus, JOINT_BONES, U, DEBUG_COLORS } from './muscles.js';
 import { setupBody, testPose } from './poses.js';
+import { buildSteps, cycleTime, wordsShown, words } from './show.js';
 
 const Q = new URLSearchParams(location.search), DEBUG = Q.has('debug');
 let SHOW = Q.get('muscles') === 'all' ? MUSCLES : Q.get('muscles') === 'off' ? [''] : (Q.get('muscles') ?? '').split(',').filter((m) => MUSCLES.includes(m)); let ALL = SHOW.length > 0;
 const MODEL = /^[\w-]+$/.test(Q.get('model') ?? '') ? Q.get('model') : 'coach-v2';
-const ex = exerciseById(Q.get('ex'));
+const ex = exerciseById(Q.get('ex')), steps = buildSteps(ex);
 const COL = { work: '#ff4d2e', stretch: '#2aa8ff', careful: '#ffc21a' };
 const VIEWS = { front: 0, side: ex.sideFrom === 'left' ? Math.PI / 2 : -Math.PI / 2, back: Math.PI }; // азимут камеры: тело смотрит в +Z, сбоку — с правой стороны (−X), если снаряд не там
 const EL = 0.1; // камера чуть сверху
 const $ = (id) => document.getElementById(id);
 const mobile = matchMedia('(pointer: coarse)').matches;
+const clamp = THREE.MathUtils.clamp, deg = THREE.MathUtils.degToRad;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ---------- Сцена ----------
 const canvas = $('c');
@@ -40,34 +47,59 @@ scene.add(sun);
 const rim = new THREE.DirectionalLight('#cfe0ff', 1.1); rim.position.set(-2.5, 2.5, -3); scene.add(rim);
 const floor = new THREE.Mesh(new THREE.CircleGeometry(14, 64), new THREE.MeshStandardMaterial({ color: '#222428', roughness: 1 }));
 floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
-
 const camera = new THREE.PerspectiveCamera(32, 1, 0.05, 60);
-const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true; controls.enablePan = false; controls.minDistance = 1; controls.maxDistance = 12;
-controls.minPolarAngle = 0.15; controls.maxPolarAngle = Math.PI / 2 - 0.03; // не под пол
 
 // ---------- Экран ----------
 const pick = $('ex');
 pick.innerHTML = EXERCISES.map((e) => `<option value="${e.id}"${e === ex ? ' selected' : ''}>${typo(e.name)}</option>`).join('');
-pick.addEventListener('change', () => { const q = new URLSearchParams(location.search); q.set('ex', pick.value); location.search = q.toString(); });
+const openEx = (id) => { const q = new URLSearchParams(location.search); q.set('ex', id); location.search = q.toString(); };
+pick.addEventListener('change', () => openEx(pick.value));
 document.title = ex.name;
-$('legend').innerHTML = ALL
-  ? SHOW.filter(Boolean).map((m) => `<li><i style="background:${DEBUG_COLORS[MUSCLES.indexOf(m)]}"></i><span>${typo(RU[m])}</span></li>`).join('')
-  : [['work', 'Работают', ex.muscles.work.filter((m) => !ex.muscles.careful.includes(m))], ['stretch', 'Тянутся', ex.muscles.stretch], ['careful', 'Беречь', ex.muscles.careful]]
-    .filter(([, , l]) => l.length)
-    .map(([k, t, l]) => `<li data-k="${k}"><i style="background:${COL[k]}"></i><span><b>${t}</b> ${typo(l.map((m) => RU[m] ?? m).join(', '))}</span></li>`).join('');
-if (ALL) $('legend').classList.add('all');
-let paused = false, slow = false, t = 0, anim = null, view = ex.view ?? 'side';
-$('pause').addEventListener('click', () => setPause(!paused));
-$('slow').addEventListener('click', () => { slow = !slow; $('slow').setAttribute('aria-pressed', slow); });
-for (const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => go(b.dataset.view));
-function setPause(p) { paused = p; $('pause').textContent = p ? 'Дальше' : 'Пауза'; $('pause').setAttribute('aria-pressed', p); }
-function markView() { for (const b of document.querySelectorAll('[data-view]')) b.setAttribute('aria-pressed', b.dataset.view === view); }
-controls.addEventListener('start', () => { anim = null; }); // палец или мышь — ракурс больше не доводим
+$('bars').innerHTML = steps.map(() => '<i><b></b></i>').join('');
+const fills = [...$('bars').querySelectorAll('b')];
+if (ALL) { // проверка карты мышц: каждой свой цвет и подпись
+  $('legend').innerHTML = SHOW.filter(Boolean).map((m) => `<li><i style="background:${DEBUG_COLORS[MUSCLES.indexOf(m)]}"></i><span>${typo(RU[m])}</span></li>`).join('');
+  $('legend').hidden = false;
+}
+
+// ---------- Показ ----------
+// si — шаг, tau — секунда шага. Показ стоит, пока палец держит экран (held), идёт голосовой вопрос (ask) или отладка
+// поставила паузу. dbgT — отладка задала секунду цикла напрямую: тогда шаги не идут и тело показано целиком.
+let si = 0, tau = 0, t = 0, held = false, stop = false, dbgT = null, ask = null, askTau = 0;
+let spans = [], shown = 0, view = ex.view ?? 'side';
+const paused = () => held || stop || !!ask;
+const cue = $('cue');
+function caption(html) { cue.innerHTML = html; spans = [...cue.querySelectorAll('span')]; shown = 0; }
+const spell = (text) => words(text).map((w) => `<span>${esc(w)}</span>`).join(' ');
+function stepCaption(time) { for (const n = Math.min(spans.length, wordsShown(time)); shown < n; shown++) spans[shown].classList.add('on'); }
+function setStep(i, at = 0) {
+  si = (i % steps.length + steps.length) % steps.length; tau = at; manual = false; dbgT = null;
+  const st = steps[si];
+  caption((st.kind === 'phase' ? `<b>${esc(typo(st.title))}.</b> ` : '') + spell(st.text));
+  tell();
+}
+// Родителю (приложение): что сейчас на экране. Он кладёт это в контекст голосового вопроса.
+function tell() {
+  if (parent === window) return;
+  const st = steps[si];
+  parent.postMessage({ source: 'trainer', type: 'state', ex: { id: ex.id, name: ex.name }, step: { i: si, n: steps.length, title: st.title, text: st.text } }, location.origin);
+}
+// Ход голосового вопроса от родителя: listening — пауза; thinking — вопрос и «Думаю»; answer — ответ слово за словом
+// (стоит, пока не тапнешь); error — что не вышло; idle — дальше показ.
+function setAsk(d) {
+  if (d.state === 'idle') { if (ask) { ask = null; setStep(si, tau); } return; }
+  ask = d; askTau = 0;
+  const q = d.question ? `<i>${esc(typo(d.question))}</i>` : '';
+  if (d.state === 'thinking') caption(q + '<span class="on wait">Думаю</span>');
+  else if (d.state === 'answer') caption(q + spell(d.text ?? ''));
+  else if (d.state === 'error') caption(`<span class="on">${esc(typo(d.text ?? 'Не получилось. Попробуй ещё раз.'))}</span>`);
+}
+addEventListener('message', (e) => { if (e.origin === location.origin && e.data?.source === 'app' && e.data.type === 'ask') setAsk(e.data); });
 
 // ---------- Камера ----------
-// Просвет кадра, свободный от текста и кнопок: на телефоне между заголовком и кнопками, на ПК правее панели слева.
-// Камера каждого ракурса держит весь габарит движения за цикл (T.bounds), а не одну позу.
+// Просвет кадра, свободный от текста: на телефоне между заголовком и подписью, на ПК правее панели слева.
+// Общий план держит весь габарит движения за цикл (T.bounds), а не одну позу. Камера идёт к цели плавно; пальцем
+// (удержание и ведение) её можно покрутить, тогда до смены шага цель не действует.
 let band = { fx: 1, fy: 1 };
 function layout() {
   const W = innerWidth, H = innerHeight;
@@ -85,7 +117,7 @@ const sph = (az, el) => new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(
 function fit(az) {
   const box = T.bounds ?? new THREE.Box3(new THREE.Vector3(-0.4, 0, -0.4), new THREE.Vector3(0.4, 1.9, 0.4));
   const c = box.getCenter(new THREE.Vector3()), dir = sph(az, EL), right = new THREE.Vector3(Math.cos(az), 0, -Math.sin(az)), up = new THREE.Vector3().crossVectors(dir, right);
-  const tv = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * band.fy * 0.94, th = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect * band.fx * 0.94;
+  const tv = Math.tan(deg(camera.fov / 2)) * band.fy * 0.94, th = Math.tan(deg(camera.fov / 2)) * camera.aspect * band.fx * 0.94;
   let d = 0;
   for (let i = 0; i < 8; i++) {
     const r = new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).sub(c);
@@ -93,50 +125,97 @@ function fit(az) {
   }
   return { target: c, d, az };
 }
-function go(name, instant = false) {
-  view = name; markView();
-  const f = fit(VIEWS[name]), off = camera.position.clone().sub(controls.target);
-  const az0 = Math.atan2(off.x, off.z); let az1 = f.az;
-  while (az1 - az0 > Math.PI) az1 -= 2 * Math.PI; while (az1 - az0 < -Math.PI) az1 += 2 * Math.PI;
-  anim = { t: instant ? 1 : 0, az0, az1, el0: Math.asin(THREE.MathUtils.clamp(off.y / (off.length() || 1), -1, 1)), d0: off.length() || f.d, d1: f.d, c0: controls.target.clone(), c1: f.target };
-  stepView(0);
-  controls.update();
+const cam = { az: 0, el: EL, d: 5, c: new THREE.Vector3(0, 0.9, 0) }, goal = { az: 0, el: EL, d: 5, c: new THREE.Vector3(0, 0.9, 0) };
+let manual = false;
+function wholeGoal() { const f = fit(VIEWS[view]); goal.az = f.az; goal.el = EL; goal.d = f.d; goal.c.copy(f.target); }
+// Крупный план мышц и суставов list: центр — середина их точек на коже, камера со стороны, куда смотрит кожа, но ближе
+// к обычному ракурсу (за тело без нужды не уходим) и не из-под пола. Дистанция — чтобы участок занял около трети кадра.
+function focusGoal(list) {
+  const f = muscleFocus(T.mesh, list.filter((m) => MUSCLES.includes(m))), pts = f?.points ?? [];
+  for (const j of list) if (JOINT_BONES[j]) for (const s of ['Left', 'Right']) pts.push(T.rig.b[s + JOINT_BONES[j]].getWorldPosition(new THREE.Vector3()));
+  if (!pts.length) return wholeGoal();
+  const c = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(pts.length);
+  // Куда смотрит кожа участка; у суставов без мышц — наружу от середины тела (плечи лежащего видно со стороны головы).
+  const out = f?.normal ?? c.clone().sub(T.bounds.getCenter(new THREE.Vector3())).normalize();
+  const base = sph(VIEWS[view], EL), dir = out.multiplyScalar(0.6).addScaledVector(base, 0.4).normalize();
+  goal.c.copy(c); goal.az = Math.atan2(dir.x, dir.z); goal.el = clamp(Math.asin(clamp(dir.y, -1, 1)), deg(4), deg(60));
+  // Дистанция по самим точкам: участок занимает до половины высоты просвета и до 0,72 его ширины, вокруг видно тело.
+  const look = sph(goal.az, goal.el), right = new THREE.Vector3(Math.cos(goal.az), 0, -Math.sin(goal.az)), up = new THREE.Vector3().crossVectors(look, right);
+  const tv = Math.tan(deg(camera.fov / 2)) * band.fy * 0.5, th = Math.tan(deg(camera.fov / 2)) * camera.aspect * band.fx * 0.72;
+  let d = 0;
+  for (const p of pts) { const r = p.clone().sub(c); d = Math.max(d, r.dot(look) + Math.abs(r.dot(right)) / th, r.dot(look) + Math.abs(r.dot(up)) / tv); }
+  const far = fit(VIEWS[view]).d, box = T.bounds.clone().expandByScalar(0.25);
+  d = clamp(d, 1.8, far * 0.9);
+  while (d < far && box.containsPoint(c.clone().addScaledVector(look, d))) d += 0.2; // камера не внутри тела и снарядов
+  goal.d = d;
 }
-function stepView(dt) {
-  if (!anim) return;
-  const a = anim; a.t = Math.min(1, a.t + dt / 0.7);
-  const u = a.t * a.t * (3 - 2 * a.t);
-  controls.target.lerpVectors(a.c0, a.c1, u);
-  camera.position.copy(controls.target).addScaledVector(sph(a.az0 + (a.az1 - a.az0) * u, a.el0 + (EL - a.el0) * u), a.d0 + (a.d1 - a.d0) * u);
-  if (a.t >= 1) anim = null;
+function stepCam(dt) {
+  if (!manual) {
+    const a = dt == null ? 1 : 1 - Math.exp(-dt / 0.5);
+    cam.az += Math.atan2(Math.sin(goal.az - cam.az), Math.cos(goal.az - cam.az)) * a; // по короткой дуге
+    cam.el += (goal.el - cam.el) * a; cam.d += (goal.d - cam.d) * a; cam.c.lerp(goal.c, a);
+  }
+  camera.position.copy(cam.c).addScaledVector(sph(cam.az, cam.el), cam.d);
+  camera.lookAt(cam.c);
 }
+
+// ---------- Управление ----------
+// Тап (короткое нажатие без движения): справа — следующий шаг, в левой трети — предыдущий; при открытом ответе на вопрос
+// тап закрывает его. Удержание от 0,22 с — пауза, ведение пальца при удержании крутит камеру. Быстрое движение вбок с
+// самого начала — другое упражнение.
+let press = null;
+canvas.addEventListener('pointerdown', (e) => {
+  try { canvas.setPointerCapture(e.pointerId); } catch {} // палец ушёл за край холста — отпускание всё равно придёт сюда
+  press = { x: e.clientX, y: e.clientY, hold: false, moved: false, az: cam.az, el: cam.el };
+  press.timer = setTimeout(() => { if (press && !press.moved) { press.hold = true; held = true; } }, 220);
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!press) return;
+  const dx = e.clientX - press.x, dy = e.clientY - press.y;
+  if (!press.hold) { if (Math.hypot(dx, dy) > 10) press.moved = true; return; }
+  manual = true; cam.az = press.az - dx * 0.008; cam.el = clamp(press.el + dy * 0.006, 0.03, 1.2);
+});
+function release(e, cancel) {
+  if (!press) return;
+  clearTimeout(press.timer);
+  const p = press, dx = e.clientX - p.x, dy = e.clientY - p.y; press = null;
+  if (p.hold) { held = false; return; }
+  if (cancel) return;
+  if (ask) { if (ask.state === 'answer' || ask.state === 'error') setAsk({ state: 'idle' }); return; }
+  if (Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy)) return openEx(EXERCISES[(EXERCISES.indexOf(ex) + (dx < 0 ? 1 : -1) + EXERCISES.length) % EXERCISES.length].id);
+  if (!p.moved) setStep(si + (e.clientX < innerWidth * 0.33 ? -1 : 1));
+}
+canvas.addEventListener('pointerup', (e) => release(e, false));
+canvas.addEventListener('pointercancel', (e) => release(e, true));
+addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLSelectElement) return;
+  if (e.key === 'ArrowRight') setStep(si + 1); else if (e.key === 'ArrowLeft') setStep(si - 1); else if (e.key === ' ') { stop = !stop; e.preventDefault(); }
+});
 
 // ---------- Модель ----------
 const T = { scene, ex, legR: null, gear: new THREE.Group() };
 T.add = (...o) => T.gear.add(...o);
 scene.add(T.gear);
-let shownPhase = -1;
 function poseAt(s) { const ph = phaseAt(ex, s); ph.t = s; ex.pose(T, ph); return ph; }
+let focusK = 0; // 0 — обычная подсветка, 1 — просвет
 function show(dt) {
+  const st = steps[si], whole = dbgT != null || st.kind === 'whole' || ALL;
+  t = dbgT ?? cycleTime(st, tau);
   const ph = poseAt(t);
-  if (ALL) setTargets(Object.fromEntries(SHOW.map((m) => [m, [DEBUG_COLORS[MUSCLES.indexOf(m)], 0.95]])));
-  else {
-    const pulse = 0.62 + 0.3 * Math.sin(performance.now() / 1000 * Math.PI * 2 / 1.8);
-    const map = {};
+  T.wrap.updateMatrixWorld(true);
+  const pulse = DEBUG ? 0.85 : 0.62 + 0.3 * Math.sin(performance.now() / 1000 * Math.PI * 2 / 1.8), map = {};
+  if (ALL) for (const m of SHOW) map[m] = [DEBUG_COLORS[MUSCLES.indexOf(m)], 0.95];
+  else if (whole) {
     for (const m of ex.muscles.work) map[m] = [COL.work, 0.9];
     if (ph.phase.stretch) for (const m of ex.muscles.stretch) map[m] = [COL.stretch, 0.9]; // на растяжении тянущиеся синие поверх работающих
-    for (const m of ex.muscles.careful) map[m] = [COL.careful, DEBUG ? 0.85 : pulse];
-    setTargets(map);
-    setJoints(T.rig, ex.muscles.careful, DEBUG ? 0.85 : pulse);
-  }
+    for (const m of ex.muscles.careful) map[m] = [COL.careful, pulse];
+  } else for (const m of st.focus.list) map[m] = [COL[st.focus.role], st.focus.role === 'careful' ? pulse : 0.95];
+  setTargets(map);
+  setJoints(T.rig, ALL ? [] : whole ? ex.muscles.careful : st.focus.role === 'careful' ? st.focus.list : [], pulse);
   stepMuscles(dt);
-  if (ph.i !== shownPhase) {
-    shownPhase = ph.i;
-    $('cue').innerHTML = `<b>${typo(ph.phase.name[0].toUpperCase() + ph.phase.name.slice(1))}.</b> ${typo(ph.phase.cue)}`;
-    const k = ph.phase.stretch ? 'stretch' : 'work';
-    const on = (k2) => k2 === 'careful' || k2 === 'work' && ex.muscles.work.some((m) => !(ph.phase.stretch && ex.muscles.stretch.includes(m)) && !ex.muscles.careful.includes(m)) || k2 === k;
-    for (const li of document.querySelectorAll('#legend li[data-k]')) li.classList.toggle('dim', !on(li.dataset.k));
-  }
+  focusK += ((whole ? 0 : 1) - focusK) * (dt == null ? 1 : 1 - Math.exp(-dt / 0.35));
+  U.uFocus.value = focusK;
+  if (whole) wholeGoal(); else focusGoal(st.focus.list);
 }
 // Габарит движения за цикл: кости и снаряды в 24 точках (у поочерёдных упражнений — за оба цикла), плюс толщина тела.
 function measure() {
@@ -158,7 +237,7 @@ loader.load(`${import.meta.env.BASE_URL}models/${MODEL}.glb`, (gltf) => {
   model.traverse((o) => {
     if (!o.isMesh) return;
     o.castShadow = o.receiveShadow = true; o.frustumCulled = false;
-    if (o.isSkinnedMesh) { T.legR = mapMuscles(o); patchMaterial(o.material); }
+    if (o.isSkinnedMesh) { T.mesh = o; T.legR = mapMuscles(o); patchMaterial(o.material); }
   });
   if (!Q.has('lbs')) useDQS(model);
   const box = new THREE.Box3().setFromObject(model);
@@ -171,16 +250,18 @@ loader.load(`${import.meta.env.BASE_URL}models/${MODEL}.glb`, (gltf) => {
   poseAt(ex.refT ?? 0);
   T.ref = Object.fromEntries(['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase'].filter((n) => T.rig.b[n]).map((n) => [n, T.rig.b[n].getWorldPosition(new THREE.Vector3())]));
   measure();
-  layout(); go(view, true);
-  show(null);
+  layout();
+  setStep(0); show(null); stepCam(null);
   document.body.classList.add('ready'); window.__ready = true;
   if (DEBUG) window.__trainer = {
     ready: true,
-    set(s) { setPause(true); t = s; show(null); return phaseAt(ex, s); },
-    view(name, instant = true) { go(name, instant); },
-    pause(p = true) { setPause(!!p); },
-    cam(x, y, z, tx, ty, tz) { anim = null; controls.target.set(tx, ty, tz); camera.position.set(x, y, z); controls.update(); }, // крупный план для проверки
-    pose(name) { setPause(true); testPose(T, name); },
+    set(s) { stop = true; dbgT = s; manual = false; show(null); stepCam(null); return phaseAt(ex, s); }, // секунда цикла напрямую, тело целиком
+    step(i, u = 0) { stop = true; setStep(i, u * steps[(i % steps.length + steps.length) % steps.length].dur); stepCaption(tau); show(null); show(null); stepCam(null); return steps[si]; }, // шаг показа в доле u его длины
+    steps,
+    view(name) { view = name; manual = false; show(null); stepCam(null); },
+    pause(p = true) { stop = !!p; },
+    cam(x, y, z, tx, ty, tz) { manual = true; cam.c.set(tx, ty, tz); const o = new THREE.Vector3(x - tx, y - ty, z - tz); cam.d = o.length(); cam.az = Math.atan2(o.x, o.z); cam.el = Math.asin(o.y / cam.d); stepCam(null); }, // крупный план для проверки
+    pose(name) { stop = true; testPose(T, name); },
     muscles(list) { SHOW = list; ALL = list.length > 0; show(null); }, // карта по одной мышце без перезагрузки
     audit() { const r = ex.audit(T); return { violations: r.bad, ...r.m }; },
     // Позы для виджета Telegram (voice-bot/workout_tech.py): суставы и снаряды в плоскости ракурса, метры, y от пола.
@@ -227,25 +308,31 @@ loader.load(`${import.meta.env.BASE_URL}models/${MODEL}.glb`, (gltf) => {
         phases: ex.phases.map((p) => ({ name: p.name, cue: p.cue, tempo_s: p.tempo_s, stretch: !!p.stretch })),
         frames: frames.map((f) => keep.map((i) => f[i])), moving, fixed };
     },
+    ask: setAsk, // проверка подписи вопроса и ответа без приложения
+    state: () => ({ step: si, tau: +tau.toFixed(2), held, stop, ask: ask?.state ?? null, shown, words: spans.length, focus: +focusK.toFixed(2) }),
     bounds: () => T.bounds,
     cycle: cycleOf(ex) * (ex.span ?? 1),
     legR: T.legR,
     T,
   };
-}, undefined, (e) => { console.error('модель не загрузилась', e); $('cue').textContent = 'Модель не загрузилась. Обнови страницу.'; });
+}, undefined, (e) => { console.error('модель не загрузилась', e); cue.textContent = 'Модель не загрузилась. Обнови страницу.'; });
 
 // Размер холста меняем в начале кадра: смена размера стирает холст, а событие могло прийти после отрисовки.
-let resized = true, lastW = 0;
+let resized = true;
 addEventListener('resize', () => { resized = true; });
 let last = performance.now();
 renderer.setAnimationLoop((now) => {
-  if (resized) { resized = false; layout(); if (T.bounds && innerWidth !== lastW) go(view, true); lastW = innerWidth; } // панель браузера меняет только высоту — камеру не дёргаем
+  if (resized) { resized = false; layout(); }
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (T.rig) {
-    if (!paused) t += dt * (slow ? 0.4 : 1);
-    if (!paused || !DEBUG) show(dt);
+    if (ask?.state === 'answer') { askTau += dt; stepCaption(askTau); }
+    else if (!ask) {
+      if (!paused() && dbgT == null) { tau += dt; if (tau >= steps[si].dur) setStep(si + 1); }
+      stepCaption(tau);
+    }
+    fills.forEach((b, k) => { b.style.transform = `scaleX(${k < si ? 1 : k > si ? 0 : Math.min(1, tau / steps[si].dur)})`; });
+    if (!(DEBUG && stop)) show(dt); // в отладке на паузе позу не трогаем: её ставят set, step и pose
+    stepCam(dt);
   }
-  stepView(dt);
-  controls.update();
   renderer.render(scene, camera);
 });
