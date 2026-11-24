@@ -22,9 +22,10 @@ export function buildSteps(ex, dose) { // dose — дозировка из пл�
   const steps = [mk({ kind: 'whole', title: 'Целиком', from: 0, to: cyc * (cyc < 5 ? 2 : 1), speed: 1, focus: null, // короткое движение — дважды
     text: `${dose || `${ex.dose.sets} × ${ex.dose.reps}, отдых ${ex.dose.rest_s} с`}.${about('Работают', main)}` }, ex.follow ? 12 : MAX)]; // бег туда и обратно длиннее 8 с: не обрывать на полпути
   let t = 0;
+  // бег вполсилы выглядит не бегом (Лёва 24.11: «слишком медленно бежит»): фазы бега идут в настоящем темпе
   for (const p of ex.phases) {
     const st = !!p.stretch && m.stretch.length > 0, list = st ? m.stretch : main;
-    steps.push(mk({ kind: 'phase', title: cap(p.name), from: t, to: t + p.tempo_s, speed: SLOW, focus: { role: st ? 'stretch' : 'work', list },
+    steps.push(mk({ kind: 'phase', title: cap(p.name), from: t, to: t + p.tempo_s, speed: ex.runs ? 1 : SLOW, focus: { role: st ? 'stretch' : 'work', list },
       text: `${p.cue.replace(/\.$/, '')}.${about(st ? 'Тянутся' : 'Работают', list)}` }));
     t += p.tempo_s;
   }

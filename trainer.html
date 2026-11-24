@@ -10,6 +10,8 @@
     :root { --bg: #17181b; --fg: #f2f2f0; --mute: #a3a6ad; --btn: #26282d; --btn-on: #f2f2f0; --gut: 16px; }
     * { box-sizing: border-box; margin: 0; }
     html, body { height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; }
+    /* Зажатие крутит модель: текст при этом не выделяется и меню «Скопировать» не всплывает (Лёва 24.11). */
+    html, body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
     body { font: 16px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
     #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
     #top, #bottom { position: fixed; left: 0; right: 0; padding-left: max(var(--gut), env(safe-area-inset-left)); padding-right: max(var(--gut), env(safe-area-inset-right)); pointer-events: none; }

@@ -181,6 +181,30 @@ export function palmTo(T, s, P, R, pole) {
   }
   return R.clone().applyQuaternion(C);
 }
+// Две кисти на одной рукояти (блок, резинка), хват как на топорище: рукоять поперёк рук, кисти одна над другой, обе большим
+// пальцем вверх вдоль рукояти. C — середина хвата, dir — куда от плеч идут руки, top — чья кисть выше. Возвращает ось.
+// Было (до 24.11): хват сверху двумя руками рядом, оси кистей навстречу; когда рукоять вставала отвесно, предплечья
+// перекрещивались и скручивались (Лёва про «Дровосека на блоке»: «руки перекручивает, совсем жопа»).
+export function axeGrip(T, C, dir, pole, top = 'Right', gap = 0.045) {
+  const ax = UP.clone().addScaledVector(dir, -UP.dot(dir)).normalize();
+  for (const s of SIDES) palmTo(T, s, C.clone().addScaledVector(ax, s === top ? gap : -gap), ax, pole);
+  return ax;
+}
+// Скрутка предплечья от нейтрали, градусы: 0 — большой палец туда же, куда бицепс (вперёд у опущенной руки), 90 — ладонь
+// назад или вперёд. У человека до 95°; больше — рука «перекручена». Меряется вокруг оси предплечья.
+export function forearmTwist(T, s) {
+  const { rig } = T, q = (n) => rig.b[n].getWorldQuaternion(new THREE.Quaternion());
+  const f = w(rig, s + 'Hand').sub(w(rig, s + 'ForeArm')).normalize(), flat = (v) => v.addScaledVector(f, -v.dot(f)).normalize();
+  const front = flat(rig.armFront[s].clone().applyQuaternion(q(s + 'Arm'))), r = flat(rig.hand[s].r.clone().applyQuaternion(q(s + 'Hand')));
+  return Math.round(rad(front.angleTo(r)));
+}
+export function twistAudit(T, r, lim = 95) {
+  for (const s of SIDES) {
+    const t = forearmTwist(T, s); r.m['twist' + s[0]] = t;
+    if (t > lim) r.bad.push(`${ruSide(s, true)} предплечье перекручено: ${t}° от нейтрали (до ${lim}°)`);
+  }
+  return r;
+}
 // Где рука, повиснув прямо от плеча, достанет до точки P: длина прямой руки до середины ладони.
 export const reachOf = (T, s) => { const [L1, L2] = T.rig.armLen[s]; return (L1 + L2) * 0.997 + T.rig.palm(s).distanceTo(w(T.rig, s + 'Hand')); };
 

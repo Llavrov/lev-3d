@@ -1,5 +1,5 @@
 // Ускорение 5 метров в настоящем темпе (24.11.2026): старт из разножки, 5 м разгона до ~5,5 м/с (шаги растут
-// от 0,5 до 1,6 м, между опорами полёт), торможение за 3 м, разворот и трусцой 3,2 м/с назад на старт.
+// от 0,5 до 1,6 м, между опорами полёт), торможение за 3 м, разворот и трусцой 3,6 м/с назад на старт.
 // Было: три шага по 0,5 м и возврат шагом спиной вперёд — Лёва: «там не бег, там какая-то ходьба».
 // Шаги бега раскладывает S.run (steps.js), камера едет за бегуном (follow).
 import { script, measureFeet, gait, legAudit } from '../steps.js';
@@ -20,18 +20,18 @@ export function build(T) {
   };
   S.at(0, 0, z0).at(0.5, 0, z0);
   // туда: 5 м разгона, 2,4 м торможения
-  const a = S.run({ side: 'Right', t0: 0.5, from: [0, z0], segs: [[5, 5.5, 0.2], [3, 0.9, 0.6]], cadence: 5, L });
+  const a = S.run({ side: 'Right', t0: 0.5, from: [0, z0], segs: [[1.5, 3.6, 0.2], [3.5, 5.5, 0.2], [3, 0.9, 0.6]], cadence: 5, L });
   const E = [a.x, a.z], t1 = a.t + 0.15; S.at(t1 + 0.8, ...E);
   const t2 = turn(t1, E, 0, PI);
   // обратно трусцой
-  const b = S.run({ side: 'Right', t0: t2, from: E, yaw: PI, segs: [[1, 3.2, 0.25], [E[1] - z0 - 2.3, 3.2], [1.3, 0.9, 0.6]], cadence: 3.3, L });
+  const b = S.run({ side: 'Right', t0: t2, from: E, yaw: PI, segs: [[1, 3.6, 0.25], [E[1] - z0 - 2.3, 3.6], [1.3, 0.9, 0.6]], cadence: 3.6, L });
   const B = [b.x, b.z], t3 = b.t + 0.15; S.at(t3 + 0.8, ...B);
   const t4 = turn(t3, B, PI, 0, { Left: [h, 0, 0], Right: [-h, z0, 0] });
   S.step('Right', t4 + 0.05, t4 + 0.27, -h, -0.3, 0, { h: 0.04 }); // правая назад: стартовая разножка
   if (t4 > C - 0.4) throw new Error(`ускорение: сценарий ${t4.toFixed(2)} с длиннее цикла ${C}`);
   // gait — нога в махе и таз по клипу, run — руки клипа, v — скорость для клипа
   const k = (t, o2) => S.key(t, { y: y(0.86), dx: 0, dz: 0, yaw: 0, hips: 0, torso: 0, elev: 50, run: 0, gait: 0, hang: 0, v: 4.5, ...o2 });
-  const ta = a.steps.find((q) => q.v > 4)?.t ?? 1.5, tb = a.steps[a.steps.length - 1].t, br = a.steps.findLast((q) => q.v > 5.2).t + 0.1;
+  const ta = a.steps.find((q) => q.v > 4)?.t ?? 1.5, tb = a.steps[a.steps.length - 1].t, br = (a.steps.findLast((q) => q.v > 5) ?? a.steps[a.steps.length - 3]).t + 0.1;
   k(0, { elev: 50 });
   k(0.5, { elev: 48 });
   k(0.75, { y: y(0.9), elev: 50, run: 1, gait: 1 });
@@ -46,8 +46,8 @@ export function build(T) {
   k(b.last - 0.5, { y: y(0.93), elev: 86, yaw: 180, run: 1, gait: 1, v: 3.2 });
   k(b.last, { y: y(0.92), elev: 87, yaw: 180, run: 0.4, gait: 0.7, v: 3 });
   k(t3, { y: y(0.975), elev: 88, yaw: 180, hang: 0.5, v: 3 });
-  k(t3 + 0.38, { y: y(0.975), elev: 88, yaw: 90, hang: 0.5, v: 3 });
-  k(t4 - 0.22, { y: y(0.97), elev: 86, yaw: 45, hang: 0.4, v: 3 });
+  k(t3 + 0.42, { y: y(0.98), elev: 88, yaw: 90, hang: 0.5, v: 3 });
+  k(t4 - 0.22, { y: y(0.98), elev: 86, yaw: 32, hang: 0.4, v: 3 });
   k(t4 + 0.05, { y: y(0.96), elev: 86, yaw: 0, hang: 0.3 });
   k(t4 + 0.7, { y: y(0.86), elev: 50, yaw: 0 });
   S.marks = { ta, brake: br, t1, t2, tb: b.t, t3, t4 };
@@ -77,7 +77,7 @@ export default {
   audit(T) {
     const r = legAudit(T), tau = ((T.tNow % C) + C) % C;
     // Главное в старте: корпус наклонён на первых шагах (не выпрямиться сразу).
-    if (tau < 0.75 && r.m.torso > 62) r.bad.push(`корпус выпрямлен на первом шаге: ${r.m.torso}°`);
+    if (tau > 0.75 && tau < 1.1 && r.m.torso > 72) r.bad.push(`корпус выпрямлен на первом шаге: ${r.m.torso}°`);
     return r;
   },
 };

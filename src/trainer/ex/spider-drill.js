@@ -1,6 +1,6 @@
 // «Паук» в настоящем темпе (24.11.2026), поочерёдно (span 2): чётный цикл — к точке справа впереди, нечётный — слева
 // впереди, точки в 4 м от центра, отмечены на полу. Из стойки в центре: разворот к точке, рывок до ~4,5 м/с, торможение,
-// выпад ближней ногой и касание пола ближней рукой (таз низко, спина прямая), толчок назад, разворот, бег в центр,
+// выпад ближней ногой и касание конуса ближней рукой (таз низко, спина прямая под 45°), толчок назад, разворот, бег в центр,
 // разворот лицом вперёд в стойку. Было: точка в 0,8 м и три шага до 1,2 м/с — Лёва: «там не бег, там ходьба».
 import * as THREE from 'three';
 import { clamp, smooth, w, sgn, cm } from '../poses.js';
@@ -9,6 +9,7 @@ import { script, measureFeet, gait, legAudit } from '../steps.js';
 
 const CYCLE = 6.8, HALF = 0.25, PX = 2.8, PZ = 2.8; // цикл (= сумма tempo_s), полуширина стойки, точка касания: в сторону и вперёд, м
 const PI = Math.PI;
+const CONE = 0.38; // высота конуса на точке, м (обычный тренировочный)
 const side = (t) => (Math.floor(t / CYCLE) % 2 ? 'Left' : 'Right');
 const point = (s) => new THREE.Vector3(sgn(s) * PX, 0, PZ);
 
@@ -54,12 +55,14 @@ function build(T, s) {
   const k = (t, o2) => S.key(t, { y: y(0.86), dx: 0, dz: 0, yaw: 0, hips: 0, torso: 0, elev: 72, run: 0, gait: 0, hang: 0, v: 4.5, ...o2 });
   const Y = th * 180 / PI, Yb = back * 180 / PI, ta = a.steps.find((q) => q.v > 3.5)?.t ?? t0 + 0.4, tb = b.steps.find((q) => q.v > 3.5)?.t ?? t2 + 0.4;
   k(0, {}); k(0.2, {});
-  k(t0, { y: y(0.93), elev: 56, yaw: Y, run: 1, gait: 1 });
+  k(t0, { y: y(0.93), elev: 74, yaw: Y, run: 1, gait: 1 }); // наклон на беге считает генератор (steps.js), здесь только вход
   k(ta, { y: y(0.92), elev: 62, yaw: Y, run: 1, gait: 1, v: 4.5 });
   k(a.last - 0.1, { y: y(0.92), elev: 78, yaw: Y, run: 0.7, gait: 1, v: 3.5 });
   k(tL - 0.1, { y: y(0.9), elev: 62, yaw: Y, run: 0.5, gait: 0.7, v: 3 });
   k(tL, { y: y(0.8), elev: 50, yaw: Y, run: 0.3, gait: 0.5, v: 3 });
-  k(touch[1], { y: y(0.71), elev: 24, yaw: Y }); k(touch[2], { y: y(0.71), elev: 24, yaw: Y });
+  // Касание конуса (38 см), а не пола (24.11): до пола рука модели достаёт только с корпусом ниже 24° и тазом у колена —
+  // Лёва: «тело просто всё скукоживает, скрючивает». К конусу — глубокий выпад, спина прямая под 45°, свободная рука вниз.
+  k(touch[1], { y: y(0.6), elev: 46, yaw: Y, hang: 0.6 }); k(touch[2], { y: y(0.6), elev: 46, yaw: Y, hang: 0.6 });
   k(tP + 0.3, { y: y(0.95), elev: 84, yaw: Y, hang: 0.3 });
   k(t2 - 0.04, { y: y(0.96), elev: 84, yaw: Yb, hang: 0.3 });
   k(t2 + 0.25, { y: y(0.93), elev: 62, yaw: Yb, run: 1, gait: 1, v: 4 });
@@ -74,9 +77,9 @@ function build(T, s) {
 
 function marks(T) {
   const mat = new THREE.MeshStandardMaterial({ color: '#d9d4c7', roughness: 0.9 });
-  for (const p of [new THREE.Vector3(0, 0, 0), point('Right'), point('Left')]) {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.004, 24), mat);
-    m.position.copy(p).setY(0.002); m.receiveShadow = true; T.gear.parent.add(m); // не в T.add: снаряды входят в рамку камеры, а точки в 4 м делали человека крошечным
+  for (const [i, p] of [new THREE.Vector3(0, 0, 0), point('Right'), point('Left')].entries()) {
+    const h = i ? CONE : 0.004, m = new THREE.Mesh(new THREE.CylinderGeometry(i ? 0.025 : 0.09, i ? 0.1 : 0.09, h, 24), mat); // центр — метка, точки — конусы
+    m.position.copy(p).setY(h / 2); m.castShadow = true; m.receiveShadow = true; T.gear.parent.add(m); // не в T.add: снаряды входят в рамку камеры, а точки в 4 м делали человека крошечным
   }
 }
 
@@ -86,7 +89,7 @@ export default {
   muscles: { work: ['quads', 'glutes', 'calves', 'adductors'], stretch: [], careful: ['ankle', 'knee'] },
   phases: [
     { name: 'рывок', cue: 'Развернись и рывком к точке', tempo_s: 2.1 },
-    { name: 'касание', cue: 'Выпад, коснись пола и тормози', tempo_s: 0.8 },
+    { name: 'касание', cue: 'Выпад, коснись конуса и тормози', tempo_s: 0.8 },
     { name: 'возврат', cue: 'Толчок, разворот, бегом в центр', tempo_s: 3.9 }, // сумма фаз = цикл CYCLE
   ],
   dose: { sets: '4', reps: '1 круг (5 точек)', rest_s: 60 },
@@ -107,7 +110,7 @@ export default {
     let g = gait(T, T.Sp[s], tt, opt);
     // Таз опускается, пока рука от плеча достаёт до точки касания: длина руки своя у модели, на глаз не подобрать.
     for (let i = 0; k > 0 && i < 8; i++) {
-      const [L1, L2] = T.rig.armLen[s], need = w(T.rig, s + 'Arm').distanceTo(point(s).setY(0.06)) - 0.96 * (L1 + L2);
+      const [L1, L2] = T.rig.armLen[s], need = w(T.rig, s + 'Arm').distanceTo(point(s).setY(CONE + 0.06)) - 0.96 * (L1 + L2);
       if (Math.abs(need) < 0.005 || (need < 0 && opt.dy <= 0)) break;
       opt.dy = clamp(opt.dy + need * 0.8 * k, 0, 0.3); g = gait(T, T.Sp[s], tt, opt);
     }
@@ -117,7 +120,7 @@ export default {
       const { rig } = T, yaw = g.yaw, pitch = 1.2; // кисть пальцами вниз к полу, к точке
       const F = new THREE.Vector3(0, -Math.sin(pitch), Math.cos(pitch)).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       const N = new THREE.Vector3(0, -Math.cos(pitch), -Math.sin(pitch)).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-      const P = point(s).setY(0.05); // середина ладони: кончики пальцев у пола
+      const P = point(s).setY(CONE + 0.05); // середина ладони: кончики пальцев у верхушки конуса
       const Sh = w(rig, s + 'Arm'), ready = Sh.clone().add(new THREE.Vector3(0, -0.3, 0)).addScaledVector(new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), 0.3);
       palmOn(T, s, ready.lerp(P, k), F, N, new THREE.Vector3(sgn(s) * 0.6, 0.2, -0.6).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
       rig.relaxHand(s);
@@ -127,9 +130,10 @@ export default {
     const r = legAudit(T), { rig } = T, { s, k } = T.touch;
     if (k > 0.999) {
       const m2 = w(rig, s + 'HandMiddle2'), tip = w(rig, s + 'HandMiddle3').multiplyScalar(2).sub(m2).y; // кончик ≈ третья фаланга дальше на свою длину
-      r.m.fingerY = cm(tip);
-      if (tip > 0.025) r.bad.push(`рука не достала пол (${cm(tip)} см)`);
-      if (tip < -0.01) r.bad.push(`рука в полу (${cm(tip)} см)`);
+      r.m.fingerY = cm(tip - CONE);
+      if (tip - CONE > 0.035) r.bad.push(`рука не достала конус (${cm(tip - CONE)} см)`);
+      if (tip - CONE < -0.03) r.bad.push(`рука в конусе (${cm(tip - CONE)} см)`);
+      if (r.m.torso < 35) r.bad.push(`на касании корпус завален: ${r.m.torso}° (от 35°)`); // скрюченное касание
       const a = rig.audit()[s]; if (a.wrist > 50) r.bad.push(`запястье ${a.wrist}°`);
     }
     if (r.m.torso < 20) r.bad.push(`корпус завален: ${r.m.torso}°`);

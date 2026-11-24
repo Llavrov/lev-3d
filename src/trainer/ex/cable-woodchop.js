@@ -3,7 +3,7 @@
 // раньше), грудной отдел догоняет; поясница крутится вместе с тазом (Rig.pose: 15 % разницы корпус − таз на поясницу).
 // Левая стопа стоит, правая проворачивается на подушечке внутрь и встаёт на носок. Стойка блока, трос и рукоять — кодом.
 import * as THREE from 'three';
-import { V, X, UP, FWD, deg, rad, lerp, clamp, smooth, w, mid, key, SIDES, sgn, ruSide, cm, shadows, frameMat, steel, rubber, stand, trunk, placeHips, look, palmTo, reachOf, baseAudit } from '../poses.js';
+import { V, X, UP, FWD, deg, rad, lerp, clamp, smooth, w, mid, key, SIDES, sgn, ruSide, cm, shadows, frameMat, steel, rubber, stand, trunk, placeHips, look, palmTo, reachOf, baseAudit, axeGrip, twistAudit } from '../poses.js';
 
 const HALF = 0.3; // полуширина стойки, м
 const PULLEY = new THREE.Vector3(-1.05, 2.05, 0.05); // справа, на уровне плеч по глубине
@@ -75,11 +75,12 @@ export default {
     const SR = w(rig, 'RightArm'), SL = w(rig, 'LeftArm'), reach = Math.min(reachOf(T, 'Right'), reachOf(T, 'Left')) * 0.985;
     let C = M.clone();
     for (let k = 0.2; k < 1.2; k += 0.005) { const c = M.clone().addScaledVector(dir, k); if (Math.max(c.distanceTo(SR), c.distanceTo(SL)) > reach) break; C = c; }
-    const ax = new THREE.Vector3().crossVectors(dir, FWD).normalize(); if (ax.x < 0) ax.negate(); // ось рукояти, левая кисть — в +ax
+    // Хват как на топорище: рукоять поперёк рук, кисти одна над другой, обе большим пальцем вверх вдоль рукояти.
+    // Было: хват сверху двумя руками рядом на рукояти, которая у блока стояла почти отвесно, — предплечья перекрещивались
+    // и скручивались (Лёва 24.11: «руки перекручивает, совсем жопа»).
     look(T, C, 25);
     const pole = new THREE.Vector3(0, -1, -0.3);
-    palmTo(T, 'Right', C.clone().addScaledVector(ax, -0.055), ax, pole);
-    palmTo(T, 'Left', C.clone().addScaledVector(ax, 0.055), ax.clone().negate(), pole);
+    axeGrip(T, C, dir, pole); // хват как на топорище (poses.js): кисти одна над другой, предплечья не перекрещены
     rig.grip('Right', 1); rig.grip('Left', 1);
     const pc = rig.palm('Right').add(rig.palm('Left')).multiplyScalar(0.5);
     T.handle.position.copy(pc); T.handle.quaternion.setFromUnitVectors(X, rig.palm('Left').sub(rig.palm('Right')).normalize());
@@ -88,6 +89,7 @@ export default {
   },
   audit(T) {
     const { rig } = T, r = baseAudit(T, { feet: ['LeftFoot', 'RightToeBase'], gaze: [-45, 35] }); // взгляд идёт за рукоятью, как в cable-lift
+    twistAudit(T, r);
     // Скрутка поясницы отдельно от таза: «влево» таза и нижних рёбер по горизонтали.
     const lh = T.latHips.clone().applyQuaternion(rig.b.Hips.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize();
     const ls = T.latSpine.clone().applyQuaternion(rig.b.Spine.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize(); // поясничная кость

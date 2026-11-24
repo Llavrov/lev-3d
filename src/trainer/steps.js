@@ -73,8 +73,19 @@ export function footFollowShin(T, s, k, plant = 0.35) {
   rig.setWorld(foot, q0.slerp(footAlong(T, s, w(rig, s + 'Foot').sub(w(rig, s + 'Leg')), plant), k));
 }
 // Где середина тазобедренных и сам сустав стороны s в секунду t по сценарию (стопы по старым дугам: без рекурсии).
+// Ключ тела в секунду t. На время бега по генератору (S.run) наклон корпуса и высоту таза задаёт он: наклон по ускорению,
+// таз не выше 0,9 длины ноги над щиколоткой (в игре на бегу таз тоже на 4–5 см ниже стойки) — так стопа достаёт на
+// 0,36 м позади таза и опора длиннее. С тазом на 0,93 опора выходила 0,14 с при полёте 0,21 с: бег «плыл».
+function bodyKey(T, S, t) {
+  const b = S.curve(t), tc = mod(t, S.P), R = S.leans?.find((r) => tc >= r.t0 && tc <= r.t1);
+  if (!R) return b;
+  const k = clamp(b.gait ?? 0, 0, 1) * smooth(clamp((tc - R.t0) / 0.25, 0, 1)) * smooth(clamp((R.t1 - tc) / 0.25, 0, 1));
+  b.elev = lerp(b.elev, 90 - R.at(tc), k);
+  b.y = lerp(b.y, Math.min(b.y, T.rig.ankleH + 0.9 * (T.rig.L1 + T.rig.L2)), k);
+  return b;
+}
 function hipAt(T, S, t, s) {
-  const b = S.curve(t), a = deg(b.yaw), c = centerAt(T, S, t, b);
+  const b = bodyKey(T, S, t), a = deg(b.yaw), c = centerAt(T, S, t, b);
   return new THREE.Vector3(c.x, b.y, c.z).add(new THREE.Vector3(Math.cos(a), 0, -Math.sin(a)).multiplyScalar(sgn(s) * T.hipHalf));
 }
 // Середина таза на полу: по пути S.at (бег настоящим темпом: таз идёт ровно, а не посередине между стопами в полёте),
@@ -88,6 +99,8 @@ function centerAt(T, S, t, b, f) {
 function fkAnkle(T, S, s, u, tt, p) {
   const { th, sh } = swingLeg(u, p), q = new THREE.Quaternion().setFromAxisAngle(UP, deg(S.curve(tt).yaw));
   if (s === 'Right') { th.x = -th.x; sh.x = -sh.x; }
+  // Сгиб колена в махе не больше 128°: клип спринта складывает ногу до 150°, у мускулистой модели икра уходит в бедро.
+  if (th.angleTo(sh) > deg(128)) { const ax = new THREE.Vector3().crossVectors(th, sh).normalize(); sh.copy(th).applyAxisAngle(ax, deg(128)); } // ось до copy: иначе она нулевая
   return hipAt(T, S, tt, s).addScaledVector(th.applyQuaternion(q), T.rig.L1).addScaledVector(sh.applyQuaternion(q), T.rig.L2);
 }
 // Нога в махе по клипу: от сустава бедром и голенью клипа, поправки «откуда оторвалась» (гаснет к трети маха) и
@@ -140,7 +153,7 @@ export function script(P, start) {
     // равноускоренно; частота шагов и опора — как у людей на скорости (gaitParams, не медленнее cadence м/с),
     // стопа встаёт впереди таза на долю опорного пути (вынос: разгон 0,2, ровный бег 0,35, торможение 0,6),
     // между опорами полёт. Возвращает, где и когда всё кончилось, и какой ноге шагать дальше.
-    run({ side, t0, from, yaw = 0, v0 = 0, segs, L, half = 0.09, first = 0.2, cadence = 3.3, push = 0.4, back = 0.3, front = 0.35 }) {
+    run({ side, t0, from, yaw = 0, v0 = 0, segs, L, half = 0.09, first = 0.2, cadence = 3.3, push = 0.4, back = 0.36, front = 0.27 }) {
       const d = yawV(yaw), lat = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
       const parts = []; let v = v0, tt = t0, ss = 0;
       for (const [dist, v1, ahead] of segs) {
@@ -156,8 +169,10 @@ export function script(P, start) {
         if (c.a < 0 && c.v < 1) break; // на остановке приставные шаги ставит упражнение
         // Опора: полшага минус полёт, но стопа остаётся позади таза не дальше back и встаёт впереди не дальше front —
         // дальше нога не достаёт (на спринте опора 0,1 с).
-        const ah = c.ahead ?? 0.35, fly = Math.max(0, 0.5 * p.T - p.duty * p.T) * k;
-        let hold = 0.5 * p.T - fly; const lim = Math.min(back / (1 - ah), front / ah), go = (h) => st(tl + h).s - c.s; // путь тела за опору h
+        // Вынос стопы: на разгоне с места она встаёт позади таза и толкает назад (иначе наклон корпуса при отвесной ноге
+        // выглядит поклоном: «таз выпячен»), к 4,5 м/с — впереди, как на ровном беге.
+        const ah = c.a > 1.5 ? Math.min(c.ahead ?? 0.35, lerp(-0.35, 0.3, smooth(clamp((c.v - 1) / 3.5, 0, 1)))) : c.ahead ?? 0.4, fly = Math.max(0, 0.5 * p.T - p.duty * p.T) * k;
+        let hold = 0.5 * p.T - fly; const lim = Math.min(back / (1 - ah), ah > 0 ? front / ah : Infinity), go = (h) => st(tl + h).s - c.s; // путь тела за опору h
         for (let i = 0; i < 4 && go(hold) > lim; i++) hold *= lim / go(hold);
         const travel = go(hold);
         const own = plants[side][plants[side].length - 1];
@@ -166,6 +181,10 @@ export function script(P, start) {
         S.step(side, lift, tl, x, z, yaw, { push, hold }); S.at(tl, ...pos(c.s));
         steps.push({ side, t: tl, v: c.v }); prev = tl; side = side === 'Left' ? 'Right' : 'Left'; tl += 0.5 * p.T;
       }
+      // Наклон корпуса от отвеса — из скорости и ускорения (тело наклоняется по ускорению, как в игре): трусца ~4°,
+      // спринт ~5°, разгон с места до 22° (больше ноги модели не поддержат: стопа не достаёт дальше 0,36 м за таз), торможение — чуть назад. gait() берёт его вместо elev ключа на время бега.
+      const leanOf = (q) => clamp(2 + 0.6 * q.v + 1.2 * rad(Math.atan(q.a / 9.81)), -6, 22);
+      (S.leans ??= []).push({ t0, t1: end, at: (t) => [-0.2, -0.1, 0, 0.1, 0.2].reduce((m, d) => m + leanOf(st(clamp(t + d, t0, end))), 0) / 5 });
       const e = pos(ss); S.at(end, ...e);
       if (v < 1.2) { // остановка: приставить обе стопы в стойку у конца пути
         let t = prev + 0.14;
@@ -252,7 +271,7 @@ export function footAt(T, s, S, t) {
 
 // Поза в секунду t по сценарию S. Возвращает состояние для проверки и для своих добавок упражнения (руки, взгляд).
 export function gait(T, S, t, opt = {}) {
-  const { rig } = T, b = S.curve(t), f = {};
+  const { rig } = T, b = bodyKey(T, S, t), f = {};
   for (const s of SIDES) f[s] = footAt(T, s, S, t);
   // Мокап: gait — доля ноги в махе и качания таза по клипу (0 — старая дуга), run — доля рук клипа, v — скорость (м/с)
   // для выбора клипа и размаха: шаг ~1,4, трусца ~3, разгон 4–5.
@@ -272,7 +291,7 @@ export function gait(T, S, t, opt = {}) {
     // Перекат: к отрыву опорная встаёт на подушечку (шаг — последние 55 % опоры, не дольше 0,45 с: пятка у живого отрывается с середины опоры; бег — 40 %, 0,3 с), а не тянется пяткой
     // по полу за уехавшим тазом — иначе Rig.legs сам поднимает пятку и щиколотка едет. Пятка не выше 0,4 (3 см): выше
     // Rig.legs приближённо крутит стопу и подушечка отрывается от пола на 1,5–2 см.
-    else if (f[s].planted && gw > 0) { const r = Math.min(lerp(0.45, 0.3, p.run), f[s].stance * lerp(0.55, 0.4, p.run)); f[s].toe = Math.max(f[s].toe, gw * 0.4 * smooth(clamp(1 - f[s].left / r, 0, 1))); }
+    else if (f[s].planted && gw > 0) { const r = Math.min(lerp(0.45, 0.3, p.run), f[s].stance * lerp(0.55, 0.4, p.run)); f[s].toe = Math.max(f[s].toe, gw * 0.4 * smooth(clamp(1 - f[s].left / r, 0, 1))); } // выше 0,4 (проба 0,7 и 1 на бегу, 24.11) подушечка висит над полом на 2–7 см и таз проседает до 0,79 длины ноги
     ft[s] = { pos: new THREE.Vector3(f[s].x, 0, f[s].z), lift: f[s].lift, yaw: f[s].yaw - yaw - 0.55 * deg(hips), toe: f[s].toe };
   }
   const { x: mx, z: mz } = centerAt(T, S, t, b, f);
@@ -385,9 +404,27 @@ export function footAudit(T, r) {
         if (k < lim) r.bad.push(`${ruSide(s)} колено в махе почти прямое: ${k}° (на ${runny ? 'бегу' : 'шаге'} от ${lim}°)`);
       }
       if (!g.S.low && f.planted && !o.planted && o.u > 0.3 && o.u < 0.7) { // S.low — игровая стойка (скрестный шаг, выход к мячу): таз низко законно
-        const h = (mid(rig, 'LeftUpLeg', 'RightUpLeg').y - rig.ankleH) / L, lim = runny ? 0.88 : 0.9; r.m.hipMid = +h.toFixed(3);
+        const h = (mid(rig, 'LeftUpLeg', 'RightUpLeg').y - rig.ankleH) / L, lim = runny ? (g.S.leans ? 0.84 : 0.88) : 0.9; r.m.hipMid = +h.toFixed(3);
         if (h < lim) r.bad.push(`таз в полуприседе посреди опоры: ${h.toFixed(2)} длины ноги (от ${lim})`);
       }
+    }
+  }
+  // Брак, который Лёва увидел на телефоне 24.11 («жопа выпячивается стрёмно», «икры»): на бегу корпус сложен в поясе
+  // над почти отвесной опорной ногой (наклон корпуса больше наклона линии щиколотка → таз на 22°), и нога в махе
+  // согнута так, что икра уходит в бедро (сгиб колена больше 132°, у модели coach мясо сминается уже со 128°).
+  if (g.gw > 0.7 && g.p.run > 0.5) {
+    const fwd = yawV(g.yaw);
+    for (const s of SIDES) {
+      const f = g.f[s], H = w(rig, s + 'UpLeg'), A = w(rig, s + 'Foot'), K = w(rig, s + 'Leg');
+      if (!f.planted) {
+        const k = rad(K.clone().sub(H).angleTo(A.clone().sub(K))); r.m['fold' + s[0]] = Math.round(k);
+        if (k > 132) r.bad.push(`${ruSide(s, true)} икра уходит в бедро на махе: сгиб колена ${Math.round(k)}° (до 132°)`);
+        continue;
+      }
+      const d = H.clone().sub(A), ahead = d.dot(fwd);
+      if (ahead < 0) continue; // до середины опоры нога впереди таза: сравнивать не с чем
+      const legLean = rad(Math.atan2(ahead, d.y)), bow = Math.round(90 - g.b.elev - legLean); r.m.bow = bow;
+      if (bow > 22) r.bad.push(`корпус сложен в поясе на бегу, таз выпячен: наклон корпуса на ${bow}° больше наклона опорной ноги (до 22°)`);
     }
   }
   runArmAudit(T, r);
@@ -406,9 +443,11 @@ export function runArmAudit(T, r) {
   for (const s of SIDES) {
     const e = r.m['elbow' + s[0]] ?? rig.audit()[s].elbow, c = s[0].toLowerCase();
     if (e < 70 || e > 110) r.bad.push(`${ruSide(s, true)} рука на бегу: локоть ${e}° (70–110°)`);
-    if (R.ak[c + 'Up'].z < -0.5 && R.elev > 70) { // плечо клипа на 30° и больше назад: крайняя точка маха
-      const d = w(rig, s + 'Hand').sub(hip).dot(R.face); r.m['handBack' + s[0]] = cm(d);
-      if (d > 0.03) r.bad.push(`${ruSide(s, true)} кисть на махе назад перед бедром (${cm(d)} см)`);
+    if (R.ak[c + 'Up'].z < -0.5 && R.elev > 82) { // плечо клипа на 30° и больше назад: крайняя точка маха; при наклоне больше 8° руки повёрнуты вперёд вместе с корпусом (gait: lean), там не меряем
+      // Кисть доходит до линии таза, считая от плеч: при наклоне корпуса плечи сами впереди таза (на 11° — на 9 см).
+      const lead = Math.max(0, mid(rig, 'LeftArm', 'RightArm').sub(hip).dot(R.face));
+      const d = w(rig, s + 'Hand').sub(hip).dot(R.face) - lead; r.m['handBack' + s[0]] = cm(d);
+      if (d > 0.04) r.bad.push(`${ruSide(s, true)} кисть на махе назад перед бедром (${cm(d)} см)`);
     }
   }
   return r;

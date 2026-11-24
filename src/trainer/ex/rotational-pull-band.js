@@ -3,10 +3,10 @@
 // грудь догоняет, рукоять уходит по горизонтальной дуге перед грудью к левому боку; пауза; медленно назад к стойке.
 // Правая стопа проворачивается на подушечке. Рукоять по дуге от середины плеч (азимут, угол к горизонту), как в дровосеке.
 import * as THREE from 'three';
-import { V, X, FWD, deg, rad, lerp, clamp, smooth, w, mid, key, SIDES, ruSide, frameMat, shadows, stand, trunk, placeHips, look, palmTo, reachOf, baseAudit } from '../poses.js';
+import { V, X, FWD, deg, rad, lerp, clamp, smooth, w, mid, key, SIDES, ruSide, frameMat, shadows, stand, trunk, placeHips, look, palmTo, reachOf, baseAudit, axeGrip, twistAudit } from '../poses.js';
 import { floorSetup } from '../floor.js';
 import { band, stretch } from '../band.js';
-import { handleBar, placeBar, onBar, skinGap, gazeAudit } from '../core.js';
+import { handleBar, placeBar, barEnd, onBar, skinGap, gazeAudit } from '../core.js';
 
 const HALF = 0.3;
 const ANCHOR = new THREE.Vector3(-1.2, 1.2, 0.65); // справа впереди: резинка идёт перед грудью, а не сквозь руку
@@ -56,17 +56,16 @@ export default {
     const SR = w(rig, 'RightArm'), SL = w(rig, 'LeftArm'), reach = Math.min(reachOf(T, 'Right'), reachOf(T, 'Left')) * 0.985;
     let C = M.clone();
     for (let k = 0.2; k < 1.2; k += 0.005) { const c = M.clone().addScaledVector(dir, k); if (Math.max(c.distanceTo(SR), c.distanceTo(SL)) > reach) break; C = c; }
-    const ax = new THREE.Vector3().crossVectors(dir, FWD).normalize(); if (ax.x < 0) ax.negate();
     look(T, C.clone().setY(C.y - 0.3).addScaledVector(dir.clone().setY(0).normalize(), 1.5), 35);
     const pole = new THREE.Vector3(0, -1, -0.3);
-    palmTo(T, 'Right', C.clone().addScaledVector(ax, -0.055), ax, pole);
-    palmTo(T, 'Left', C.clone().addScaledVector(ax, 0.055), ax.clone().negate(), pole);
+    axeGrip(T, C, dir, pole); // хват как на топорище (poses.js): при хвате сверху рядом предплечье скручивалось до 150–179°
     rig.grip('Right', 1); rig.grip('Left', 1);
     placeBar(T, T.bar);
-    stretch(T.cable, T.bar.position, ANCHOR);
+    stretch(T.cable, barEnd(T.bar, ANCHOR), ANCHOR);
   },
   audit(T) {
     const { rig } = T, r = baseAudit(T, { feet: ['LeftFoot', 'RightToeBase'] });
+    twistAudit(T, r);
     const lh = T.latHips.clone().applyQuaternion(rig.b.Hips.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize();
     const ls = T.latSpine.clone().applyQuaternion(rig.b.Spine.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize();
     r.m.lumbar = Math.round(rad(lh.angleTo(ls)));
@@ -77,7 +76,7 @@ export default {
       if (r.m['grip' + s[0]] > 2) r.bad.push(`${ruSide(s, true)} кисть не на рукояти`);
     }
     gazeAudit(T, r);
-    const g = skinGap(T, T.bar.position, ANCHOR, 0.008);
+    const g = skinGap(T, barEnd(T.bar, ANCHOR), ANCHOR, 0.008);
     r.m.cableGap = g.gap;
     if (g.gap < 0.5) r.bad.push(`резинка сквозь тело (${g.bone}, ${g.gap} см)`);
     return r;

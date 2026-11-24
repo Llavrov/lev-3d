@@ -28,6 +28,12 @@ export function placeBar(T, bar) {
   bar.position.copy(R).add(L).multiplyScalar(0.5); bar.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), L.sub(R).normalize());
   bar.updateMatrixWorld(true);
 }
+// Конец рукояти, ближний к блоку или креплению: туда пристёгнут трос. При хвате «топорищем» (кисти одна над другой)
+// трос из середины рукояти шёл бы сквозь запястье верхней руки.
+export function barEnd(bar, anchor, half = 0.1) {
+  const x = new THREE.Vector3(1, 0, 0).applyQuaternion(bar.quaternion), a = bar.position.clone().addScaledVector(x, half), b = bar.position.clone().addScaledVector(x, -half);
+  return a.distanceTo(anchor) <= b.distanceTo(anchor) ? a : b;
+}
 // Ладонь до оси рукояти, см.
 export function onBar(T, s, bar) {
   const ax = new THREE.Vector3(1, 0, 0).applyQuaternion(bar.quaternion), rel = T.rig.palm(s).sub(bar.position);

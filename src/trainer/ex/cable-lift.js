@@ -4,10 +4,10 @@
 // на подушечке и встаёт на носок. Рукоять идёт по дуге (азимут и угол к горизонту от середины плеч), как в дровосеке:
 // на прямой между краями она в середине пути проходила бы у груди и сгибала локти.
 import * as THREE from 'three';
-import { V, X, FWD, deg, rad, lerp, clamp, smooth, w, mid, key, SIDES, ruSide, stand, trunk, placeHips, look, palmTo, reachOf, baseAudit } from '../poses.js';
+import { V, X, FWD, deg, rad, lerp, clamp, smooth, w, mid, key, SIDES, ruSide, stand, trunk, placeHips, look, palmTo, reachOf, baseAudit, axeGrip, twistAudit } from '../poses.js';
 import { floorSetup } from '../floor.js';
 import { band, stretch } from '../band.js';
-import { station, handleBar, placeBar, onBar, skinGap, gazeAudit } from '../core.js';
+import { station, handleBar, placeBar, barEnd, onBar, skinGap, gazeAudit } from '../core.js';
 
 const HALF = 0.32;
 const PULLEY = new THREE.Vector3(-1.0, 0.3, 0.65); // справа, впереди стоп: трос идёт перед телом, а не сквозь руку
@@ -58,17 +58,16 @@ export default {
     const SR = w(rig, 'RightArm'), SL = w(rig, 'LeftArm'), reach = Math.min(reachOf(T, 'Right'), reachOf(T, 'Left')) * 0.985;
     let C = M.clone();
     for (let k = 0.2; k < 1.2; k += 0.005) { const c = M.clone().addScaledVector(dir, k); if (Math.max(c.distanceTo(SR), c.distanceTo(SL)) > reach) break; C = c; }
-    const ax = new THREE.Vector3().crossVectors(dir, FWD).normalize(); if (ax.x < 0) ax.negate();
     look(T, C, 20); // кивок за рукоятью до 20°: при 35 (подбирали под задранное лицо) внизу смотрел в пол на 58°
     const pole = new THREE.Vector3(0, -1, -0.3);
-    palmTo(T, 'Right', C.clone().addScaledVector(ax, -0.055), ax, pole);
-    palmTo(T, 'Left', C.clone().addScaledVector(ax, 0.055), ax.clone().negate(), pole);
+    axeGrip(T, C, dir, pole); // хват как на топорище (poses.js): при хвате сверху рядом предплечье скручивалось до 150–179°
     rig.grip('Right', 1); rig.grip('Left', 1);
     placeBar(T, T.bar);
-    stretch(T.cable, T.bar.position, PULLEY);
+    stretch(T.cable, barEnd(T.bar, PULLEY), PULLEY);
   },
   audit(T) {
     const { rig } = T, r = baseAudit(T, { feet: ['LeftFoot', 'RightToeBase'], gaze: [-45, 35] }); // взгляд идёт за рукоятью
+    twistAudit(T, r);
     const lh = T.latHips.clone().applyQuaternion(rig.b.Hips.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize();
     const ls = T.latSpine.clone().applyQuaternion(rig.b.Spine.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize();
     r.m.lumbar = Math.round(rad(lh.angleTo(ls)));
@@ -80,7 +79,7 @@ export default {
       if (r.m['grip' + s[0]] > 2) r.bad.push(`${ruSide(s, true)} кисть не на рукояти`);
     }
     gazeAudit(T, r, 35, -45); // взгляд идёт за рукоятью: внизу в пол, наверху вверх
-    const g = skinGap(T, T.bar.position, PULLEY);
+    const g = skinGap(T, barEnd(T.bar, PULLEY), PULLEY);
     r.m.cableGap = g.gap;
     if (g.gap < 0.5) r.bad.push(`трос сквозь тело (${g.bone}, ${g.gap} см)`);
     return r;
