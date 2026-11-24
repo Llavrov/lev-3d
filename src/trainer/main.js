@@ -270,12 +270,13 @@ function findOccluders() {
 }
 function fadeOccluders(dt) {
   for (const c of occ) {
-    let hit = false;
-    for (const n of TO) {
-      const p = T.rig.b[n].getWorldPosition(new THREE.Vector3()), d = p.distanceTo(camera.position);
+    let n = 0; // заслон хотя бы двух точек: опора под предплечьем, закрывшая один таз сидящего, остаётся как есть
+    for (const b of TO) {
+      const p = T.rig.b[b].getWorldPosition(new THREE.Vector3()), d = p.distanceTo(camera.position);
       ray.set(camera.position, p.sub(camera.position).normalize()); ray.far = d - 0.25; // заслон заметно ближе точки тела
-      if (ray.intersectObject(c.o, true).length) { hit = true; break; }
+      if (ray.intersectObject(c.o, true).length) n++;
     }
+    const hit = n >= 2;
     c.k += ((hit ? 0.2 : 1) - c.k) * (dt == null ? 1 : 1 - Math.exp(-dt / 0.2));
     for (const m of c.mats) { m.opacity = c.k; m.depthWrite = c.k > 0.98; }
   }
