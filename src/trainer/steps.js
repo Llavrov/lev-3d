@@ -216,8 +216,9 @@ export function gait(T, S, t, opt = {}) {
       f[s].x = lerp(f[s].x, m.x, gw); f[s].z = lerp(f[s].z, m.z, gw); f[s].lift = lerp(f[s].lift, m.lift, gw);
     }
     // Перекат: к отрыву опорная встаёт на подушечку (шаг — последние 55 % опоры, не дольше 0,45 с: пятка у живого отрывается с середины опоры; бег — 40 %, 0,3 с), а не тянется пяткой
-    // по полу за уехавшим тазом — иначе Rig.legs сам поднимает пятку и щиколотка едет.
-    else if (f[s].planted && gw > 0) { const r = Math.min(lerp(0.45, 0.3, p.run), f[s].stance * lerp(0.55, 0.4, p.run)); f[s].toe = Math.max(f[s].toe, gw * 0.45 * smooth(clamp(1 - f[s].left / r, 0, 1))); }
+    // по полу за уехавшим тазом — иначе Rig.legs сам поднимает пятку и щиколотка едет. Пятка не выше 0,4 (3 см): выше
+    // Rig.legs приближённо крутит стопу и подушечка отрывается от пола на 1,5–2 см.
+    else if (f[s].planted && gw > 0) { const r = Math.min(lerp(0.45, 0.3, p.run), f[s].stance * lerp(0.55, 0.4, p.run)); f[s].toe = Math.max(f[s].toe, gw * 0.4 * smooth(clamp(1 - f[s].left / r, 0, 1))); }
     ft[s] = { pos: new THREE.Vector3(f[s].x, 0, f[s].z), lift: f[s].lift, yaw: f[s].yaw - yaw - 0.55 * deg(hips), toe: f[s].toe };
   }
   const mx = (f.Left.x + f.Right.x) / 2 + b.dx, mz = (f.Left.z + f.Right.z) / 2 + b.dz;
