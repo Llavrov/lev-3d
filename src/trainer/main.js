@@ -50,6 +50,17 @@ const rim = new THREE.DirectionalLight('#cfe0ff', 1.1); rim.position.set(-2.5, 2
 const floor = new THREE.Mesh(new THREE.CircleGeometry(14, 64), new THREE.MeshStandardMaterial({ color: '#222428', roughness: 1 }));
 floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 const camera = new THREE.PerspectiveCamera(32, 1, 0.05, 60);
+// За бегуном (follow): разметка пола через метр, иначе на пустом полу бег выглядит бегом на месте; свет с тенью и пол
+// едут за человеком (stepFollow).
+const marks = new THREE.GridHelper(60, 60, '#3a3d44', '#2e3036'); marks.position.y = 0.003; marks.visible = false; scene.add(marks);
+const SUN0 = sun.position.clone();
+function stepFollow() {
+  if (!ex?.follow || !T.rig) return;
+  const h = T.rig.b.Hips.getWorldPosition(new THREE.Vector3()).setY(0);
+  marks.visible = true;
+  sun.position.copy(SUN0).add(h); sun.target.position.copy(h); sun.target.updateMatrixWorld();
+  floor.position.set(h.x, 0, h.z);
+}
 
 // ---------- Экран ----------
 const pick = $('ex');
@@ -134,14 +145,17 @@ function fit(az) {
   return { target: c, d, az };
 }
 const cam = { az: 0, el: EL, d: 5, c: new THREE.Vector3(0, 0.9, 0) }, goal = { az: 0, el: EL, d: 5, c: new THREE.Vector3(0, 0.9, 0) };
-let manual = false;
-function wholeGoal() { const f = fit(azOf(view)); goal.az = f.az; goal.el = EL; goal.d = f.d; goal.c.copy(f.target); }
+let manual = false, focusOn = false; // focusOn — цель камеры сейчас крупный план мышцы, а не всё тело
+const camOff = new THREE.Vector3();
+function wholeGoal() { focusOn = false; return wholeGoal0(); }
+function wholeGoal0() { const f = fit(azOf(view)); goal.az = f.az; goal.el = EL; goal.d = f.d; goal.c.copy(f.target); }
 // Крупный план мышц и суставов list: центр — середина их точек на коже, камера со стороны, куда смотрит кожа, но ближе
 // к обычному ракурсу (за тело без нужды не уходим) и не из-под пола. Дистанция — чтобы участок занял около трети кадра.
 function focusGoal(list) {
   const f = muscleFocus(T.mesh, list.filter((m) => MUSCLES.includes(m))), pts = f?.points ?? [];
   for (const j of list) if (JOINT_BONES[j]) for (const s of ['Left', 'Right']) pts.push(T.rig.b[s + JOINT_BONES[j]].getWorldPosition(new THREE.Vector3()));
   if (!pts.length) return wholeGoal();
+  focusOn = true;
   const c = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(pts.length);
   // Куда смотрит кожа участка; у суставов без мышц — наружу от середины тела (плечи лежащего видно со стороны головы).
   const out = f?.normal ?? c.clone().sub(T.bounds.getCenter(new THREE.Vector3())).normalize();
@@ -161,7 +175,14 @@ function stepCam(dt) {
   if (!manual) {
     const a = dt == null ? 1 : 1 - Math.exp(-dt / 0.5);
     cam.az += Math.atan2(Math.sin(goal.az - cam.az), Math.cos(goal.az - cam.az)) * a; // по короткой дуге
-    cam.el += (goal.el - cam.el) * a; cam.d += (goal.d - cam.d) * a; cam.c.lerp(goal.c, a);
+    cam.el += (goal.el - cam.el) * a; cam.d += (goal.d - cam.d) * a;
+    // За бегуном (follow) центр по полу идёт с тазом без отставания, плавно меняется только сдвиг центра тела от таза:
+    // на бегу 5,5 м/с камера с запаздыванием 0,5 с отставала на 2,7 м, и человек выбегал из кадра.
+    if (ex?.follow && T.rig && dt != null && !focusOn) {
+      const h = T.rig.b.Hips.getWorldPosition(new THREE.Vector3());
+      camOff.lerp(new THREE.Vector3(goal.c.x - h.x, 0, goal.c.z - h.z), a);
+      cam.c.set(h.x + camOff.x, cam.c.y + (goal.c.y - cam.c.y) * a, h.z + camOff.z);
+    } else { cam.c.lerp(goal.c, a); if (T.rig && ex?.follow) { const h = T.rig.b.Hips.getWorldPosition(new THREE.Vector3()); camOff.set(cam.c.x - h.x, 0, cam.c.z - h.z); } }
   }
   camera.position.copy(cam.c).addScaledVector(sph(cam.az, cam.el), cam.d);
   camera.lookAt(cam.c);
@@ -367,6 +388,28 @@ loader.load(`${import.meta.env.BASE_URL}models/${MODEL}.glb`, (gltf) => {
     // Доля высоты окна, которую занимает человек (кости от стоп до макушки): мера «человек крупный на телефоне».
     occluded: () => occ.filter((c) => c.k < 0.9).length, // сколько заслонов сейчас прозрачны
     tall() { const ys = T.rig.all.map(({ bone }) => bone.getWorldPosition(new THREE.Vector3()).project(camera).y); return +((Math.max(...ys) - Math.min(...ys)) / 2).toFixed(3); },
+    // Бег за цикл (24.11.2026, Лёва: «там не бег, там какая-то ходьба»): сколько секунд таз идёт быстрее 2,5 м/с, доля
+    // полёта (обе стопы над полом), касаний в секунду. Упражнение обещает бег полем runs: { s, flight } — секунд на беговой
+    // скорости и доля полёта в них, или { cadence, flight } для бега на месте; violations — чего не хватает.
+    run(N = 480) {
+      const C = cycleOf(ex) * (ex.span ?? 1), b = T.rig.b, P = (n) => b[n].getWorldPosition(new THREE.Vector3()), rows = [];
+      for (let i = 0; i <= N; i++) { poseAt(C * i / N); T.wrap.updateMatrixWorld(true); rows.push({ h: P('Hips'), f: ['Left', 'Right'].map((s) => [P(s + 'Foot').y, P(s + 'ToeBase').y]) }); }
+      const a0 = Math.min(...rows.flatMap((r) => r.f.map((f) => f[0]))), t0 = Math.min(...rows.flatMap((r) => r.f.map((f) => f[1]))), dt = C / N;
+      const up = (f) => f[0] > a0 + 0.02 && f[1] > t0 + 0.015;
+      let fast = 0, fly = 0, flyFast = 0, lands = 0, was = [false, false];
+      for (let i = 1; i <= N; i++) {
+        const r = rows[i], v = Math.hypot(r.h.x - rows[i - 1].h.x, r.h.z - rows[i - 1].h.z) / dt, u = r.f.map(up), both = u[0] && u[1];
+        if (both) fly++; if (v > 2.5) { fast++; if (both) flyFast++; }
+        u.forEach((x, k) => { if (was[k] && !x) lands++; }); was = u;
+      }
+      const m = { cycle: +C.toFixed(2), fastS: +(fast * dt).toFixed(2), flightFast: fast ? +(flyFast / fast).toFixed(2) : 0, flight: +(fly / N).toFixed(2), cadence: +(lands / C).toFixed(1) }, bad = [], w = ex.runs;
+      if (w?.s && m.fastS < w.s) bad.push(`бега мало: ${m.fastS} с быстрее 2,5 м/с (нужно от ${w.s})`);
+      if (w?.s && m.flightFast < (w.flight ?? 0.2)) bad.push(`бег без полёта: ${m.flightFast} времени на скорости (нужно от ${w.flight ?? 0.2})`);
+      if (w?.cadence && m.cadence < w.cadence) bad.push(`шаги редкие: ${m.cadence} в секунду (нужно от ${w.cadence})`);
+      if (w?.cadence && m.flight < (w.flight ?? 0.1)) bad.push(`нет полёта: ${m.flight} цикла (нужно от ${w.flight ?? 0.1})`);
+      show(null);
+      return { ...m, violations: bad };
+    },
     cycle: cycleOf(ex) * (ex.span ?? 1),
     legR: T.legR,
     T,
@@ -389,6 +432,7 @@ renderer.setAnimationLoop((now) => {
     fills.forEach((b, k) => { b.style.transform = `scaleX(${k < si ? 1 : k > si ? 0 : Math.min(1, tau / steps[si].dur)})`; });
     if (!(DEBUG && stop)) show(dt); // в отладке на паузе позу не трогаем: её ставят set, step и pose
     stepCam(dt);
+    stepFollow();
     fadeOccluders(dt);
   }
   renderer.render(scene, camera);

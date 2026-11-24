@@ -74,8 +74,15 @@ export function footFollowShin(T, s, k, plant = 0.35) {
 }
 // Где середина тазобедренных и сам сустав стороны s в секунду t по сценарию (стопы по старым дугам: без рекурсии).
 function hipAt(T, S, t, s) {
-  const b = S.curve(t), L = footAt(T, 'Left', S, t), R = footAt(T, 'Right', S, t), a = deg(b.yaw);
-  return new THREE.Vector3((L.x + R.x) / 2 + b.dx, b.y, (L.z + R.z) / 2 + b.dz).add(new THREE.Vector3(Math.cos(a), 0, -Math.sin(a)).multiplyScalar(sgn(s) * T.hipHalf));
+  const b = S.curve(t), a = deg(b.yaw), c = centerAt(T, S, t, b);
+  return new THREE.Vector3(c.x, b.y, c.z).add(new THREE.Vector3(Math.cos(a), 0, -Math.sin(a)).multiplyScalar(sgn(s) * T.hipHalf));
+}
+// Середина таза на полу: по пути S.at (бег настоящим темпом: таз идёт ровно, а не посередине между стопами в полёте),
+// без пути — середина стоп. dx, dz ключа тела прибавляются в обоих случаях.
+function centerAt(T, S, t, b, f) {
+  if (S.way) { const c = S.way(t); return { x: c.x + b.dx, z: c.z + b.dz }; }
+  const L = f?.Left ?? footAt(T, 'Left', S, t), R = f?.Right ?? footAt(T, 'Right', S, t);
+  return { x: (L.x + R.x) / 2 + b.dx, z: (L.z + R.z) / 2 + b.dz };
 }
 // Щиколотка ноги s в махе прямой кинематикой клипа: доля маха u, тело в секунду tt.
 function fkAnkle(T, S, s, u, tt, p) {
@@ -119,12 +126,58 @@ export function curve(keys, P) {
 // Сборка сценария по шагам: стопы стоят с начала цикла, step(s, отрыв, постановка, x, z, yaw, доп.) переносит стопу.
 // Последняя стоянка каждой стопы должна совпасть с первой: цикл замыкается, она тянется через конец цикла.
 export function script(P, start) {
-  const plants = { Left: [], Right: [] }, body = [];
+  const plants = { Left: [], Right: [] }, body = [], way = [];
   for (const s of SIDES) plants[s].push({ on: 0, ...start[s] });
   const S = {
     P, plants, body,
     step(s, lift, land, x, z, yaw, extra = {}) { const L = plants[s]; L[L.length - 1].off = lift; L.push({ on: land, x, z, yaw, ...extra }); return S; },
     key(t, o) { body.push([t, o]); return S; },
+    // Путь таза по полу: узлы (секунда, x, z), между ними кривая; два одинаковых узла подряд — стоит.
+    at(t, x, z) { way.push([t, { x, z }]); return S; },
+    // Бег настоящим темпом (24.11.2026). Лёва про первую версию: «там не бег, там какая-то ходьба». Сценарии ставили
+    // три-четыре шага по 0,5 м руками, быстрее 2,5 м/с тело шло 0,2–0,4 с из цикла. Здесь шаги раскладываются сами:
+    // таз идёт по прямой от from по курсу yaw, скорость по отрезкам segs [[путь, скорость в конце, вынос стопы], …]
+    // равноускоренно; частота шагов и опора — как у людей на скорости (gaitParams, не медленнее cadence м/с),
+    // стопа встаёт впереди таза на долю опорного пути (вынос: разгон 0,2, ровный бег 0,35, торможение 0,6),
+    // между опорами полёт. Возвращает, где и когда всё кончилось, и какой ноге шагать дальше.
+    run({ side, t0, from, yaw = 0, v0 = 0, segs, L, half = 0.09, first = 0.2, cadence = 3.3, push = 0.4, back = 0.3, front = 0.35 }) {
+      const d = yawV(yaw), lat = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+      const parts = []; let v = v0, tt = t0, ss = 0;
+      for (const [dist, v1, ahead] of segs) {
+        const a = (v1 * v1 - v * v) / (2 * dist), dur = Math.abs(a) < 1e-6 ? dist / v : (v1 - v) / a;
+        parts.push({ t: tt, s: ss, v, a, dur, ahead }); tt += dur; ss += dist; v = v1;
+      }
+      const end = tt, st = (t) => { const q = parts.findLast((r) => t >= r.t) ?? parts[0], u = clamp(t - q.t, 0, q.dur); return { s: q.s + q.v * u + q.a * u * u / 2, v: q.v + q.a * u, a: q.a, ahead: q.ahead }; };
+      const pos = (s, k = 0) => [from[0] + d.x * s + lat.x * k, from[1] + d.z * s + lat.z * k];
+      for (const q of parts) S.at(q.t, ...pos(q.s));
+      let tl = t0 + first, prev = null; const steps = [];
+      while (tl < end - 0.08) {
+        const c = st(tl), p = gaitParams(Math.max(c.v, cadence), L), k = clamp(c.v / cadence, 0, 1);
+        if (c.a < 0 && c.v < 1) break; // на остановке приставные шаги ставит упражнение
+        // Опора: полшага минус полёт, но стопа остаётся позади таза не дальше back и встаёт впереди не дальше front —
+        // дальше нога не достаёт (на спринте опора 0,1 с).
+        const ah = c.ahead ?? 0.35, fly = Math.max(0, 0.5 * p.T - p.duty * p.T) * k;
+        let hold = 0.5 * p.T - fly; const lim = Math.min(back / (1 - ah), front / ah), go = (h) => st(tl + h).s - c.s; // путь тела за опору h
+        for (let i = 0; i < 4 && go(hold) > lim; i++) hold *= lim / go(hold);
+        const travel = go(hold);
+        const own = plants[side][plants[side].length - 1];
+        const lift = prev == null ? t0 : Math.max(own.on + 0.08, own.hold ? own.on + own.hold : prev - fly);
+        const [x, z] = pos(c.s + travel * ah, sgn(side) * half);
+        S.step(side, lift, tl, x, z, yaw, { push, hold }); S.at(tl, ...pos(c.s));
+        steps.push({ side, t: tl, v: c.v }); prev = tl; side = side === 'Left' ? 'Right' : 'Left'; tl += 0.5 * p.T;
+      }
+      const e = pos(ss); S.at(end, ...e);
+      if (v < 1.2) { // остановка: приставить обе стопы в стойку у конца пути
+        let t = prev + 0.14;
+        for (const sd of [side, side === 'Left' ? 'Right' : 'Left']) {
+          const own = plants[sd][plants[sd].length - 1], lift = Math.max(own.on + (own.hold ?? 0.1), t - 0.3); // не держать стопу позади: тело уже ушло
+          t = Math.max(t, lift + 0.16); S.step(sd, lift, t, ...pos(ss + 0.02, sgn(sd) * half), yaw, { h: 0.04 }); t += 0.2;
+        }
+        S.at(t, ...e);
+        return { t: t - 0.2, x: e[0], z: e[1], side, last: prev, steps };
+      }
+      return { t: end, x: e[0], z: e[1], side, last: prev, steps };
+    },
     done() {
       for (const s of SIDES) {
         const L = plants[s];
@@ -136,6 +189,7 @@ export function script(P, start) {
       }
       body.sort((a, b) => a[0] - b[0]);
       S.curve = curve(body, P);
+      if (way.length) { way.sort((a, b) => a[0] - b[0]); S.way = curve(way.filter((k, i) => !i || k[0] - way[i - 1][0] > 1e-6), P); }
       return S;
     },
   };
@@ -221,7 +275,7 @@ export function gait(T, S, t, opt = {}) {
     else if (f[s].planted && gw > 0) { const r = Math.min(lerp(0.45, 0.3, p.run), f[s].stance * lerp(0.55, 0.4, p.run)); f[s].toe = Math.max(f[s].toe, gw * 0.4 * smooth(clamp(1 - f[s].left / r, 0, 1))); }
     ft[s] = { pos: new THREE.Vector3(f[s].x, 0, f[s].z), lift: f[s].lift, yaw: f[s].yaw - yaw - 0.55 * deg(hips), toe: f[s].toe };
   }
-  const mx = (f.Left.x + f.Right.x) / 2 + b.dx, mz = (f.Left.z + f.Right.z) / 2 + b.dz;
+  const { x: mx, z: mz } = centerAt(T, S, t, b, f);
   const bob = gp.hipH * (rig.ankleH + 0.975 * (rig.L1 + rig.L2)) * gw * lerp(0.5, 1, p.run); // на шаге половина: у Meshy щиколотка высоко, задняя нога иначе не достаёт пола // таз выше в полёте и в середине шага, ниже в опоре бега
   placeHips(T, new THREE.Vector3(mx, b.y + bob - (opt.dy ?? 0), mz), ft);
   for (const s of SIDES) if (!f[s].planted) footFollowShin(T, s, gw * Math.sin(Math.PI * f[s].u) ** 0.7, lerp(0.15, 0.45, p.run));

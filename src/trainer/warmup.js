@@ -39,7 +39,7 @@ export function inPlace(T, t, c) {
     const f = st[s], x = sgn(s) * T.hipHalf;
     if (f.planted) { ft[s] = { pos: P3(x, 0), lift: 0, yaw: sgn(s) * 0.06, toe: c.toe ?? 0 }; continue; }
     const k = smooth(clamp(Math.min(f.u, 1 - f.u) / 0.2, 0, 1)), a = c.swing(f.u, s);
-    const p = { z: lerp(stand0.z, a.z, k), y: lerp(stand0.y, a.y, k) + 0.03 * Math.sqrt(bump(f.u)) * (1 - k) }; // сразу от пола: носок не чиркает
+    const p = { z: lerp(stand0.z, a.z, k), y: lerp(stand0.y, a.y, k) + (c.pop ?? 0.03) * Math.sqrt(bump(f.u)) * (1 - k) }; // сразу от пола: носок не чиркает; pop больше — на бегу обе стопы в воздухе (полёт)
     ft[s] = { pos: P3(x, p.z), lift: Math.max(0, y + p.y - rig.ankleH), yaw: sgn(s) * 0.06, toe: (c.toe ?? 0) * (1 - k) };
   }
   // c.runArm — доля рук клипа бега (mocap.js): локти около 90°, кисть назад за бедро, против ног по фазе левой.

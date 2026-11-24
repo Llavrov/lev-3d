@@ -20,7 +20,7 @@ export function buildSteps(ex, dose) { // dose — дозировка из пл�
   const cyc = cycleOf(ex), m = ex.muscles, work = m.work.filter((x) => !m.careful.includes(x)), main = work.length ? work : m.work;
   const mk = (o, max = MAX) => ({ ...o, dur: Math.max(readTime(o.text), Math.min((o.to - o.from) / o.speed, max)) });
   const steps = [mk({ kind: 'whole', title: 'Целиком', from: 0, to: cyc * (cyc < 5 ? 2 : 1), speed: 1, focus: null, // короткое движение — дважды
-    text: `${dose || `${ex.dose.sets} × ${ex.dose.reps}, отдых ${ex.dose.rest_s} с`}.${about('Работают', main)}` })];
+    text: `${dose || `${ex.dose.sets} × ${ex.dose.reps}, отдых ${ex.dose.rest_s} с`}.${about('Работают', main)}` }, ex.follow ? 12 : MAX)]; // бег туда и обратно длиннее 8 с: не обрывать на полпути
   let t = 0;
   for (const p of ex.phases) {
     const st = !!p.stretch && m.stretch.length > 0, list = st ? m.stretch : main;

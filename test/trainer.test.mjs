@@ -52,7 +52,7 @@ test('показ румынской тяги: целиком, три фазы м
 
 test('показ: шаг не короче чтения подписи, движение стоит в конце отрезка, слова идут по одному', () => {
   for (const e of EXERCISES) for (const s of buildSteps(e)) {
-    assert.ok(s.dur >= readTime(s.text) - 1e-9 && s.dur <= 9, `${e.id} ${s.title} ${s.dur}`);
+    assert.ok(s.dur >= readTime(s.text) - 1e-9 && s.dur <= (e.follow && s.title === 'Целиком' ? 12 : 9), `${e.id} ${s.title} ${s.dur}`); // бег туда и обратно (follow) целиком идёт до 12 с
     assert.ok(s.text.length <= 95 && words(s.text).length <= 14, `${e.id}: ${s.text}`); // четыре строки на телефоне
     assert.equal(cycleTime(s, 0), s.from);
     assert.ok(cycleTime(s, s.dur) <= s.to + 1e-9 && cycleTime(s, 1e3) === s.to);
