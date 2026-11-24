@@ -72,6 +72,14 @@ export function setupBody(T) {
   const hq = rig.b.Head.getWorldQuaternion(new THREE.Quaternion()).invert();
   T.face = FWD.clone().applyQuaternion(hq); // «вперёд» лица в осях головы
   T.headUp = UP.clone().applyQuaternion(hq);
+  // Грудной отдел (грудь → шея) в осях таза в позе покоя: от него меряется прогиб поясницы (baseAudit, m.arch).
+  T.chestRest = w(rig, 'Neck').sub(w(rig, 'Spine2')).normalize().applyQuaternion(rig.b.Hips.getWorldQuaternion(new THREE.Quaternion()).invert());
+  // Естественная стойка — поза покоя модели: линия костей таз → шея в ней не отвесна (coach: 96°, позвоночник идёт
+  // у спины), а шейная кость наклонена вперёд на 40° к этой линии. От покоя меряются «стоит прямо» (boneElev) и шея.
+  T.up0 = elevF(w(rig, 'Neck').sub(w(rig, 'Hips')));
+  const cq = rig.b.Spine2.getWorldQuaternion(new THREE.Quaternion()).invert();
+  T.neckRest = w(rig, 'Head').sub(w(rig, 'Neck')).normalize().applyQuaternion(cq); // шея в осях груди
+  T.faceRest = FWD.clone().applyQuaternion(cq); // лицо в осях груди
   // «Перед» бедра в осях его кости: туда на коже смотрит колено, голень сгибается только в обратную сторону. По нему
   // проверка колена не зависит от того, стоит тело, лежит или смотрит в пол (проверка Rig.audit меряет от пола и в упоре врёт).
   rig.legFront = {};
@@ -85,6 +93,14 @@ export const stand = (T, x = 0, y = 0, z = 0, q = null) => {
 export const feet = (T, half, yaw = 0.07, z = 0) => ({
   Left: { pos: new THREE.Vector3(half, 0, z), lift: 0, yaw }, Right: { pos: new THREE.Vector3(-half, 0, z), lift: 0, yaw: -yaw }, crouch: 0 });
 
+// Наклон корпуса упражнения задают в градусах тела: 90 — человек стоит прямо, как в покое. По костям это T.up0.
+// До 24.11 «прямо» ставили как 84–88° по костям: таз с корпусом уходили на 8–12° вперёд от естественной стойки, а голову
+// look() отводил назад, и Лёва увидел «спину слишком сильно выгибает». Поправка полная от 85° и гаснет к 55° (глубокие
+// наклоны тяг остались как были) и за 100° (лёжа и в висе меры не трогаем).
+const upK = (e) => THREE.MathUtils.smoothstep(e, 55, 85) * (1 - THREE.MathUtils.smoothstep(e, 100, 130));
+export const boneElev = (T, e) => e + (T.up0 - 90) * upK(e);
+export const bodyElev = (T, bone) => { let e = bone; for (let i = 0; i < 6; i++) e = bone - (T.up0 - 90) * upK(e); return e; };
+
 // Корпус: ключ без наклона, спина прямая (грудной отдел продолжает линию таз → грудь), потом наклон из тазобедренных:
 // таз с корпусом одним целым до угла elevDeg (таз → шея над горизонталью). Таз в покое по высоте — его ставит placeHips.
 export function trunk(T, k, elevDeg = null) {
@@ -97,7 +113,7 @@ export function trunk(T, k, elevDeg = null) {
     const fwd = FWD.clone().applyQuaternion(T.wrap.quaternion), side = X.clone().applyQuaternion(T.wrap.quaternion); // наклон вперёд — вокруг оси «влево» тела
     for (let i = 0; i < 2; i++) {
       rig.root.updateMatrixWorld(true);
-      rig.turnWorld(rig.b.Hips, new THREE.Quaternion().setFromAxisAngle(side, deg(elevF(w(rig, 'Neck').sub(w(rig, 'Hips')), fwd) - elevDeg)));
+      rig.turnWorld(rig.b.Hips, new THREE.Quaternion().setFromAxisAngle(side, deg(elevF(w(rig, 'Neck').sub(w(rig, 'Hips')), fwd) - boneElev(T, elevDeg))));
     }
   }
   rig.b.Hips.position.copy(rig.hipsRest); rig.root.updateMatrixWorld(true);
@@ -129,13 +145,13 @@ export function kneeOverToe(T, s, toeYaw) {
   rig.turnWorld(rig.b[s + 'UpLeg'], q.setFromAxisAngle(ax, deg(best)));
   rig.setWorld(rig.b[s + 'Foot'], footQ);
 }
-// Голова: шея продолжает линию спины (таз → шея), голова кивает к точке взгляда G не больше maxNod от нейтрали.
+// Голова: шея в нейтрали, как в покое относительно груди; голова кивает к точке взгляда G не больше maxNod от нейтрали.
+// До 24.11 шейную кость ставили в линию таз → шея: у этой модели она в покое наклонена к ней на 40° вперёд, и голова
+// уезжала назад, а лицо смотрело вверх на 20–30° (помощники гасили это кивком до 35°).
 export function look(T, G, maxNod = 18) {
   const { rig } = T;
   for (const n of ['Neck', 'Head']) rig.b[n].quaternion.copy(rig.rest.get(rig.b[n]));
   rig.root.updateMatrixWorld(true);
-  const spine = w(rig, 'Neck').sub(w(rig, 'Hips')).normalize(), cerv = w(rig, 'Head').sub(w(rig, 'Neck')).normalize();
-  rig.turnWorld(rig.b.Neck, new THREE.Quaternion().setFromUnitVectors(cerv, spine));
   if (!G) return;
   const hq = rig.b.Head.getWorldQuaternion(new THREE.Quaternion()), face = T.face.clone().applyQuaternion(hq);
   const eye = w(rig, 'Head').addScaledVector(face, 0.08).addScaledVector(T.headUp.clone().applyQuaternion(hq), 0.07);
@@ -214,9 +230,18 @@ export function baseAudit(T, opt = {}) {
   const hips = w(rig, 'Hips'), chest = w(rig, 'Spine2'), neck = w(rig, 'Neck'), head = w(rig, 'Head');
   m.back = Math.round(rad(chest.clone().sub(hips).angleTo(neck.clone().sub(chest))));
   if (opt.back !== false && m.back > 12) bad.push(`спина не прямая: ${m.back}°`);
-  m.neck = Math.round(rad(head.clone().sub(neck).angleTo(neck.clone().sub(hips))));
-  if (m.neck > 15) bad.push(`голова не в линию спины: ${m.neck}°`);
-  m.torso = Math.round(elevF(neck.clone().sub(hips), FWD.clone().applyQuaternion(T.wrap.quaternion)));
+  // Прогиб поясницы: насколько грудной отдел откинут назад относительно таза против позы покоя (в осях таза, вокруг
+  // его поперечной оси; + — прогиб, − — круглая спина). 24.11: Лёва про стоячие упражнения «спину слишком сильно выгибает».
+  const c = neck.clone().sub(chest).normalize().applyQuaternion(rig.b.Hips.getWorldQuaternion(new THREE.Quaternion()).invert());
+  m.arch = Math.round(rad(Math.atan2(c.y, c.z) - Math.atan2(T.chestRest.y, T.chestRest.z)));
+  if (opt.arch !== false && m.arch > 10) bad.push(`поясница прогнута: грудь откинута от таза на ${m.arch}°`);
+  // Шея и голова от нейтрали (покой в осях груди): шейная кость не дальше 15°, лицо не дальше 55° от корпуса.
+  const cq = rig.b.Spine2.getWorldQuaternion(new THREE.Quaternion()).invert();
+  m.neck = Math.round(rad(head.clone().sub(neck).normalize().applyQuaternion(cq).angleTo(T.neckRest)));
+  if (m.neck > 15) bad.push(`голова не в линию спины: шея ${m.neck}° от нейтрали`);
+  m.head = Math.round(rad(T.face.clone().applyQuaternion(rig.b.Head.getWorldQuaternion(new THREE.Quaternion())).applyQuaternion(cq).angleTo(T.faceRest)));
+  if (m.head > 55) bad.push(`голова отвёрнута от корпуса на ${m.head}° (предел 55°)`);
+  m.torso = Math.round(bodyElev(T, elevF(neck.clone().sub(hips), FWD.clone().applyQuaternion(T.wrap.quaternion)))); // градусы тела: 90 — стоит прямо
   return { bad, m };
 }
 // Зазор от грани гантели до кожи ноги (ось ноги минус радиус спереди): отрицательный — гантель в ноге.
