@@ -21,10 +21,11 @@ export function build(T) {
   const S = script(3.5, { Left: { x: X0 + HALF, z: 0, yaw: 0.1, follow: 0.6 }, Right: { x: X0 - HALF, z: 0, yaw: -0.1, pivot: [-1.2, 0.1, 0.45] } });
   const c = crossover(S, 0, X0);
   shuffles(S, 1.8, c, 1, 3, 0, { half: HALF, step: (X0 - c) / 3, pair: 0.55 });
-  const k = (t, yaw, elev, run, y = low) => S.key(t, { y, dx: 0, dz: 0, yaw, hips: 0, torso: 0, elev, run });
+  const k = (t, yaw, elev, run, y = low) => S.key(t, { y, dx: 0, dz: 0, yaw, hips: 0, torso: 0, elev, run, gait: run, v: 3 }); // gait: нога в махе по клипу бега там, где бежит
   k(0, 0, 72, 0); k(0.1, 0, 72, 0); k(0.45, -48, 68, 0.6); k(0.85, -62, 64, 1, low + 0.03); k(1.2, -58, 66, 1, low + 0.02);
   k(1.5, -35, 70, 0.4, low - 0.02); k(1.75, 0, 72, 0, low - 0.02); k(2.2, 0, 72, 0);
   S.stride = 0.55;
+  S.low = true; // игровая стойка: низкий таз — суть упражнения («высокий центр тяжести» в ошибках)
   return S.done();
 }
 

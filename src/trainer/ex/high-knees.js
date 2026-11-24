@@ -7,7 +7,7 @@ import { lerp } from '../poses.js';
 
 const P = 2, SW = 0.5;
 const cfg = (rig) => ({
-  P, sw: SW, hip: 0.95, toe: 0.35, el: 86,
+  P, sw: SW, runArm: 1, v: 3, hip: 0.95, toe: 0.35, el: 86,
   bob: (t) => 0.012 * Math.cos(4 * Math.PI * (t - 0.5) / P), // таз выше, когда колено вверху: опорная выпрямляется
   swing: (u) => { const k = bump(u); return ankleBy(rig, lerp(0, 86, k), lerp(15, 92, k)); },
   plant: (u) => 0.35 * bump(u),

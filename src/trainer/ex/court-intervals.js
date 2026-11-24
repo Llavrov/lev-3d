@@ -26,13 +26,14 @@ export function build(T) {
     const s = i % 2 ? 'Right' : 'Left', t = WORK + 0.2 + i * 0.95;
     S.step(s, t, t + 0.5, X0 + (s === 'Left' ? HALF : -HALF), 0, s === 'Left' ? 0.1 : -0.1, { h: 0.05 });
   }
-  const k = (t, y, yaw, elev, run = 0, hang = 0) => S.key(t, { y, dx: 0, dz: 0, yaw, hips: 0, torso: 0, elev, run, hang });
+  const k = (t, y, yaw, elev, run = 0, hang = 0) => S.key(t, { y, dx: 0, dz: 0, yaw, hips: 0, torso: 0, elev, run, hang, gait: run, v: 3 }); // gait: нога в махе по клипу на выходе
   k(0, low + 0.03, 0, 74); k(0.3, low + 0.05, 0, 74); k(0.45, low - 0.03, 0, 72); // подскок и мягкая посадка
   k(t0 + 0.45, low, -48, 68, 0.6); k(t0 + 0.85, low + 0.03, -62, 64, 1); k(t0 + 1.2, low + 0.02, -58, 66, 1);
   k(t0 + 1.5, low - 0.03, -35, 70, 0.4); k(t0 + 1.75, low - 0.03, 0, 72); k(4.2, low, 0, 72);
   k(4.35, low + 0.04, 0, 74); k(4.55, low - 0.02, 0, 72);
   k(WORK + 0.3, tall, 0, 86, 0, 1); k(WORK + REST - 0.4, tall, 0, 86, 0, 1);
   S.stride = 0.55;
+  S.low = true; // игровая стойка: низкий таз — суть упражнения («высокий центр тяжести» в ошибках)
   return S.done();
 }
 

@@ -6,7 +6,7 @@ import { inPlace, legState, ankleBy, bump, measureFloor, arms, stepAudit, torsoC
 
 const P = 2, SW = 0.5;
 const cfg = (rig) => ({
-  P, sw: SW, hip: 0.95, toe: 0.35, el: 85,
+  P, sw: SW, runArm: 1, v: 3, hip: 0.95, toe: 0.35, el: 85,
   bob: (t) => 0.01 * Math.cos(4 * Math.PI * (t - 0.5) / P),
   swing: (u) => { const k = bump(u); return ankleBy(rig, lerp(0, 12, k), lerp(20, 128, k)); },
   plant: (u) => 0.6 * bump(u),
