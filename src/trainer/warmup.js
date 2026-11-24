@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { lerp, clamp, smooth, w, mid, SIDES, sgn, ruSide, cm, UP } from './poses.js';
 import { body, arms, measureFloor, legAudit, mod, P3 } from './jump.js';
-import { legsClear } from './steps.js';
+import { legsClear, runParams, runArmKey, mixArms, landPhase, runArmAudit } from './steps.js';
 import { footAlong } from './kneel.js';
 
 export { measureFloor, arms };
@@ -42,7 +42,14 @@ export function inPlace(T, t, c) {
     const p = { z: lerp(stand0.z, a.z, k), y: lerp(stand0.y, a.y, k) + 0.03 * Math.sqrt(bump(f.u)) * (1 - k) }; // сразу от пола: носок не чиркает
     ft[s] = { pos: P3(x, p.z), lift: Math.max(0, y + p.y - rig.ankleH), yaw: sgn(s) * 0.06, toe: (c.toe ?? 0) * (1 - k) };
   }
-  body(T, { M, ft, el: c.el, arm: c.arm(t), grip: c.grip ?? 0.5 });
+  // c.runArm — доля рук клипа бега (mocap.js): локти около 90°, кисть назад за бедро, против ног по фазе левой.
+  let arm = c.arm(t);
+  if (c.runArm) {
+    const p = runParams(T, c.v ?? 3.5), ak = runArmKey(landPhase([[c.sw * c.P, 'Right'], [c.P / 2 + c.sw * c.P, 'Left']], c.P, t), p);
+    arm = mixArms(arm, ak, c.runArm);
+    T.runInfo = { run: c.runArm, ak, face: new THREE.Vector3(0, 0, 1), elev: c.el };
+  } else T.runInfo = null;
+  body(T, { M, ft, el: c.el, arm, grip: c.grip ?? 0.5 });
   // Летящая стопа: Rig.legs держит её плоско, как на полу. В полёте она идёт за голенью с подошвенным сгибом plant.
   for (const s of SIDES) {
     if (st[s].planted) continue;
@@ -66,7 +73,7 @@ export function legsCheck(T, r) {
   if (c.gap < -0.01) r.bad.push(`ноги проходят друг сквозь друга (${c.where}, ${cm(c.gap)} см)`);
 }
 // Проверка шага на месте: общие и ноги из jump.js (опорная не скользит, не висит, летящая не задевает пол) плюс свои.
-export const stepAudit = (T, ex, t) => { const r = legAudit(T, ex, t); legsCheck(T, r); return r; };
+export const stepAudit = (T, ex, t) => { const r = legAudit(T, ex, t); legsCheck(T, r); return runArmAudit(T, r); };
 
 // ---------- Руки стоя ----------
 // Корпус как эллиптический цилиндр от таза до шеи в осях груди: полуширина и полутолщина меряются по суставам на загрузке

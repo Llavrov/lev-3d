@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { lerp, clamp, w, cm } from '../poses.js';
 import { mod, ss, arms, track, footAt, body, measureFloor, legAudit } from '../jump.js';
+import { runParams, runArmKey, mixArms, landPhase, runArmAudit } from '../steps.js';
 
 const C = 4.6;
 
@@ -59,8 +60,11 @@ export default {
     const ft = {};
     for (const s of ['Left', 'Right']) ft[s] = { pos: st[s].pos, lift: st[s].lift, yaw: 0, toe: st[s].toe };
     // мах рук на бегу: рука вперёд против ноги впереди; в выпаде руки в стойке
-    const run = 1 - ss(tau, 1.2, 1.8) * (1 - ss(tau, 3.0, 3.4)), a = clamp(70 * (st.Left.pos.z - st.Right.pos.z), -32, 32) * run;
-    body(T, { M: new THREE.Vector3(0, h.y, h.z), ft, el: h.el, arm: arms({ r: a, l: -a }) });
+    // На разгоне руки клипа бега (локти ~90°, против ног по касаниям), в выпаде и на возврате спиной — стойка.
+    const run = 1 - ss(tau, 1.05, 1.5), p = runParams(T, 3.5);
+    const ak = runArmKey(landPhase(T.dlLands ??= ['Left', 'Right'].flatMap((s) => T.dlPlan[s].map((q) => [q.a, s])), C, tau), p, 0.5 * (90 - h.el - 8));
+    T.runInfo = { run, ak, face: new THREE.Vector3(0, 0, 1), elev: h.el };
+    body(T, { M: new THREE.Vector3(0, h.y, h.z), ft, el: h.el, arm: mixArms(arms(), ak, run) });
   },
   audit(T) {
     const { rig } = T, r = legAudit(T, this, T.tNow), tau = mod(T.tNow, C);
@@ -72,6 +76,6 @@ export default {
       if (w(rig, 'RightLeg').y < 0.07) r.bad.push(`заднее колено бьётся в пол (${r.m.backKneeY} см)`);
     }
     if (r.m.torso < 72) r.bad.push(`корпус завален вперёд: ${r.m.torso}°`);
-    return r;
+    return runArmAudit(T, r);
   },
 };
