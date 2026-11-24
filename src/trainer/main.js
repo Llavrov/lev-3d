@@ -25,6 +25,7 @@ const ex = exerciseById(Q.get('ex')), steps = buildSteps(ex, Q.get('dose'));
 const COL = { work: '#ff4d2e', stretch: '#2aa8ff', careful: '#ffc21a' };
 const VIEWS = { front: 0, side: ex.sideFrom === 'left' ? Math.PI / 2 : -Math.PI / 2, back: Math.PI, quarter: -Math.PI / 4 }; // quarter — спереди-сбоку: путь вперёд короче в кадре, человек крупнее // азимут камеры: тело смотрит в +Z, сбоку — с правой стороны (−X), если снаряд не там
 const EL = 0.1; // камера чуть сверху
+const azOf = (v) => (typeof v === 'number' ? v * Math.PI / 180 : VIEWS[v]); // ракурс: имя или азимут в градусах (лежащему на боку нужен свой)
 const $ = (id) => document.getElementById(id);
 const mobile = matchMedia('(pointer: coarse)').matches;
 const clamp = THREE.MathUtils.clamp, deg = THREE.MathUtils.degToRad;
@@ -134,7 +135,7 @@ function fit(az) {
 }
 const cam = { az: 0, el: EL, d: 5, c: new THREE.Vector3(0, 0.9, 0) }, goal = { az: 0, el: EL, d: 5, c: new THREE.Vector3(0, 0.9, 0) };
 let manual = false;
-function wholeGoal() { const f = fit(VIEWS[view]); goal.az = f.az; goal.el = EL; goal.d = f.d; goal.c.copy(f.target); }
+function wholeGoal() { const f = fit(azOf(view)); goal.az = f.az; goal.el = EL; goal.d = f.d; goal.c.copy(f.target); }
 // Крупный план мышц и суставов list: центр — середина их точек на коже, камера со стороны, куда смотрит кожа, но ближе
 // к обычному ракурсу (за тело без нужды не уходим) и не из-под пола. Дистанция — чтобы участок занял около трети кадра.
 function focusGoal(list) {
@@ -144,14 +145,14 @@ function focusGoal(list) {
   const c = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(pts.length);
   // Куда смотрит кожа участка; у суставов без мышц — наружу от середины тела (плечи лежащего видно со стороны головы).
   const out = f?.normal ?? c.clone().sub(T.bounds.getCenter(new THREE.Vector3())).normalize();
-  const base = sph(VIEWS[view], EL), dir = out.multiplyScalar(0.6).addScaledVector(base, 0.4).normalize();
+  const base = sph(azOf(view), EL), dir = out.multiplyScalar(0.6).addScaledVector(base, 0.4).normalize();
   goal.c.copy(c); goal.az = Math.atan2(dir.x, dir.z); goal.el = clamp(Math.asin(clamp(dir.y, -1, 1)), deg(4), deg(60));
   // Дистанция по самим точкам: участок занимает до половины высоты просвета и до 0,72 его ширины, вокруг видно тело.
   const look = sph(goal.az, goal.el), right = new THREE.Vector3(Math.cos(goal.az), 0, -Math.sin(goal.az)), up = new THREE.Vector3().crossVectors(look, right);
   const tv = Math.tan(deg(camera.fov / 2)) * band.fy * 0.5, th = Math.tan(deg(camera.fov / 2)) * camera.aspect * band.fx * 0.72;
   let d = 0;
   for (const p of pts) { const r = p.clone().sub(c); d = Math.max(d, r.dot(look) + Math.abs(r.dot(right)) / th, r.dot(look) + Math.abs(r.dot(up)) / tv); }
-  const far = fit(VIEWS[view]).d, box = T.bounds.clone().expandByScalar(0.25);
+  const far = fit(azOf(view)).d, box = T.bounds.clone().expandByScalar(0.25);
   d = clamp(d, 1.8, far * 0.9);
   while (d < far && box.containsPoint(c.clone().addScaledVector(look, d))) d += 0.2; // камера не внутри тела и снарядов
   goal.d = d;

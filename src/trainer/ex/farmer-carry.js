@@ -48,6 +48,7 @@ export default {
   view: 'side',
   pace: 'В жизни иди 30 м без остановки',
   wide: true,
+  follow: true, // камера едет за человеком: весь путь в кадре делал его мелким на телефоне
   flat: 'side',
   setup(T) { measureFeet(T); dumbbells(T); T.S = build(T); T.depress = 6; },
   pose(T, { t }) {

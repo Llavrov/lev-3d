@@ -51,6 +51,7 @@ export default {
   view: 'quarter',
   flat: 'side',
   wide: true,
+  follow: true, // камера едет за бегуном: весь путь 2,35 м на телефоне делал человека мелким
   pace: 'В жизни старт в полную силу, 5 м',
   setup(T) { measureFeet(T); T.S = build(T); },
   pose(T, { t }) { T.tNow = t; gait(T, T.S, t); },

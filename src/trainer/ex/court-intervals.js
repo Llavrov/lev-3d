@@ -50,6 +50,7 @@ export default {
   view: 'front',
   pace: 'Работа на максимуме, отдых шагом', // показ идёт медленнее или короче, чем делают в жизни
   wide: true,
+  follow: true, // камера едет за человеком: весь путь в кадре делал его мелким на телефоне
   flat: 'front',
   setup(T) { measureFeet(T); T.S = build(T); },
   pose(T, { t }) { gait(T, T.S, t); },

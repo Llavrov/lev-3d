@@ -50,6 +50,7 @@ export default {
   view: 'front',
   pace: 'В жизни бегом, на максимуме', // показ идёт медленнее или короче, чем делают в жизни
   wide: true,
+  follow: true, // камера едет за человеком: весь путь в кадре делал его мелким на телефоне
   flat: 'front',
   span: 2,
   setup(T) { measureFeet(T); T.Sp = { Right: build(T, 'Right'), Left: build(T, 'Left') }; marks(T); },
