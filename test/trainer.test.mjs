@@ -63,3 +63,12 @@ test('показ: шаг не короче чтения подписи, движ
   assert.equal(buildSteps(exerciseById('side-plank')).length, 5); // у планки две фазы, целиком, «беречь» и «ошибки»
   assert.deepEqual(words('отдых 90 с. Таз назад и в пол'), ['отдых', '90\u00a0с.', 'Таз', 'назад', 'и\u00a0в\u00a0пол']); // предлог и единица не отрываются
 });
+
+test('показ: пустые списки мышц — без фразы «Работают .», «Тянутся .», «Беречь: .»', () => {
+  const e = { id: 'x', name: 'Проба', muscles: { work: [], stretch: [], careful: [] }, dose: { sets: 2, reps: 8, rest_s: 60 },
+    phases: [{ name: 'вниз', cue: 'Вниз', tempo_s: 2 }, { name: 'тянуть', cue: 'Держи.', tempo_s: 2, stretch: true }] };
+  assert.deepEqual(buildSteps(e).map((s) => s.text), ['2\u00a0×\u00a08, отдых 60 с.', 'Вниз.', 'Держи.']);
+  const st = buildSteps({ ...e, muscles: { work: [], stretch: ['calves'], careful: [] } });
+  assert.deepEqual(st.map((s) => s.text), ['2\u00a0×\u00a08, отдых 60 с.', 'Вниз.', 'Держи. Тянутся икры.']);
+  for (const ex of EXERCISES) for (const s of buildSteps(ex)) assert.ok(!/(Работают|Тянутся|Беречь:)\s*\./.test(s.text), `${ex.id}: ${s.text}`);
+});
