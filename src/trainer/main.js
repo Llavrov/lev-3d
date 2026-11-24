@@ -58,7 +58,7 @@ pick.addEventListener('change', () => openEx(pick.value));
 if (PLAN) document.body.classList.add('plan');
 // Соседнее упражнение: в показе тренировки его открывает приложение (type: 'nav'), иначе листаем весь список.
 const nav = (d) => (PLAN ? parent.postMessage({ source: 'trainer', type: 'nav', d }, location.origin) : openEx(EXERCISES[(EXERCISES.indexOf(ex) + d + EXERCISES.length) % EXERCISES.length].id));
-document.title = ex.name;
+document.title = ex.name; $('name').textContent = typo(ex.name);
 $('bars').innerHTML = steps.map(() => '<i><b></b></i>').join('');
 const fills = [...$('bars').querySelectorAll('b')];
 if (ALL) { // проверка карты мышц: каждой свой цвет и подпись
