@@ -81,7 +81,7 @@ export default {
     const foot = T.footFlat[FRONT].clone().slerp(footAlong(T, FRONT, shin, -DORSI), smooth(clamp(lift * 1.5 - 0.2, 0, 1)));
     legIK(T, FRONT, A, new THREE.Vector3(0, 0.6, 1), foot);
     for (const s of SIDES) { palmOnThigh(T, s); rig.grip(s, 0.1); }
-    look(T, T.heel.clone().add(new THREE.Vector3(0, 0.2, 0.15)), 15);
+    look(T, new THREE.Vector3(0, 1.3, 3).lerp(T.heel.clone().add(new THREE.Vector3(0, 0.2, 0.15)), Math.min(1, depth * 2)), 15); // стоя вперёд, с наклоном на носок
   },
   audit(T) {
     const { rig } = T, r = baseAudit(T, { feet: [BACK + 'Foot'] }), a = rig.audit();

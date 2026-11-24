@@ -242,6 +242,13 @@ export function baseAudit(T, opt = {}) {
   m.head = Math.round(rad(T.face.clone().applyQuaternion(rig.b.Head.getWorldQuaternion(new THREE.Quaternion())).applyQuaternion(cq).angleTo(T.faceRest)));
   if (m.head > 55) bad.push(`голова отвёрнута от корпуса на ${m.head}° (предел 55°)`);
   m.torso = Math.round(bodyElev(T, elevF(neck.clone().sub(hips), FWD.clone().applyQuaternion(T.wrap.quaternion)))); // градусы тела: 90 — стоит прямо
+  // Взгляд стоя: лицо над горизонталью, °. Когда корпус почти отвесен (таз → шея от 80° над горизонталью в мире: стоит, сидит
+  // прямо, висит) — от −20 до +8. 24.11 после нейтрали шеи точки взгляда, подобранные под задранное лицо, опустили голову
+  // в пол (выпад назад). opt.gaze = [низ, верх] или false.
+  m.gaze = Math.round(rad(Math.asin(clamp(T.face.clone().applyQuaternion(rig.b.Head.getWorldQuaternion(new THREE.Quaternion())).y, -1, 1))));
+  const [gLo, gHi] = opt.gaze || [-20, 8];
+  m.upright = Math.round(elev(neck.clone().sub(hips)));
+  if (opt.gaze !== false && m.upright >= 80 && (m.gaze < gLo || m.gaze > gHi)) bad.push(`взгляд ${m.gaze > 0 ? 'вверх' : 'в пол'}: ${m.gaze}°`);
   return { bad, m };
 }
 // Зазор от грани гантели до кожи ноги (ось ноги минус радиус спереди): отрицательный — гантель в ноге.

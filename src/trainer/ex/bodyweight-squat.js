@@ -41,7 +41,7 @@ export default {
     const { rig } = T;
     T.depth = depth;
     body(T, lerp(T.topY, T.bottomY, depth), lerp(84, 55, depth));
-    look(T, new THREE.Vector3(0, 0.6, 3), 35);
+    look(T, new THREE.Vector3(0, 1.0, 3), 35); // взгляд вперёд, чуть вниз (на 0,6 м стоя был в пол на 20°)
     // Руки: внизу висят вдоль тела, к низу приседа поднимаются дугой вперёд до уровня плеч, почти прямые.
     const a = smooth(Math.min(1, depth * 1.3)), th = a * 1.5;
     for (const s of SIDES) {

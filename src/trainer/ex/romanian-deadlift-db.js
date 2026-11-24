@@ -66,7 +66,7 @@ export default {
     stand(T);
     trunk(T, K, lerp(86, BOTTOM, depth));
     placeHips(T, hipsOver(T, lerp(16, 18, depth), lerp(4, -6, depth)), T.feetAt);
-    look(T, new THREE.Vector3(0, 0, lerp(5, 2, depth)));
+    look(T, new THREE.Vector3(0, lerp(1.2, 0, depth), lerp(5, 2, depth))); // стоя взгляд вперёд, в наклоне на пол в линию со спиной
     hangOnLegs(T);
   },
   audit(T) {

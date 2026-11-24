@@ -154,7 +154,7 @@ export function reachAudit(T, r) {
   if (drop > 0.005) r.bad.push(`нога не достаёт до стопы: таз просел на ${r.m.hipDrop} см`);
   return r;
 }
-// Взгляд: лицо не вверх и не в пол (как в jump.js). Шея в линию спины задирает лицо этой модели на 20–30°.
+// Взгляд: лицо не вверх и не в пол (как в jump.js). Стоя прямо общий baseAudit строже: от −20 до +8.
 export function gazeAudit(T, r, up = 8, down = -30) {
   const hq = T.rig.b.Head.getWorldQuaternion(new THREE.Quaternion()), f = T.face.clone().applyQuaternion(hq);
   r.m.gaze = Math.round(THREE.MathUtils.radToDeg(Math.asin(f.y)));

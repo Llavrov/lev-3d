@@ -46,7 +46,7 @@ export default {
     T.bar.traverse((o) => { if (o.isMesh && o.geometry.parameters?.radiusTop === 0.225) o.scale.set(0.66, 1, 0.66); });
     T.feetAt = feet(T, T.shoulderHalf + 0.04, TOE);
     // Высота таза вверху — ноги почти прямые; внизу подбираем так, чтобы бедро легло параллельно полу.
-    T.topY = rig.ankleH + 0.975 * (rig.L1 + rig.L2);
+    T.topY = rig.ankleH + 0.97 * (rig.L1 + rig.L2);
     let y = rig.ankleH + rig.L2;
     for (let i = 0; i < 8; i++) { body(T, y, 50); y -= thighDrop(rig) * 0.9; }
     T.bottomY = y;
@@ -54,8 +54,10 @@ export default {
   motion(i, u) { const e = smooth(u); return i === 0 ? e : i === 1 ? 1 : 1 - e; },
   pose(T, { depth }) {
     const { rig } = T;
-    body(T, lerp(T.topY, T.bottomY, depth), lerp(84, 50, depth));
-    look(T, new THREE.Vector3(0, 0, 3));
+    // Вверху корпус на 12° вперёд от стойки: гриф за шеей над серединой стопы, таз над стопой (как было до 24.11: 84 по костям).
+    // При 84° тела таз уходил на 16 см вперёд щиколоток, ноги не доставали до пола и стопы съезжали — «выгнутая» стойка.
+    body(T, lerp(T.topY, T.bottomY, depth), lerp(78, 50, depth));
+    look(T, new THREE.Vector3(0, lerp(1.1, 0.2, depth), 3)); // вверху взгляд вперёд, внизу на пол в 3 м
     // Кисти на гриф, локти под грифом: вниз вдоль корпуса, чуть назад и наружу. Раньше локоть брался из исходной позы
     // (grab из gym.js) и вставал выше плеча позади него: плечо отведено назад на 79°, так человек не может.
     const { c, lat, up, back } = barPoint(rig);

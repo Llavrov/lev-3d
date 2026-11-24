@@ -38,7 +38,7 @@ export default {
     const top = new THREE.Vector3(0, rig.ankleH + 0.975 * (L1 + L2), -0.02), bottom = new THREE.Vector3(0, rig.ankleH + L2 * 0.97, -L1 * 0.9);
     const M = top.clone().lerp(bottom, sink); M.z = lerp(top.z, bottom.z, smooth(clamp(sink * 1.6, 0, 1))); // таз сначала назад, потом вниз: передняя голень почти отвесно
     placeHips(T, M, ft);
-    look(T, new THREE.Vector3(0, 0, 4));
+    look(T, new THREE.Vector3(0, 1.2, 4)); // корпус почти отвесно: взгляд вперёд (точка на полу в 4 м после нейтрали шеи опустила голову в пол)
     for (const s of SIDES) {
       const S = w(rig, s + 'Arm'), P = S.clone().addScaledVector(UP, -reachOf(T, s) * 0.985);
       P.x = sgn(s) * (Math.abs(S.x) + 0.09); // кисти чуть снаружи, гантели не задевают бёдра

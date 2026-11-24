@@ -128,7 +128,8 @@ export default {
       }
     }
     const mp = T.hand.Left.P.clone().add(T.hand.Right.P).multiplyScalar(0.5);
-    look(T, mp.add(new THREE.Vector3(0, 0, 0.25)), 30);
+    // Стоя взгляд вперёд, с наклоном к ладоням (q — доля наклона): стоя на точку у ладоней голова висела в пол на 40°.
+    look(T, new THREE.Vector3(0, 1.3, mp.z + 3).lerp(mp.add(new THREE.Vector3(0, 0, 0.25)), Math.min(1, q * 2)), 30);
   },
   audit(T) {
     const { rig } = T, r = baseAudit(T, { feet: [] });

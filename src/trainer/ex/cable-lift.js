@@ -59,7 +59,7 @@ export default {
     let C = M.clone();
     for (let k = 0.2; k < 1.2; k += 0.005) { const c = M.clone().addScaledVector(dir, k); if (Math.max(c.distanceTo(SR), c.distanceTo(SL)) > reach) break; C = c; }
     const ax = new THREE.Vector3().crossVectors(dir, FWD).normalize(); if (ax.x < 0) ax.negate();
-    look(T, C, 35);
+    look(T, C, 20); // кивок за рукоятью до 20°: при 35 (подбирали под задранное лицо) внизу смотрел в пол на 58°
     const pole = new THREE.Vector3(0, -1, -0.3);
     palmTo(T, 'Right', C.clone().addScaledVector(ax, -0.055), ax, pole);
     palmTo(T, 'Left', C.clone().addScaledVector(ax, 0.055), ax.clone().negate(), pole);
@@ -68,7 +68,7 @@ export default {
     stretch(T.cable, T.bar.position, PULLEY);
   },
   audit(T) {
-    const { rig } = T, r = baseAudit(T, { feet: ['LeftFoot', 'RightToeBase'] });
+    const { rig } = T, r = baseAudit(T, { feet: ['LeftFoot', 'RightToeBase'], gaze: [-45, 35] }); // взгляд идёт за рукоятью
     const lh = T.latHips.clone().applyQuaternion(rig.b.Hips.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize();
     const ls = T.latSpine.clone().applyQuaternion(rig.b.Spine.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize();
     r.m.lumbar = Math.round(rad(lh.angleTo(ls)));

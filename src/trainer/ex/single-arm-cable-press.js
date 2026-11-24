@@ -33,18 +33,21 @@ export default {
       Left: { pos: new THREE.Vector3(T.hipHalf + 0.03, 0, SPLIT), lift: 0, yaw: 0.07 },
       Right: { pos: new THREE.Vector3(-T.hipHalf - 0.03, 0, -SPLIT), lift: 0, yaw: -0.2 } };
     T.hipY = rig.ankleH + 0.94 * (rig.L1 + rig.L2);
+    stand(T); trunk(T, K, TORSO_EL);
+    T.chestX = new THREE.Vector3(1, 0, 0).applyQuaternion(rig.b.Spine2.getWorldQuaternion(new THREE.Quaternion()).invert()); // поперёк груди в осях её кости
   },
   // Жим идёт до прямой руки (0,85 глубины), потом лопатка вперёд до 1.
   motion(i, u) { const e = smooth(u); return i === 0 ? 0.85 * e : i === 1 ? 0.85 + 0.15 * e : 1 - e; },
   pose(T, { depth }) {
     const { rig } = T, press = Math.min(1, depth / 0.85), prot = Math.max(0, (depth - 0.85) / 0.15);
+    T.retract = 8; T.depress = 3; // левая лопатка сведена; до 24.11 сюда попадало значение правой с прошлого кадра, и разворот плеч зависел от порядка кадров
     stand(T);
     trunk(T, K, TORSO_EL);
     placeHips(T, new THREE.Vector3(0, T.hipY, 0), T.feetAt);
     look(T, new THREE.Vector3(0, 1.3, 3), 35);
     rig.relaxHand('Left');
     // Правая: от груди (кисть у плеча, локоть назад-вниз-наружу) до прямой руки перед плечом на высоте груди.
-    T.retract = lerp(8, -14, prot); T.depress = 3;
+    T.retract = lerp(8, -14, prot); // правая лопатка уходит вперёд (ключицу правой руки ставит palmTo)
     const S = w(rig, 'RightArm');
     const P0 = S.clone().add(new THREE.Vector3(-0.08, -0.15, 0.15)), P1 = S.clone().add(new THREE.Vector3(0.04, -0.08, 0)).addScaledVector(FWD, reachOf(T, 'Right') * 0.96);
     const P = P0.lerp(P1, smooth(press)).addScaledVector(FWD, 0.05 * prot);
@@ -57,10 +60,13 @@ export default {
   audit(T) {
     const { rig } = T, r = baseAudit(T);
     if (Math.abs(r.m.torso - TORSO_EL) > 3) r.bad.push(`корпус гуляет: ${r.m.torso}°`);
-    // Корпус не разворачивается: линия плеч поперёк (по X), разворот до 5°.
-    const sh = w(rig, 'LeftArm').sub(w(rig, 'RightArm')).setY(0).normalize();
-    r.m.turn = Math.round(Math.abs(Math.atan2(sh.z, sh.x)) * 57.3);
+    // Корпус не разворачивается: грудная клетка поперёк (по X), разворот до 5°. Линия плеч сюда не годится: правая лопатка
+    // в конце жима уходит вперёд (так задумано) и одна поворачивает линию плеч на 7°; для неё предел 10°.
+    const yawOf = (v) => Math.round(Math.abs(Math.atan2(v.z, v.x)) * 57.3);
+    r.m.turn = yawOf(T.chestX.clone().applyQuaternion(rig.b.Spine2.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize());
+    r.m.shoulderTurn = yawOf(w(rig, 'LeftArm').sub(w(rig, 'RightArm')).setY(0).normalize());
     if (r.m.turn > 5) r.bad.push(`корпус развернулся на ${r.m.turn}°`);
+    if (r.m.shoulderTurn > 10) r.bad.push(`плечи развернулись на ${r.m.shoulderTurn}°`);
     const g = T.handle, axis = new THREE.Vector3(1, 0, 0).applyQuaternion(g.quaternion), h = onAxis(T, 'Right', g.position, axis, 0.06);
     r.m.gripR = cm(h.off);
     if (!h.ok) r.bad.push('правая кисть не на рукояти');

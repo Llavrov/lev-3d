@@ -97,7 +97,7 @@ export default {
     delete r.m.torso;
     kneeAudit(T, r);
     r.bad = r.bad.filter((b) => !/голова не в линию/.test(b));
-    if (r.m.neck > 50) r.bad.push(`шея согнута на ${r.m.neck}°`);
+    if (r.m.neck > 25) r.bad.push(`шея согнута на ${r.m.neck}°`); // от нейтрали, как в single-leg-glute-bridge (до 24.11 — 50° по старой мере)
     r.m.backGap = gap(T, ['Spine2', 'LeftShoulder', 'RightShoulder']); r.m.headGap = gap(T, ['Head']); r.m.pelvisGap = gap(T, ['Hips']);
     for (const [k, v, lo, hi] of [['лопатки', r.m.backGap, -1, 1.5], ['голова', r.m.headGap, -1, 3]]) if (v < lo || v > hi) r.bad.push(`${k} ${v < lo ? 'в полу' : 'над полом'}: ${v} см`);
     if (r.m.pelvisGap < -0.5) r.bad.push(`таз в полу: ${r.m.pelvisGap} см`);

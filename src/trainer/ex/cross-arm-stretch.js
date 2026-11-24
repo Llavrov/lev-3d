@@ -9,7 +9,10 @@ import { hipsOver } from './romanian-deadlift-db.js';
 import { palmOn } from '../kneel.js';
 import { bodyShape, onLimb, palmGap, bodyAudit, wristAudit, extreme, wall } from '../arms.js';
 
-const K = key({}), TORSO = 88, KNEE = 16, SHIN = 1;
+const K = key({}), TORSO = 90, KNEE = 16, SHIN = 1;
+// Направления руки ниже записаны в мире для корпуса 82° (до 24.11 «отвесно» стояло на 8° вперёд): поворачиваем их вместе
+// с корпусом, иначе плечо при прямом корпусе входило в грудь на 9 см.
+const TILT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(82 - TORSO));
 const n3 = (x, y, z) => new THREE.Vector3(x, y, z).normalize();
 const slerpV = (a, b, k) => a.clone().applyQuaternion(new THREE.Quaternion().slerp(new THREE.Quaternion().setFromUnitVectors(a, b), k));
 const HANG = { u: n3(-0.1, -1, 0.05), f: n3(-0.06, -1, 0.15) };
@@ -29,9 +32,9 @@ function pose(T, { i = 0, depth = 0 }) {
   stand(T);
   trunk(T, K, TORSO);
   placeHips(T, hipsOver(T, KNEE, SHIN), T.feetAt);
-  look(T, new THREE.Vector3(0, 0.6, 3), 35); // шея в линию спины задирает лицо модели: взгляд ниже горизонта
+  look(T, new THREE.Vector3(0, 1.3, 3), 35); // взгляд вперёд (точку на 0,6 м ставили под задранное лицо)
   const a = i === 0 ? HANG : CROSS, b = i === 0 ? CROSS : PULL;
-  const u = slerpV(a.u, b.u, depth), f = slerpV(a.f, b.f, depth);
+  const u = slerpV(a.u, b.u, depth).applyQuaternion(TILT), f = slerpV(a.f, b.f, depth).applyQuaternion(TILT);
   rig.root.updateMatrixWorld(true);
   rig.arm('Right', u.applyQuaternion(rig.toPlayer), f.applyQuaternion(rig.toPlayer));
   rig.relaxHand('Right'); rig.grip('Right', 0.4);
