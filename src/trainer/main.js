@@ -251,6 +251,36 @@ function measure() {
   T.bounds = box;
 }
 
+// Снаряд крупнее полуметра (стена, стойка), вставший между камерой и телом, становится полупрозрачным: человек виден
+// в любом ракурсе, в том числе на крупных планах мышц со стороны стены. Проверка лучами в голову, грудь, таз и колени.
+const occ = [], ray = new THREE.Raycaster(), TO = ['Head', 'Spine2', 'Hips', 'LeftLeg', 'RightLeg'];
+// Только неподвижное: штанга идёт с телом и сбоку законно перед шеей, её не гасим.
+function findOccluders() {
+  const span = cycleOf(ex) * (ex.span ?? 1), boxes = [];
+  for (let i = 0; i < 6; i++) { poseAt(span * i / 6); T.gear.updateMatrixWorld(true); boxes.push(T.gear.children.map((o) => new THREE.Box3().setFromObject(o))); }
+  const still = (o) => { const k = T.gear.children.indexOf(o); return k < 0 || boxes.every((b) => b[k].min.distanceTo(boxes[0][k].min) < 0.01 && b[k].max.distanceTo(boxes[0][k].max) < 0.01); };
+  for (const o of [...scene.children, ...T.gear.children]) {
+    if (o === T.wrap || o === T.gear || o === floor || o.isLight || !still(o)) continue;
+    const size = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
+    if (Math.max(size.x, size.y, size.z) < 0.5) continue;
+    const mats = [];
+    o.traverse((m) => { if (m.isMesh) { m.material = m.material.clone(); m.material.transparent = true; mats.push(m.material); } });
+    occ.push({ o, mats, k: 1 });
+  }
+}
+function fadeOccluders(dt) {
+  for (const c of occ) {
+    let hit = false;
+    for (const n of TO) {
+      const p = T.rig.b[n].getWorldPosition(new THREE.Vector3()), d = p.distanceTo(camera.position);
+      ray.set(camera.position, p.sub(camera.position).normalize()); ray.far = d - 0.25; // заслон заметно ближе точки тела
+      if (ray.intersectObject(c.o, true).length) { hit = true; break; }
+    }
+    c.k += ((hit ? 0.2 : 1) - c.k) * (dt == null ? 1 : 1 - Math.exp(-dt / 0.2));
+    for (const m of c.mats) { m.opacity = c.k; m.depthWrite = c.k > 0.98; }
+  }
+}
+
 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 loader.load(`${import.meta.env.BASE_URL}models/${MODEL}.glb`, (gltf) => {
   const model = gltf.scene;
@@ -270,8 +300,9 @@ loader.load(`${import.meta.env.BASE_URL}models/${MODEL}.glb`, (gltf) => {
   poseAt(ex.refT ?? 0);
   T.ref = Object.fromEntries(['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase'].filter((n) => T.rig.b[n]).map((n) => [n, T.rig.b[n].getWorldPosition(new THREE.Vector3())]));
   measure();
+  findOccluders();
   layout();
-  setStep(0); show(null); stepCam(null);
+  setStep(0); show(null); stepCam(null); fadeOccluders(null);
   document.body.classList.add('ready'); window.__ready = true;
   if (DEBUG) window.__trainer = {
     ready: true,
@@ -331,6 +362,9 @@ loader.load(`${import.meta.env.BASE_URL}models/${MODEL}.glb`, (gltf) => {
     ask: setAsk, // проверка подписи вопроса и ответа без приложения
     state: () => ({ step: si, tau: +tau.toFixed(2), held, stop, ask: ask?.state ?? null, shown, words: spans.length, focus: +focusK.toFixed(2) }),
     bounds: () => T.bounds,
+    // Доля высоты окна, которую занимает человек (кости от стоп до макушки): мера «человек крупный на телефоне».
+    occluded: () => occ.filter((c) => c.k < 0.9).length, // сколько заслонов сейчас прозрачны
+    tall() { const ys = T.rig.all.map(({ bone }) => bone.getWorldPosition(new THREE.Vector3()).project(camera).y); return +((Math.max(...ys) - Math.min(...ys)) / 2).toFixed(3); },
     cycle: cycleOf(ex) * (ex.span ?? 1),
     legR: T.legR,
     T,
@@ -353,6 +387,7 @@ renderer.setAnimationLoop((now) => {
     fills.forEach((b, k) => { b.style.transform = `scaleX(${k < si ? 1 : k > si ? 0 : Math.min(1, tau / steps[si].dur)})`; });
     if (!(DEBUG && stop)) show(dt); // в отладке на паузе позу не трогаем: её ставят set, step и pose
     stepCam(dt);
+    fadeOccluders(dt);
   }
   renderer.render(scene, camera);
 });
