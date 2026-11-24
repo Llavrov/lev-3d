@@ -119,8 +119,10 @@ function layout() {
   camera.updateProjectionMatrix();
 }
 const sph = (az, el) => new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+// follow — упражнение уходит по полу дальше роста (гусеница): общий план держит текущую позу, а не весь путь за цикл,
+// камера плавно отъезжает вслед за руками. Иначе стоящий человек на телефоне занимает треть кадра.
 function fit(az) {
-  const box = T.bounds ?? new THREE.Box3(new THREE.Vector3(-0.4, 0, -0.4), new THREE.Vector3(0.4, 1.9, 0.4));
+  const box = (ex.follow && T.rig ? bodyBox().expandByScalar(0.12) : T.bounds) ?? new THREE.Box3(new THREE.Vector3(-0.4, 0, -0.4), new THREE.Vector3(0.4, 1.9, 0.4));
   const c = box.getCenter(new THREE.Vector3()), dir = sph(az, EL), right = new THREE.Vector3(Math.cos(az), 0, -Math.sin(az)), up = new THREE.Vector3().crossVectors(dir, right);
   const tv = Math.tan(deg(camera.fov / 2)) * band.fy * 0.94, th = Math.tan(deg(camera.fov / 2)) * camera.aspect * band.fx * 0.94;
   let d = 0;
@@ -226,15 +228,25 @@ function show(dt) {
   if (whole || ex.wide) wholeGoal(); else focusGoal(st.focus.list); // wide — упражнение идёт по полу: на фазах важны стопы и всё тело, крупный план мышцы там не читается
 }
 // Габарит движения за цикл: кости и снаряды в 24 точках (у поочерёдных упражнений — за оба цикла), плюс толщина тела.
+// Снаряд с userData.loose (мяч в полёте) входит в габарит, только пока он у тела: полёт до стены кадр не растягивает.
+function bodyBox(box = new THREE.Box3()) {
+  T.wrap.updateMatrixWorld(true);
+  const bones = new THREE.Box3();
+  for (const { bone } of T.rig.all) bones.expandByPoint(bone.getWorldPosition(new THREE.Vector3()));
+  box.union(bones);
+  T.gear.updateMatrixWorld(true);
+  if (!T.gear.children.some((o) => o.visible)) return box;
+  if (!T.gear.children.some((o) => o.userData.loose)) return box.union(new THREE.Box3().setFromObject(T.gear, true));
+  const near = bones.expandByScalar(0.15);
+  for (const o of T.gear.children) {
+    const b = new THREE.Box3().setFromObject(o, true);
+    if (!o.userData.loose || b.intersectsBox(near)) box.union(b);
+  }
+  return box;
+}
 function measure() {
   const box = new THREE.Box3(), span = cycleOf(ex) * (ex.span ?? 1);
-  for (let i = 0; i < 24; i++) {
-    poseAt(span * i / 24);
-    T.wrap.updateMatrixWorld(true);
-    for (const { bone } of T.rig.all) box.expandByPoint(bone.getWorldPosition(new THREE.Vector3()));
-    T.gear.updateMatrixWorld(true);
-    if (T.gear.children.some((o) => o.visible)) box.union(new THREE.Box3().setFromObject(T.gear, true));
-  }
+  for (let i = 0; i < 24; i++) { poseAt(span * i / 24); bodyBox(box); }
   box.expandByScalar(0.12); box.min.y = Math.max(box.min.y, -0.02);
   T.bounds = box;
 }
