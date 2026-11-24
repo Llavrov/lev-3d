@@ -282,7 +282,7 @@ loader.load(`${import.meta.env.BASE_URL}models/${MODEL}.glb`, (gltf) => {
         for (let i = 0; i < 8; i++) { const q = P(new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z)); for (const k of [0, 1]) { lo[k] = Math.min(lo[k], q[k]); hi[k] = Math.max(hi[k], q[k]); } }
         return [lo, hi];
       };
-      const thin = (o) => o.isMesh && o.geometry.parameters?.radiusTop < 0.006; // трос: рисуем линией, а не габаритом
+      const thin = (o) => o.isMesh && o.geometry.parameters?.radiusTop < 0.01; // трос и резинка (band.js, 8 мм): рисуем линией, а не габаритом
       const gear = T.gear.children.filter((o) => o.visible), seen = gear.map(() => new Set()), frames = [];
       let s0 = 0;
       for (const ph of ex.phases) {
