@@ -12,7 +12,7 @@ const deg = Math.PI / 180;
 const at = (c, th, s, a = A) => { const k = s === 'Left' ? 1 : -1; return { x: c.x + k * a * Math.cos(th), z: c.z - k * a * Math.sin(th) }; }; // стопа у точки c при курсе th (левая — влево от тела)
 
 export function build(T) {
-  const { rig } = T, tall = rig.ankleH + 0.935 * (rig.L1 + rig.L2); // с качанием таза по клипу шага; выше — задняя нога в конце шага не достаёт пола
+  const { rig } = T, tall = rig.ankleH + 0.968 * (rig.L1 + rig.L2); // с качанием таза по клипу шага; выше — задняя нога в конце шага не достаёт пола
   const S = script(P, { Left: { x: A, z: 0, yaw: 0 }, Right: { x: -A, z: 0, yaw: 0 } });
   const C1 = { x: 0, z: D }, C0 = { x: 0, z: 0 };
   // В развороте стопы шире (0,14), и стоящая доворачивается на подушечке за тазом наполовину: иначе колено внутрь и бёдра сходятся.
@@ -29,7 +29,7 @@ export function build(T) {
   put('Left', 4.8, C0, 180, false);
   // разворот направо (курс убывает), правая внутри поворота
   put('Right', 5.35, C0, 120); put('Left', 5.8, C0, 60); put('Right', 6.25, C0, 0, false); put('Left', 6.7, C0, 0, false);
-  const k = (t, yaw, gait = 1) => S.key(t, { y: tall, dx: 0, dz: 0, yaw, hips: 0, torso: 0, elev: 86, run: 0, hang: 0, gait, v: 1.2 }); // gait: нога в махе и таз по клипу шага
+  const k = (t, yaw, gait = 1) => S.key(t, { y: tall, dx: 0, dz: 0, yaw, hips: 0, torso: 0, elev: 89, run: 0, hang: 0, gait, v: 1.2 }); // gait: нога в махе и таз по клипу шага
   // на развороте переступы короткие: мах по старой дуге (иначе стопы задевают друг друга)
   k(0, 0); k(1.7, 0); k(2.2, 60, 0); k(2.65, 120, 0); k(3.1, 172, 0); k(3.55, 180); k(5.2, 180); k(5.75, 120, 0); k(6.2, 60, 0); k(6.65, 8, 0); k(7.1, 0);
   return S.done();

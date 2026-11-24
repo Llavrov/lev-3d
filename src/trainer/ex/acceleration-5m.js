@@ -31,8 +31,8 @@ export function build(T) {
   k(1.0, { y: y(0.92), dz: 0.06, elev: 66, run: 1, gait: 1 });
   k(1.3, { y: y(0.86), dz: -0.06, elev: 74, run: 0.3, gait: 0.2 });
   k(1.9, { y: y(0.87), dz: -0.03, elev: 78, run: 0, gait: 0 });
-  k(2.6, { y: y(0.93), dz: 0, elev: 84, run: 0, hang: 0.6 });
-  k(5.2, { y: y(0.92), dz: 0, elev: 82, run: 0, hang: 0.4 });
+  k(2.6, { y: y(0.95), dz: 0, elev: 89, run: 0, hang: 0.6 });
+  k(5.2, { y: y(0.95), dz: 0, elev: 88, run: 0, hang: 0.4 });
   return S.done();
 }
 
