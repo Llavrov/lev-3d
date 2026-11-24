@@ -11,10 +11,87 @@
 //     hang — 1 руки висят вдоль тела (отдых).
 // gait(T, S, t) ставит позу и кладёт в T.gait, что нужно проверке (footAudit).
 import * as THREE from 'three';
-import { deg, rad, lerp, clamp, smooth, w, key, SIDES, sgn, ruSide, cm, stand, trunk, placeHips, look, armIK, baseAudit, UP } from './poses.js';
+import { deg, rad, lerp, clamp, smooth, w, mid, key, SIDES, sgn, ruSide, cm, stand, trunk, placeHips, look, armIK, baseAudit, UP } from './poses.js';
+import { footAlong } from './kneel.js';
+import { setGait, gaitReady, gaitParams, gaitPose, swingLeg } from '../mocap.js';
+import gaitJson from '../../public/anim/gait.json' with { type: 'json' }; // статически: сборка тренера живёт под /trainer-app/, fetch по /anim/ туда не попадает
+
+if (!gaitReady()) setGait(gaitJson); // prep правит объект на месте: один раз
 
 export const mod = (t, P) => ((t % P) + P) % P;
 const yawV = (a) => new THREE.Vector3(Math.sin(a), 0, Math.cos(a)); // носок по углу
+
+// ---------- Бег и ходьба по мокапу (24.11.2026) ----------
+// Клипы Walking и Running Meshy (public/anim/gait.json, src/mocap.js): руки, нога в махе и качание таза. Стоянки стоп
+// остаются по сценарию упражнения: скольжения нет по построению.
+// Фаза по касаниям: касание левой — 0, правой — 0,5, между ними равномерно. Так руки симметричны при любой доле
+// опоры в сценарии (по доле опоры клипа на беге на месте с опорой 50 % правая рука стояла сзади втрое дольше левой).
+// lands — [[секунда цикла, 'Left' | 'Right'], …], P — цикл.
+export function landPhase(lands, P, t) {
+  const L = lands.map(([a, s]) => [mod(a, P), s]).sort((x, y) => x[0] - y[0]), n = L.length;
+  t = mod(t, P);
+  let i = n - 1; for (let k = 0; k < n; k++) if (L[k][0] <= t) i = k;
+  const [a, s] = L[i], [b, s2] = L[(i + 1) % n], span = mod(b - a, P) || P, from = s === 'Left' ? 0 : 0.5;
+  return from + (s2 === s ? 1 : 0.5) * (mod(t - a, P) / span);
+}
+// Параметры клипа на скорости v (м/с) под ногу модели.
+export const runParams = (T, v) => gaitParams(v, T.rig.L1 + T.rig.L2);
+// Руки клипа на фазе ph как ключ jump.arms / Rig.pose (оси скелета: x влево, z вперёд). lean — насколько корпус
+// упражнения наклонён вперёд сильнее клипа, градусы: руки поворачиваются вместе с ним.
+export function runArmKey(ph, p, lean = 0) {
+  // Плечо клипа ходит от 44° вперёд до 92° назад (в среднем 24° назад): у спринтера Meshy рука назад почти до горизонтали,
+  // за пределом плеча нашей проверки. Сдвигаем мах вперёд на 25°, размах тот же.
+  const g = gaitPose(ph, p), q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), deg(Math.max(0, lean) - 25));
+  const o = { gp: g };
+  for (const k of ['rUp', 'rFo', 'lUp', 'lFo']) o[k] = g[k].clone().applyQuaternion(q);
+  // Мах назад мягко ограничен 40° (дальше 30 % хода): плечо человека назад от корпуса на подъёме 50–60° уходит на ~50°.
+  for (const c of ['r', 'l']) {
+    const u = o[c + 'Up'], b = rad(Math.atan2(-u.z, -u.y)), lim = 40;
+    if (b <= lim) continue;
+    const r = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -deg(0.7 * (b - lim)));
+    o[c + 'Up'] = u.clone().applyQuaternion(r); o[c + 'Fo'] = o[c + 'Fo'].clone().applyQuaternion(r);
+  }
+  // Локоть около 90°: у клипа на краях маха 64–121°, после ослабления размаха (трусца) ещё дальше от прямого угла.
+  for (const c of ['r', 'l']) {
+    const up = o[c + 'Up'], fo = o[c + 'Fo'], a = up.angleTo(fo), lim = clamp(a, deg(75), deg(105));
+    if (Math.abs(a - lim) < 1e-4) continue;
+    const ax = new THREE.Vector3().crossVectors(up, fo);
+    if (ax.lengthSq() > 1e-8) o[c + 'Fo'] = up.clone().applyAxisAngle(ax.normalize(), lim);
+  }
+  return o;
+}
+// Смесь двух ключей рук (направления), k — доля второго.
+export const mixArms = (a, b, k) => {
+  const o = { ...a };
+  for (const n of ['rUp', 'rFo', 'lUp', 'lFo']) o[n] = a[n].clone().lerp(b[n], k).normalize();
+  return o;
+};
+// Летящая стопа идёт за голенью с подошвенным сгибом (Rig.legs держит её плоско, как на полу): k — доля.
+export function footFollowShin(T, s, k, plant = 0.35) {
+  if (k <= 0) return;
+  const { rig } = T, foot = rig.b[s + 'Foot'], q0 = foot.getWorldQuaternion(new THREE.Quaternion());
+  rig.setWorld(foot, q0.slerp(footAlong(T, s, w(rig, s + 'Foot').sub(w(rig, s + 'Leg')), plant), k));
+}
+// Где середина тазобедренных и сам сустав стороны s в секунду t по сценарию (стопы по старым дугам: без рекурсии).
+function hipAt(T, S, t, s) {
+  const b = S.curve(t), L = footAt(T, 'Left', S, t), R = footAt(T, 'Right', S, t), a = deg(b.yaw);
+  return new THREE.Vector3((L.x + R.x) / 2 + b.dx, b.y, (L.z + R.z) / 2 + b.dz).add(new THREE.Vector3(Math.cos(a), 0, -Math.sin(a)).multiplyScalar(sgn(s) * T.hipHalf));
+}
+// Щиколотка ноги s в махе прямой кинематикой клипа: доля маха u, тело в секунду tt.
+function fkAnkle(T, S, s, u, tt, p) {
+  const { th, sh } = swingLeg(u, p), q = new THREE.Quaternion().setFromAxisAngle(UP, deg(S.curve(tt).yaw));
+  if (s === 'Right') { th.x = -th.x; sh.x = -sh.x; }
+  return hipAt(T, S, tt, s).addScaledVector(th.applyQuaternion(q), T.rig.L1).addScaledVector(sh.applyQuaternion(q), T.rig.L2);
+}
+// Нога в махе по клипу: от сустава бедром и голенью клипа, поправки «откуда оторвалась» (гаснет к трети маха) и
+// «куда встанет» (растёт со середины) — как в игре (player.legFK). Возвращает { x, z, lift } для Rig.legs.
+function swingFoot(T, S, s, f, t, p) {
+  const { A, b, t0, t1 } = f.fl, u = f.u, ah = T.rig.ankleH;
+  const c0 = new THREE.Vector3(A.x, ah, A.z).sub(fkAnkle(T, S, s, 0, t0, p));
+  const c1 = new THREE.Vector3(b.x, ah, b.z).sub(fkAnkle(T, S, s, 1, t1, p));
+  const P = fkAnkle(T, S, s, u, t, p).addScaledVector(c0, 1 - smooth(clamp(u / 0.33, 0, 1))).addScaledVector(c1, smooth(clamp((u - 0.5) / 0.5, 0, 1)));
+  return { x: P.x, z: P.z, lift: Math.max(0, P.y - ah) };
+}
 
 // Кубическая кривая по ключам на цикле: касательные по соседям, в экстремуме ноль — без перелёта за ключ,
 // два одинаковых ключа подряд дают стоянку.
@@ -102,7 +179,8 @@ export function footAt(T, s, S, t) {
   for (let k = 0; k < n; k++) {
     const p = plan[k];
     if (!inPlant(p)) continue;
-    return { planted: true, k, lift: 0, ...plantPose(T, s, S, p, t >= p.on ? t : t + P) };
+    const tt = t >= p.on ? t : t + P;
+    return { planted: true, k, lift: 0, left: p.off - tt, stance: p.off - p.on, ...plantPose(T, s, S, p, tt) };
   }
   // В полёте: между стоянкой k (оторвалась в off) и k + 1 (встанет в on).
   for (let k = 0; k < n; k++) {
@@ -110,9 +188,10 @@ export function footAt(T, s, S, t) {
     let t0 = a.off, tt = t;
     if (tt < t0) tt += P;
     if (tt > end) continue;
-    const u = clamp((tt - t0) / (end - t0), 0, 1), e = smooth(u), br = Math.sin(Math.PI * u), A = plantPose(T, s, S, a, a.off);
+    const u = clamp((tt - t0) / (end - t0), 0, 1);
+    const e = smooth(u), br = Math.sin(Math.PI * u), A = plantPose(T, s, S, a, a.off);
     const x = lerp(A.x, b.x, e) + (b.arc?.x ?? 0) * br, z = lerp(A.z, b.z, e) + (b.arc?.z ?? 0) * br;
-    return { planted: false, k: -1, x, z, yaw: lerp(A.yaw, b.yaw, e), toe: 0, lift: (b.h ?? 0.06) * br };
+    return { planted: false, k: -1, x, z, yaw: lerp(A.yaw, b.yaw, e), toe: 0, lift: (b.h ?? 0.06) * br, u, fl: { A, b, t0, t1: end } };
   }
   throw new Error(`${s}: дыра в расписании стоп на ${t.toFixed(2)} с`);
 }
@@ -121,29 +200,53 @@ export function footAt(T, s, S, t) {
 export function gait(T, S, t, opt = {}) {
   const { rig } = T, b = S.curve(t), f = {};
   for (const s of SIDES) f[s] = footAt(T, s, S, t);
+  // Мокап: gait — доля ноги в махе и качания таза по клипу (0 — старая дуга), run — доля рук клипа, v — скорость (м/с)
+  // для выбора клипа и размаха: шаг ~1,4, трусца ~3, разгон 4–5.
+  const gw = clamp(b.gait ?? 0, 0, 1), run = clamp(b.run ?? 0, 0, 1);
+  const p = runParams(T, b.v ?? S.speed ?? 3.5), ph = landPhase(S.lands ??= SIDES.flatMap((s) => S.plants[s].map((q) => [q.on, s])), S.P, t);
   const yaw = deg(b.yaw), q = new THREE.Quaternion().setFromAxisAngle(UP, yaw);
+  const gp = gaitPose(ph, p);
   stand(T, 0, 0, 0, q);
-  const kk = key({ hips: b.hips, torso: b.torso, ...(opt.key ?? {}) });
+  const hips = b.hips + gp.hips * Math.max(gw, run), kk = key({ hips, torso: b.torso + 0.8 * gp.torso * Math.max(gw, run), ...(opt.key ?? {}) });
   trunk(T, kk, b.elev);
   const ft = { crouch: 0 };
-  for (const s of SIDES) ft[s] = { pos: new THREE.Vector3(f[s].x, 0, f[s].z), lift: f[s].lift, yaw: f[s].yaw - yaw - 0.55 * deg(b.hips), toe: f[s].toe };
+  for (const s of SIDES) {
+    if (!f[s].planted && gw > 0) { // нога в махе по клипу: колено вверх, пятка к ягодице, а не синус над полом
+      const m = swingFoot(T, S, s, f[s], t, p);
+      f[s].x = lerp(f[s].x, m.x, gw); f[s].z = lerp(f[s].z, m.z, gw); f[s].lift = lerp(f[s].lift, m.lift, gw);
+    }
+    // Перекат: к отрыву опорная встаёт на подушечку (последние 40 % опоры, не дольше 0,3 с), а не тянется пяткой
+    // по полу за уехавшим тазом — иначе Rig.legs сам поднимает пятку и щиколотка едет.
+    else if (f[s].planted && gw > 0) { const r = Math.min(0.3, f[s].stance / 2.5); f[s].toe = Math.max(f[s].toe, gw * 0.45 * smooth(clamp(1 - f[s].left / r, 0, 1))); }
+    ft[s] = { pos: new THREE.Vector3(f[s].x, 0, f[s].z), lift: f[s].lift, yaw: f[s].yaw - yaw - 0.55 * deg(hips), toe: f[s].toe };
+  }
   const mx = (f.Left.x + f.Right.x) / 2 + b.dx, mz = (f.Left.z + f.Right.z) / 2 + b.dz;
-  placeHips(T, new THREE.Vector3(mx, b.y - (opt.dy ?? 0), mz), ft);
+  const bob = gp.hipH * (rig.ankleH + 0.975 * (rig.L1 + rig.L2)) * gw * lerp(0.5, 1, p.run); // на шаге половина: у Meshy щиколотка высоко, задняя нога иначе не достаёт пола // таз выше в полёте и в середине шага, ниже в опоре бега
+  placeHips(T, new THREE.Vector3(mx, b.y + bob - (opt.dy ?? 0), mz), ft);
+  for (const s of SIDES) if (!f[s].planted) footFollowShin(T, s, gw * Math.sin(Math.PI * f[s].u) ** 0.7, lerp(0.15, 0.45, p.run));
+  rig.root.updateMatrixWorld(true);
   const face = yawV(yaw + deg(b.torso)), side = new THREE.Vector3(face.z, 0, -face.x); // side — влево от тела (+X при yaw 0)
   look(T, opt.lookAt ?? w(rig, 'Head').setY(1.2).addScaledVector(face, 5));
-  // Руки: в стойке кисти перед животом, локти согнуты и смотрят вниз-наружу; на бегу мах вперёд-назад против ног.
-  const swing = opt.swing ?? Math.sin(2 * Math.PI * t / (S.stride ?? 0.6));
+  // Руки: в стойке кисти перед животом, локти согнуты и смотрят вниз-наружу; на бегу — клип: запястье в точку клипа,
+  // локоть в сторону плеча клипа (двухзвенная кинематика даёт тот же сгиб).
+  const toWorld = rig.root.getWorldQuaternion(new THREE.Quaternion()), lean = 0.5 * (90 - b.elev - 8); // 8° — средний наклон бега клипа; руки поворачиваются с корпусом наполовину: целиком мах назад выходит за предел плеча
+  const ak = runArmKey(ph, p, lean);
   for (const s of SIDES) {
     if (opt.skipArm === s) continue;
-    const Sh = w(rig, s + 'Arm'), sw = -sgn(s) * swing * (b.run ?? 0);
-    const W = Sh.clone().addScaledVector(UP, -lerp(0.25, 0.3, b.run ?? 0)).addScaledVector(face, lerp(0.36, 0.1 + 0.2 * sw, b.run ?? 0))
-      .addScaledVector(side, -sgn(s) * lerp(0.03, 0.02, b.run ?? 0));
+    const Sh = w(rig, s + 'Arm'), [L1, L2] = rig.armLen[s], c = s[0].toLowerCase();
+    let W = Sh.clone().addScaledVector(UP, -0.25).addScaledVector(face, 0.36).addScaledVector(side, -sgn(s) * 0.03);
+    let pole = UP.clone().negate().addScaledVector(side, sgn(s) * 0.5).addScaledVector(face, -0.4);
+    if (run > 0) {
+      const up = ak[c + 'Up'].clone().applyQuaternion(toWorld), fo = ak[c + 'Fo'].clone().applyQuaternion(toWorld);
+      W.lerp(Sh.clone().addScaledVector(up, L1).addScaledVector(fo, L2), run);
+      pole.lerp(up.clone().addScaledVector(side, sgn(s) * 0.15), run);
+    }
     if (b.hang) W.lerp(Sh.clone().addScaledVector(UP, -0.5).addScaledVector(face, 0.08).addScaledVector(side, sgn(s) * 0.05), b.hang); // отдых: руки висят
-    const pole = UP.clone().negate().addScaledVector(side, sgn(s) * 0.5).addScaledVector(face, -0.4 - 0.4 * (b.run ?? 0));
     armIK(T, s, W, pole);
     rig.relaxHand(s); rig.grip(s, 0.45);
   }
-  T.gait = { f, b, yaw, t, P: S.P };
+  T.gait = { f, b, yaw, t, P: S.P, p, ph, gw, run, ak, S };
+  T.runInfo = { run, ak, face, elev: b.elev };
   return T.gait;
 }
 
@@ -214,8 +317,45 @@ export function footAudit(T, r) {
     }
   }
   r.m.slide = cm(slide);
+  // Бег и ходьба по клипу: нога в махе складывается, таз не в полуприседе посреди опоры.
+  // Пороги по клипам (test-out/run/clip.mjs): пик сгиба колена в махе — бег 149°, трусца в показе ~95–110°, шаг 77°;
+  // таз в середине опоры бега 0,94–0,96 стойки (около 0,9 длины ноги над щиколоткой), шага — выше стойки.
+  if (g.gw > 0.7) {
+    const L = rig.L1 + rig.L2, runny = g.p.run > 0.5;
+    for (const s of SIDES) {
+      const f = g.f[s], o = g.f[s === 'Left' ? 'Right' : 'Left'];
+      const c = lerp(0.22, 0.5, g.p.run); // пик сгиба в махе: у шага в начале маха (клип: u ≈ 0,1–0,35), у бега в середине
+      if (!f.planted && Math.abs(f.u - c) < 0.13 && Math.hypot(f.fl.b.x - f.fl.A.x, f.fl.b.z - f.fl.A.z) > 0.3) { // переступ на развороте — не шаг
+        const k = r.m['knee' + s[0]], lim = runny ? 75 : 40; r.m.swingKnee = k;
+        if (k < lim) r.bad.push(`${ruSide(s)} колено в махе почти прямое: ${k}° (на ${runny ? 'бегу' : 'шаге'} от ${lim}°)`);
+      }
+      if (!g.S.low && f.planted && !o.planted && o.u > 0.3 && o.u < 0.7) { // S.low — игровая стойка (скрестный шаг, выход к мячу): таз низко законно
+        const h = (mid(rig, 'LeftUpLeg', 'RightUpLeg').y - rig.ankleH) / L, lim = runny ? 0.88 : 0.9; r.m.hipMid = +h.toFixed(3);
+        if (h < lim) r.bad.push(`таз в полуприседе посреди опоры: ${h.toFixed(2)} длины ноги (от ${lim})`);
+      }
+    }
+  }
+  runArmAudit(T, r);
   const c = legsClear(T); r.m.legGap = cm(c.gap);
   if (c.gap < -0.01) { const [a, b] = c.where.split('/'); r.bad.push(`ноги проходят друг сквозь друга: левая ${NAME[a]} и правая ${NAME[b]} (${cm(c.gap)} см)`); }
+  return r;
+}
+// Руки на бегу (T.runInfo ставят gait, warmup.inPlace и упражнения с разбегом): сгиб локтя 70–110° (клип бега 64–121°,
+// в среднем 95°; у трусцы размах 65 %, крайние уходят внутрь), на махе назад кисть у линии тазобедренных или позади (до 3 см
+// впереди) — когда плечо клипа (после сдвига вперёд, runArmKey) ушло назад на 30° и больше; корпус почти прямой, иначе
+// плечо само впереди таза. Было: кисти сцеплены перед животом, на «беге» ходили ±20 см перед корпусом.
+export function runArmAudit(T, r) {
+  const R = T.runInfo, { rig } = T;
+  if (!R || R.run < 0.9) return r; // переход из стойки в мах — не бег
+  const hip = mid(rig, 'LeftUpLeg', 'RightUpLeg');
+  for (const s of SIDES) {
+    const e = r.m['elbow' + s[0]] ?? rig.audit()[s].elbow, c = s[0].toLowerCase();
+    if (e < 70 || e > 110) r.bad.push(`${ruSide(s, true)} рука на бегу: локоть ${e}° (70–110°)`);
+    if (R.ak[c + 'Up'].z < -0.5 && R.elev > 70) { // плечо клипа на 30° и больше назад: крайняя точка маха
+      const d = w(rig, s + 'Hand').sub(hip).dot(R.face); r.m['handBack' + s[0]] = cm(d);
+      if (d > 0.03) r.bad.push(`${ruSide(s, true)} кисть на махе назад перед бедром (${cm(d)} см)`);
+    }
+  }
   return r;
 }
 // Общие проверки тела (стопы — свои, по стоянкам, а не по эталону начала цикла) плюс проверки ног.
