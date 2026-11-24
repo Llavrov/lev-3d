@@ -40,7 +40,9 @@ export default {
     const phi = d2r(lerp(PHI0, T.kw.phi1, depth)), psi = d2r(PSI);
     const A = new THREE.Vector3(x, rig.ankleH, 0), Kn = A.clone().add(new THREE.Vector3(0, rig.L2 * Math.cos(phi), rig.L2 * Math.sin(phi)));
     const Hp = Kn.clone().add(new THREE.Vector3(0, rig.L1 * Math.cos(psi), -rig.L1 * Math.sin(psi)));
-    stand(T); trunk(T, K, 89); // корпус отвесно: с наклоном вперёд лицо упиралось в стену, когда колено у стены
+    // Корпус на 6° вперёд, руки упираются в стену. Было 89 по костям (83° тела); прямо (90) плечи уходят от стены на
+    // 7 см и кисть ломается в запястье на 62°. Лицо до стены в самой глубокой точке 8 см.
+    stand(T); trunk(T, K, 84);
     placeHips(T, new THREE.Vector3(Hp.x + T.hipHalf, Hp.y, Hp.z), {
       [ON]: { pos: new THREE.Vector3(x, 0, 0), lift: 0, yaw: 0 },
       [BACK]: { pos: new THREE.Vector3(T.hipHalf, 0, -0.32), lift: 0, yaw: 0.05, toe: 0.4 }, crouch: 0 });

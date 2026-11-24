@@ -1,7 +1,7 @@
 // Разгибание рук с резинкой (французский жим вниз у блока, с эспандером). Стоя, стопы на ширине таза, колени мягкие
 // (около 18°), корпус 84° над горизонталью: чуть вперёд из таза, спина прямая. Резинка закреплена на стойке впереди
 // на 1,95 м, в руках две ручки, хват нейтральный (большие пальцы к плечам). Плечи стоят: чуть вперёд и наружу от
-// отвеса, локти у боков. Двигается только предплечье, в плоскости вдоль тела: от 100° от отвеса (кисти у груди) до 15°
+// отвеса, локти у боков. Двигается только предплечье, в плоскости вдоль тела: от 100° от отвеса (кисти у груди) до 22°
 // (рука почти прямая, кисти перед бёдрами). Пауза внизу, медленно вверх.
 import * as THREE from 'three';
 import { key, w, SIDES, sgn, ruSide, cm, smooth, lerp, deg, stand, feet, trunk, placeHips, look, baseAudit } from '../poses.js';
@@ -9,7 +9,7 @@ import { hipsOver } from './romanian-deadlift-db.js';
 import { band, stretch } from '../band.js';
 import { bodyShape, anchor, handle, placeHandle, handleGap, bodyAudit, bandClear, clearance, legClear, wristAudit } from '../arms.js';
 
-const K = key({}), TORSO = 84, KNEE = 18, SHIN = 2, TOP = 100, LOW = 15;
+const K = key({}), TORSO = 84, KNEE = 18, SHIN = 2, TOP = 100, LOW = 22; // LOW: было 15, при корпусе прямее (24.11) кулаки входили в бёдра на 2 см
 const ANCHOR = new THREE.Vector3(0, 1.95, 0.6);
 const V3 = (...a) => new THREE.Vector3(...a);
 

@@ -271,7 +271,7 @@ loader.load(`${import.meta.env.BASE_URL}models/${MODEL}.glb`, (gltf) => {
     cam(x, y, z, tx, ty, tz) { manual = true; cam.c.set(tx, ty, tz); const o = new THREE.Vector3(x - tx, y - ty, z - tz); cam.d = o.length(); cam.az = Math.atan2(o.x, o.z); cam.el = Math.asin(o.y / cam.d); stepCam(null); }, // крупный план для проверки
     pose(name) { stop = true; testPose(T, name); },
     muscles(list) { SHOW = list; ALL = list.length > 0; show(null); }, // карта по одной мышце без перезагрузки
-    audit() { const r = ex.audit(T); return { violations: r.bad, ...r.m }; },
+    audit() { const r = ex.audit(T); return { violations: [...new Set(r.bad)], ...r.m }; },
     // Позы для виджета Telegram (voice-bot/workout_tech.py): суставы и снаряды в плоскости ракурса, метры, y от пола.
     // По две точки на фазу (начало и середина), у поочерёдных упражнений только первый цикл. Сборка: tools/trainer-keys.mjs.
     keys(name = ex.flat ?? ex.view ?? 'side') {

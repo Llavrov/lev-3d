@@ -87,7 +87,7 @@ export default {
     T.cable.position.copy(pc).addScaledVector(span, 0.5); T.cable.scale.set(1, span.length(), 1); T.cable.quaternion.setFromUnitVectors(UP, span.normalize());
   },
   audit(T) {
-    const { rig } = T, r = baseAudit(T, { feet: ['LeftFoot', 'RightToeBase'] });
+    const { rig } = T, r = baseAudit(T, { feet: ['LeftFoot', 'RightToeBase'], gaze: [-45, 35] }); // взгляд идёт за рукоятью, как в cable-lift
     // Скрутка поясницы отдельно от таза: «влево» таза и нижних рёбер по горизонтали.
     const lh = T.latHips.clone().applyQuaternion(rig.b.Hips.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize();
     const ls = T.latSpine.clone().applyQuaternion(rig.b.Spine.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize(); // поясничная кость

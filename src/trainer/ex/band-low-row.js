@@ -41,7 +41,7 @@ export default {
     stand(T);
     trunk(T, K, TORSO_EL);
     placeHips(T, new THREE.Vector3(0, T.hipY, 0), T.feetAt);
-    look(T, new THREE.Vector3(0, 1.1, 3), 35); // у этой модели шея в линию спины задирает лицо: кивок до 35°, как в steps.js
+    look(T, new THREE.Vector3(0, 1.1, 3), 35);
     const a = THREE.MathUtils.degToRad(lerp(FRONT, BACK, d));
     for (const s of SIDES) {
       const S = w(rig, s + 'Arm'), dir = new THREE.Vector3(sgn(s) * 0.12, -Math.cos(a), Math.sin(a)).normalize();

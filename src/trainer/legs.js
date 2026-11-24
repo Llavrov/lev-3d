@@ -78,8 +78,8 @@ export function onSpot(T, r, s, P) {
   if (d > 0.015) r.bad.push(`${ruSide(s, true)} стопа съехала (${cm(d)} см)`);
 }
 
-// Взгляд: лицо не вверх больше 8° и не в пол больше lo (у модели шея в линию спины задирает лицо, на листе
-// прогулки фермера 23.11 он шёл с подбородком вверх, а проверки не было).
+// Взгляд: лицо не вверх больше 8° и не в пол больше lo (на листе прогулки фермера 23.11 он шёл с подбородком вверх,
+// а проверки не было). Стоя прямо общий baseAudit строже: от −20 до +8.
 export function gaze(T, r, lo = -35) {
   const f = T.face.clone().applyQuaternion(T.rig.b.Head.getWorldQuaternion(new THREE.Quaternion()));
   r.m.gaze = Math.round(Math.asin(Math.max(-1, Math.min(1, f.y))) * 180 / Math.PI);

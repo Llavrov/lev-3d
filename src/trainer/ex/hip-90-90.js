@@ -11,7 +11,7 @@ import { deg, lerp, smooth, w, mid, key, SIDES, sgn, ruSide, cm, stand, trunk, p
 import { mat, floorSetup, legThrough, kneeAudit, gap, lowest, footAlong, faceTo, MAT } from '../floor.js';
 
 const K = key({});
-const KNEE_Y = 0.09, ANKLE_Y = 0.08, UPRIGHT = 84, LEAN = 56, POINT = 25; // колено и щиколотка над полом, м; корпус, °; носок вытянут, °
+const KNEE_Y = 0.09, ANKLE_Y = 0.08, UPRIGHT = 84, LEAN = 56, POINT = 25, LIFT = 0.05; // колено и щиколотка над полом, м; корпус, °; носок вытянут, °; подъём стопы в смене, м
 const hdir = (psi, y = 0) => new THREE.Vector3(Math.sin(deg(psi)), y, Math.cos(deg(psi))); // азимут от «вперёд», плюс — влево
 const other = (s) => (s === 'Left' ? 'Right' : 'Left');
 
@@ -66,12 +66,13 @@ export default {
     const F = i === 2 ? other(F0) : F0; // передняя сейчас (после смены — другая)
     seat(T, lerp(UPRIGHT, LEAN, depth), i === 1 ? 0.045 * Math.sin(Math.PI * smooth(u)) : 0); // колени вверх — бёдра поднимают седалище, таз опускается на 4,5 см
     look(T, null);
-    faceTo(T, new THREE.Vector3(0, -0.45, 1).normalize(), 60); // взгляд вперёд-вниз, 18° к перпендикуляру корпуса: шея в линию спины сидя запрокидывает лицо модели на 30°
+    faceTo(T, new THREE.Vector3(0, -0.25, 1).normalize(), 30); // взгляд вперёд, чуть вниз (14°), в наклоне за корпусом
     const legs = {};
     for (const s of SIDES) {
       if (i === 1) { // смена: 0–0,5 — колени вверх, 0,5–1 — вниз в другую сторону
         const e = smooth(u), up = legKey(T, s, 'up');
         legs[s] = e < 0.5 ? mixKey(legKey(T, s, s === F0 ? 'front' : 'back'), up, smooth(e * 2)) : mixKey(up, legKey(T, s, s === F0 ? 'back' : 'front'), smooth(e * 2 - 1));
+        legs[s].A.y += LIFT * Math.sin(Math.PI * (e < 0.5 ? smooth(e * 2) : smooth(e * 2 - 1))); // стопа идёт дугой: по прямой между ключами носок поворачивался вниз и уходил в коврик на 3,6 см
       } else legs[s] = legKey(T, s, s === F ? 'front' : 'back');
       legThrough(T, s, legs[s].K, legs[s].A, legs[s].foot);
     }

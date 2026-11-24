@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { X, deg, rad, lerp, clamp, smooth, w, key, SIDES, sgn, ruSide, cm, stand, trunk, look, baseAudit } from '../poses.js';
 import { palmOn } from '../kneel.js';
-import { mat, floorSetup, settle, center, keep, legThrough, kneeAudit, gap, lowest, MAT } from '../floor.js';
+import { mat, floorSetup, settle, center, keep, legThrough, kneeAudit, gap, lowest, MAT, faceTo, headOn } from '../floor.js';
 import { solve } from '../core.js';
 
 const LYING = new THREE.Quaternion().setFromAxisAngle(X, -Math.PI / 2); // грудь вверх, голова к −Z
@@ -24,12 +24,13 @@ function body(T, c) {
     // Лопатки на месте: кость груди в ту же точку, грудь повёрнута как была (повороты спины в сумме возвращают её).
     T.wrap.position.add(T.chest.clone().sub(w(rig, 'Spine2'))); T.wrap.updateMatrixWorld(true);
   }
-  if (c && T.neckQ) { // грудь лежит как лежала: шея и голова как без подкрута (look() ставит шею по линии таз → шея, а таз поднят)
+  if (c && T.neckQ) { // грудь лежит как лежала: шея и голова как без подкрута (их ставят от груди, а грудь вернулась на место)
     rig.b.Neck.quaternion.copy(T.neckQ); rig.b.Head.quaternion.copy(T.headQ); rig.root.updateMatrixWorld(true);
     return;
   }
   look(T, null);
-  look(T, w(rig, 'Head').add(new THREE.Vector3(0, 2, 0)), 30);
+  faceTo(T, new THREE.Vector3(0, 1, 0), 30);
+  headOn(T, X, 0.01); // спина у модели прямая, без грудного изгиба: шея в нейтрали держала затылок в 5 см над ковриком, шея чуть разгибается
 }
 // Ноги: бедро под углом phi к линии тела (90 — отвесно, больше — к груди), колено 90°, всё повёрнуто вместе с тазом.
 function legs(T, phi, c) {
@@ -98,10 +99,8 @@ export default {
     const hips = w(rig, 'Hips'), chest = w(rig, 'Spine2'), neck = w(rig, 'Neck');
     r.m.flex = Math.round(rad(chest.clone().sub(hips).angleTo(neck.clone().sub(chest))));
     if (r.m.flex > 45) r.bad.push(`спина согнута на ${r.m.flex}°`);
-    // Шея меряется от груди: в подкруте поясница согнута законно, линия таз → шея (baseAudit) тут не годится.
-    r.bad = r.bad.filter((b) => !/голова не в линию спины/.test(b));
-    r.m.neckChest = Math.round(rad(neck.clone().sub(chest).angleTo(w(rig, 'Head').sub(neck))));
-    if (r.m.neckChest > 15) r.bad.push(`голова не в линию груди: ${r.m.neckChest}°`);
+    // Шея: baseAudit меряет её от нейтрали в осях груди (m.neck, предел 15°), подкрут поясницы на неё не влияет. До 24.11
+    // здесь была своя мера «шейная кость в линию грудь → шея» (предел 15°): нейтраль шеи у модели наклонена к этой линии на 40°.
     r.m.curl = Math.round(T.c); r.m.phi = Math.round(T.phi);
     return r;
   },

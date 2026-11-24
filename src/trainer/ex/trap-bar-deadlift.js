@@ -51,7 +51,7 @@ export default {
     T.depth = depth;
     const hy = lerp(T.hyTop, T.hyLow, depth);
     body(T, lerp(86, ELB, depth), hy);
-    look(T, new THREE.Vector3(0, 0.6, lerp(3, 1.6, depth)), 35);
+    look(T, new THREE.Vector3(0, lerp(1.2, 0.6, depth), lerp(3, 1.6, depth)), 35); // стоя взгляд вперёд, внизу вниз-вперёд
     const c = new THREE.Vector3(0, hy, ZH);
     T.bar.position.copy(c); T.bar.updateMatrixWorld(true);
     for (const s of SIDES) {

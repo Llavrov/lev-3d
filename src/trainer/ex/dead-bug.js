@@ -5,7 +5,7 @@
 // и бедра 8° над полом, пятка остаётся над полом. Вторая пара стоит. Голова на коврике, взгляд в потолок.
 import * as THREE from 'three';
 import { X, deg, lerp, smooth, w, key, V, SIDES, sgn, ruSide, cm, stand, trunk, look, armIK, baseAudit } from '../poses.js';
-import { mat, floorSetup, settle, center, keep, legThrough, kneeAudit, gap, lowest, MAT, elevOf } from '../floor.js';
+import { mat, floorSetup, settle, center, keep, legThrough, kneeAudit, gap, lowest, MAT, elevOf, faceTo, headOn } from '../floor.js';
 
 const LYING = new THREE.Quaternion().setFromAxisAngle(X, -Math.PI / 2); // грудь вверх, голова к −Z
 const K = key({ rTh: V(0.06, 0, 1), rSh: V(0, -1, 0), lTh: V(-0.06, 0, 1), lSh: V(0, -1, 0) });
@@ -17,7 +17,8 @@ function body(T) {
   stand(T, T.base.p.x, T.base.p.y, T.base.p.z, T.base.q);
   trunk(T, K);
   look(T, null);
-  look(T, w(T.rig, 'Head').add(new THREE.Vector3(0, 2, 0)), 30);
+  faceTo(T, new THREE.Vector3(0, 1, 0), 30);
+  headOn(T, X, 0.01); // спина у модели прямая, без грудного изгиба: шея в нейтрали держала затылок в 5 см над ковриком, шея чуть разгибается
 }
 // Рука: угол φ от «за головой вдоль пола» (0) до отвеса (90), запястье на длине почти прямой руки.
 function arm(T, s, phi) {

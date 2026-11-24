@@ -34,10 +34,11 @@ export default {
     const { rig } = T, d = depth;
     T.retract = lerp(2, 14, d); T.depress = lerp(-12, 8, d); // внизу плечи подняты (вис), вверху лопатки вниз и назад
     stand(T);
-    trunk(T, K, lerp(90, 100, d)); // вверху корпус чуть откинут: грудь идёт к перекладине, лицо мимо неё
-    const M = mid(rig, 'LeftArm', 'RightArm'), to = new THREE.Vector3(0, BAR_Y - lerp(T.drop, 0.17, d), lerp(-0.03, -0.15, d) - 0.06 * Math.sin(Math.PI * d)); // на проходе лица мимо перекладины корпус дальше назад
+    trunk(T, K, lerp(90, 95, d)); // вверху корпус чуть откинут: грудь идёт к перекладине, лицо мимо неё
+    const M = mid(rig, 'LeftArm', 'RightArm'), to = new THREE.Vector3(0, BAR_Y - lerp(T.drop, 0.17, d), lerp(-0.03, -0.19, d) - 0.12 * Math.sin(Math.PI * d)); // на проходе лица мимо перекладины корпус дальше назад
+    // 24.11: голова в нейтрали стоит впереди прежней (была запрокинута), поэтому путь на 4–6 см дальше от перекладины, корпус вверху 95° (было 100 по костям)
     T.wrap.position.add(to.sub(M)); T.wrap.updateMatrixWorld(true);
-    look(T, new THREE.Vector3(0, BAR_Y + 0.15, 0.6), 15);
+    look(T, w(rig, 'Head').add(new THREE.Vector3(0, 0.2, 3)), 15); // взгляд вперёд, чуть вверх: на перекладину над собой голова задиралась на 19°
     for (const s of SIDES) palmTo(T, s, new THREE.Vector3(sgn(s) * GRIP, BAR_Y, 0), new THREE.Vector3(-sgn(s), 0, 0), new THREE.Vector3(sgn(s) * 0.8, -0.6, 0.3));
     rig.grip('Right', 1); rig.grip('Left', 1);
     T.d = d;

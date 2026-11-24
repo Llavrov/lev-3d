@@ -89,8 +89,8 @@ export function elbowOut(T, s) {
   const { rig } = T, u = w(rig, s + 'ForeArm').sub(w(rig, s + 'Arm')).normalize(), across = w(rig, 'LeftArm').sub(w(rig, 'RightArm')).normalize();
   return Math.round(rad(Math.asin(Math.min(1, Math.abs(u.dot(across))))));
 }
-// Куда смотрит лицо стоя: угол над горизонталью, °. Шея в линию спины задирает голову этой модели на 20–30°
-// (вывод исполнителей работы ног 23.11), поэтому стоя look() зовём с пределом кивка 35° и проверяем взгляд.
+// Куда смотрит лицо стоя: угол над горизонталью, °. До 24.11 look() задирал лицо модели на 20–30°, отсюда кивок до 35°
+// в помощниках; с нейтралью шеи (poses.js) лицо смотрит прямо, кивок до 35° просто дотягивает до точки взгляда.
 export function gazeAudit(T, r, up = 8, down = -30) {
   const f = T.face.clone().applyQuaternion(T.rig.b.Head.getWorldQuaternion(new THREE.Quaternion()));
   r.m.gaze = Math.round(rad(Math.asin(f.y)));

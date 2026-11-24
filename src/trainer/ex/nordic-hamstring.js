@@ -95,7 +95,7 @@ export default {
     else { el = lerp(CATCH, 90, smooth(u)); k = 1 - smooth(Math.min(1, u * 2.5)); }
     T.el = el; T.k = k;
     body(T, el);
-    look(T, w(T.rig, 'Head').addScaledVector(T.front, 2).addScaledVector(T.want, -0.6), 25); // взгляд вперёд по линии тела, чуть вниз
+    look(T, w(T.rig, 'Head').addScaledVector(T.front, 2).addScaledVector(T.want, -0.15), 25); // взгляд вперёд по линии тела, чуть вниз (−0,6 под задранное лицо давало −30°)
     hands(T, k);
   },
   audit(T) {

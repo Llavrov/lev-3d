@@ -14,7 +14,7 @@ const AX = new THREE.Vector3(1, 0, 0); // ось рукояти, левая ки
 function body(T) {
   const { rig } = T;
   stand(T);
-  trunk(T, K);
+  trunk(T, K, 90); // стоит прямо, как в покое (без наклона ключ давал 95°: на 5° назад)
   placeHips(T, new THREE.Vector3(0, rig.ankleH + 0.95 * (rig.L1 + rig.L2), -0.02),
     { crouch: 0, Left: { pos: new THREE.Vector3(HALF, 0, 0), lift: 0, yaw: 0.12 }, Right: { pos: new THREE.Vector3(-HALF, 0, 0), lift: 0, yaw: -0.12 } });
 }
@@ -50,7 +50,7 @@ export default {
     const { rig } = T;
     body(T);
     const C = T.C0.clone().lerp(T.C1, depth);
-    look(T, C.clone().add(new THREE.Vector3(0, -0.6, 2.5)), 35);
+    look(T, C.clone().add(new THREE.Vector3(0, -0.15, 2.5)), 35); // взгляд вперёд, чуть вниз (точку на 0,6 м ниже ставили под задранное лицо)
     const pole = new THREE.Vector3(0, -1, -0.3).lerp(new THREE.Vector3(0, -1, 0), depth);
     palmTo(T, 'Right', C.clone().addScaledVector(AX, -0.055), AX, pole);
     palmTo(T, 'Left', C.clone().addScaledVector(AX, 0.055), AX.clone().negate(), pole);

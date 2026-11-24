@@ -37,7 +37,7 @@ function pose(T, { i = 0, depth = 0 }) {
   stand(T);
   trunk(T, K, TORSO);
   placeHips(T, hipsOver(T, KNEE, SHIN), T.feetAt);
-  look(T, new THREE.Vector3(0, 0.6, 3), 35); // шея в линию спины задирает лицо модели: взгляд ниже горизонта
+  look(T, new THREE.Vector3(0, 1.3, 3), 35); // взгляд вперёд (точку на 0,6 м ставили под задранное лицо)
   const { u, f } = i === 0 ? along(KEYS.slice(0, 4), depth) : along(KEYS.slice(3), depth);
   rig.root.updateMatrixWorld(true);
   rig.arm('Right', u.applyQuaternion(rig.toPlayer), f.applyQuaternion(rig.toPlayer));
