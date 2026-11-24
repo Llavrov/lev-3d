@@ -6,6 +6,7 @@ const WORD = 0.3, LEAD = 0.35, TAIL = 1.4; // секунд на слово, до
 const SLOW = 0.5, MAX = 8; // замедление на фазах и потолок движения в шаге, секунд (планку держат 30 с)
 const names = (list) => list.slice(0, 3).map((m) => RU[m] ?? m).join(', '); // больше трёх имён в подписи не читается
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
+const about = (verb, list) => (list.length ? ` ${verb} ${names(list)}.` : ''); // пустой список — без фразы, а не «Работают .»
 
 // Слова подписи по одному. Неразрывные пробелы держат предлог со словом и число с единицей: они появляются вместе.
 export const words = (text) => typo(text).split(' ');
@@ -19,12 +20,12 @@ export function buildSteps(ex, dose) { // dose — дозировка из пл�
   const cyc = cycleOf(ex), m = ex.muscles, work = m.work.filter((x) => !m.careful.includes(x)), main = work.length ? work : m.work;
   const mk = (o, max = MAX) => ({ ...o, dur: Math.max(readTime(o.text), Math.min((o.to - o.from) / o.speed, max)) });
   const steps = [mk({ kind: 'whole', title: 'Целиком', from: 0, to: cyc * (cyc < 5 ? 2 : 1), speed: 1, focus: null, // короткое движение — дважды
-    text: `${dose || `${ex.dose.sets} × ${ex.dose.reps}, отдых ${ex.dose.rest_s} с`}. Работают ${names(main)}.` })];
+    text: `${dose || `${ex.dose.sets} × ${ex.dose.reps}, отдых ${ex.dose.rest_s} с`}.${about('Работают', main)}` })];
   let t = 0;
   for (const p of ex.phases) {
     const st = !!p.stretch && m.stretch.length > 0, list = st ? m.stretch : main;
     steps.push(mk({ kind: 'phase', title: cap(p.name), from: t, to: t + p.tempo_s, speed: SLOW, focus: { role: st ? 'stretch' : 'work', list },
-      text: `${p.cue.replace(/\.$/, '')}. ${st ? 'Тянутся' : 'Работают'} ${names(list)}.` }));
+      text: `${p.cue.replace(/\.$/, '')}.${about(st ? 'Тянутся' : 'Работают', list)}` }));
     t += p.tempo_s;
   }
   if (m.careful.length) steps.push(mk({ kind: 'careful', title: 'Беречь', from: 0, to: cyc, speed: 1, focus: { role: 'careful', list: m.careful },

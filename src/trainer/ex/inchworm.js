@@ -75,6 +75,7 @@ export default {
   view: 'quarter', // сбоку камера, держа весь путь, обрезает стоящего у края кадра
   flat: 'side',
   wide: true,
+  follow: true, // путь по полу длиннее роста: кадр держит текущую позу, иначе стоящий человек мелкий (main.js, fit)
   setup(T) {
     const { rig } = T, L = rig.L1 + rig.L2;
     measureFloor(T);

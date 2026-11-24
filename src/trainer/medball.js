@@ -19,6 +19,7 @@ export function medball() {
   for (const rot of [[0, 0, 0], [Math.PI / 2, 0, 0]]) { // два шва крест-накрест: видно, что мяч крутится
     const s = new THREE.Mesh(new THREE.TorusGeometry(R * 1.003, 0.0045, 6, 48), seam); s.rotation.set(...rot); g.add(s);
   }
+  g.userData.loose = true; // в полёте мяч не растягивает кадр (main.js, bodyBox): человек крупнее, мяч может уйти за край
   return shadows(g);
 }
 // Стена для бросков: панель с отметкой цели. Не в T.gear, чтобы камера не отъезжала ради стены: мяч до неё долетает,
