@@ -202,6 +202,9 @@ export function twistAudit(T, r, lim = 95) {
   for (const s of SIDES) {
     const t = forearmTwist(T, s); r.m['twist' + s[0]] = t;
     if (t > lim) r.bad.push(`${ruSide(s, true)} предплечье перекручено: ${t}° от нейтрали (до ${lim}°)`);
+    // Обе кисти на рукояти перед собой: лопатка выведена вперёд за рукой (плечевой сустав не позади основания шеи больше
+    // чем на 2 см). Со сведёнными лопатками (−4 см) дельта и грудь вдавливались — Лёва 24.11 про «Дровосека».
+    if (r.m['armUp' + s[0]] > 50 && r.m['shFwd' + s[0]] < -2) r.bad.push(`${ruSide(s, true)} лопатка сведена при руке вперёд (${r.m['shFwd' + s[0]]} см): плечо вдавливается`);
   }
   return r;
 }
@@ -243,6 +246,27 @@ export function baseAudit(T, opt = {}) {
     if (back > lim) bad.push(`${ruSide(s, true)} рука заломлена назад: плечо на ${Math.round(back)}° позади корпуса при подъёме ${Math.round(th)}° (предел ${Math.round(lim)}°)`);
     if (a[s].wrist > 50) bad.push(`${ruSide(s, true)} кисть сломана в запястье: ${a[s].wrist}°`);
     m['wrist' + s[0]] = a[s].wrist;
+    // Рука поперёк груди: насколько плечо ушло за середину корпуса к другому боку. У модели Meshy с 40° дельта и грудь
+    // вдавливаются («плечо очень неестественно вдавливается», Лёва про «Дровосека» 24.11). opt.across — свой предел
+    // (растяжка руки через грудь, объятия), false — не проверять. Только с корпусом вертикально: лёжа и на боку рука
+    // перед грудью — опора.
+    const ac = Math.round(rad(Math.asin(clamp((s === 'Left' ? -1 : 1) * u.dot(across), -1, 1)))); m['armAcross' + s[0]] = ac;
+    m['shFwd' + s[0]] = cm(w(rig, s + 'Arm').sub(w(rig, 'Neck')).dot(front)); // плечевой сустав впереди (+) основания шеи: выведено ли плечо за рукой
+    if (opt.across !== false && axis.y > 0.85 && th > 40 && ac > (opt.across ?? 40)) bad.push(`${ruSide(s, true)} рука поперёк груди на ${ac}° (до ${opt.across ?? 40}°): плечо вдавливается`);
+  }
+  // Лодыжка: скрутка стопы относительно колена вокруг голени — угол между осью коленного сустава (бедро × голень) и осью
+  // голеностопа (носок × голень). Сгиб голеностопа сюда не входит (первая версия мерила носок от «переда» колена и
+  // срабатывала на любом приседе). У человека 25–30°; больше 45° — «лодыжка жёстко скручена» (Лёва 24.11, «Паук»).
+  // Только колено, согнутое от 40° (у почти прямого ось сустава шумит), голень не лежит, стопа у пола, в шагах — стоящая
+  // всей подошвой. Замер пишется всегда (ankleTwist), нарушением становится при opt.ankle (градусы): в шагах 45°
+  // (steps.legAudit). В общую проверку не включён: боковой выпад (61°) и выпад «человек-паук» (75°) его не проходят,
+  // их позы надо разбирать отдельно.
+  for (const s of SIDES) {
+    const hip = w(rig, s + 'UpLeg'), knee = w(rig, s + 'Leg'), ank = w(rig, s + 'Foot'), th = knee.clone().sub(hip).normalize(), sh = ank.clone().sub(knee).normalize();
+    const toe = w(rig, s + 'ToeBase').sub(ank).normalize(), hk = new THREE.Vector3().crossVectors(th, sh), ha = new THREE.Vector3().crossVectors(toe, sh);
+    if (ank.y > rig.ankleH + 0.06 || knee.y - ank.y < 0.2 || hk.length() < 0.64 || ha.length() < 0.5 || (T.gait && (!T.gait.f[s]?.planted || T.gait.f[s].toe > 0.2))) continue;
+    const tw = Math.round(rad(hk.angleTo(ha))); m['ankleTwist' + s[0]] = tw;
+    if (opt.ankle && tw > opt.ankle) bad.push(`${ruSide(s, true)} лодыжка скручена: стопа на ${tw}° от колена (до ${opt.ankle ?? 45}°)`);
   }
   for (const n of opt.feet ?? ['LeftFoot', 'RightFoot']) {
     const ref = T.ref?.[n];

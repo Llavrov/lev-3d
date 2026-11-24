@@ -12,6 +12,9 @@ const PI = Math.PI;
 const CONE = 0.38; // высота конуса на точке, м (обычный тренировочный)
 const side = (t) => (Math.floor(t / CYCLE) % 2 ? 'Left' : 'Right');
 const point = (s) => new THREE.Vector3(sgn(s) * PX, 0, PZ);
+// Конус стоит сбоку от линии бега, снаружи: рука к нему идёт мимо колена, а стопы остаются каждая на своём следе.
+const OUT = 0.4;
+const cone = (s) => { const d = sgn(s), th = Math.atan2(d * PX, PZ); return new THREE.Vector3(d * PX + Math.cos(th) * d * OUT, 0, PZ - Math.sin(th) * d * OUT); };
 
 // Сценарий к точке со стороны s (Right — в −X). Зеркало по x для левой.
 function build(T, s) {
@@ -35,10 +38,13 @@ function build(T, s) {
   const a = S.run({ side: odd ? o : s, t0: t0 - 0.05, ...go });
   if (a.side !== s) throw new Error(`паук: выпад не ближней ногой (${a.side})`);
   const E = [a.x, a.z], tL = a.last + 0.27; // постановка выпада
-  const foot = [PX * d + f[0] * 0.05 + out[0] * 0.1, PZ + f[1] * 0.05 + out[1] * 0.1];
+  // Стопа выпада на своём следе у линии бега, конус снаружи от неё в 0,3 м. Было: касание внутри от стопы — рука шла
+  // сквозь бедро на 10 см (Лёва 24.11: «рука дальняя через ногу проходит»).
+  const foot = [PX * d + f[0] * 0.05 + out[0] * 0.09, PZ + f[1] * 0.05 + out[1] * 0.09];
   const own = S.plants[s].at(-1);
-  S.step(s, own.on + (own.hold ?? 0.15), tL, ...foot, th - d * 0.15, { h: 0.08 });
-  const low = [E[0] + f[0] * 0.55 - out[0] * 0.05, E[1] + f[1] * 0.55 - out[1] * 0.05]; // таз внутрь от точки: плечо над ней
+  S.step(s, own.on + (own.hold ?? 0.15), tL, ...foot, th, { h: 0.08 });
+  const rear = S.plants[o].at(-1); rear.toe = 0.4; rear.yaw -= sgn(o) * 0.15; // задняя стопа выпада на носке, носок чуть внутрь за коленом
+  const low = [PX * d - f[0] * 0.4, PZ - f[1] * 0.4]; // таз на линии бега, стопа выпада в 0,45 м впереди: задняя нога длинная
   S.at(tL + 0.2, ...low); const touch = [tL + 0.05, tL + 0.3, tL + 0.55, tL + 0.75]; // рука идёт к полу, касается, держит, уходит
   S.at(touch[2], ...low);
   // толчок назад: передняя нога под тело, разворот к центру
@@ -59,10 +65,10 @@ function build(T, s) {
   k(ta, { y: y(0.92), elev: 62, yaw: Y, run: 1, gait: 1, v: 4.5 });
   k(a.last - 0.1, { y: y(0.92), elev: 78, yaw: Y, run: 0.7, gait: 1, v: 3.5 });
   k(tL - 0.1, { y: y(0.9), elev: 62, yaw: Y, run: 0.5, gait: 0.7, v: 3 });
-  k(tL, { y: y(0.8), elev: 50, yaw: Y, run: 0.3, gait: 0.5, v: 3 });
+  k(tL, { y: y(0.7), elev: 50, yaw: Y, run: 0.3, gait: 0.5, v: 3 });
   // Касание конуса (38 см), а не пола (24.11): до пола рука модели достаёт только с корпусом ниже 24° и тазом у колена —
   // Лёва: «тело просто всё скукоживает, скрючивает». К конусу — глубокий выпад, спина прямая под 45°, свободная рука вниз.
-  k(touch[1], { y: y(0.6), elev: 46, yaw: Y, hang: 0.6 }); k(touch[2], { y: y(0.6), elev: 46, yaw: Y, hang: 0.6 });
+  k(touch[1], { y: y(0.6), elev: 42, yaw: Y, hang: 0.6 }); k(touch[2], { y: y(0.6), elev: 42, yaw: Y, hang: 0.6 });
   k(tP + 0.3, { y: y(0.95), elev: 84, yaw: Y, hang: 0.3 });
   k(t2 - 0.04, { y: y(0.96), elev: 84, yaw: Yb, hang: 0.3 });
   k(t2 + 0.25, { y: y(0.93), elev: 62, yaw: Yb, run: 1, gait: 1, v: 4 });
@@ -77,7 +83,7 @@ function build(T, s) {
 
 function marks(T) {
   const mat = new THREE.MeshStandardMaterial({ color: '#d9d4c7', roughness: 0.9 });
-  for (const [i, p] of [new THREE.Vector3(0, 0, 0), point('Right'), point('Left')].entries()) {
+  for (const [i, p] of [new THREE.Vector3(0, 0, 0), cone('Right'), cone('Left')].entries()) {
     const h = i ? CONE : 0.004, m = new THREE.Mesh(new THREE.CylinderGeometry(i ? 0.025 : 0.09, i ? 0.1 : 0.09, h, 24), mat); // центр — метка, точки — конусы
     m.position.copy(p).setY(h / 2); m.castShadow = true; m.receiveShadow = true; T.gear.parent.add(m); // не в T.add: снаряды входят в рамку камеры, а точки в 4 м делали человека крошечным
   }
@@ -106,13 +112,13 @@ export default {
     const s = side(t), tt = ((t % CYCLE) + CYCLE) % CYCLE, [a, b, c, e] = T.Sp[s].touch;
     const k = tt < a || tt > e ? 0 : tt < b ? smooth((tt - a) / (b - a)) : tt < c ? 1 : 1 - smooth((tt - c) / (e - c));
     const fwd = new THREE.Vector3(0, 1.2, 0).add(point(s).multiplyScalar(2));
-    const opt = { skipArm: k > 0 ? s : null, lookAt: k > 0 ? point(s).lerp(fwd, 1 - k) : null, dy: 0 };
+    const opt = { skipArm: k > 0 ? s : null, lookAt: k > 0 ? cone(s).lerp(fwd, 1 - k) : null, dy: 0 };
     let g = gait(T, T.Sp[s], tt, opt);
     // Таз опускается, пока рука от плеча достаёт до точки касания: длина руки своя у модели, на глаз не подобрать.
     for (let i = 0; k > 0 && i < 8; i++) {
-      const [L1, L2] = T.rig.armLen[s], need = w(T.rig, s + 'Arm').distanceTo(point(s).setY(CONE + 0.06)) - 0.96 * (L1 + L2);
+      const [L1, L2] = T.rig.armLen[s], need = w(T.rig, s + 'Arm').distanceTo(cone(s).setY(CONE + 0.09)) - 0.96 * (L1 + L2);
       if (Math.abs(need) < 0.005 || (need < 0 && opt.dy <= 0)) break;
-      opt.dy = clamp(opt.dy + need * 0.8 * k, 0, 0.3); g = gait(T, T.Sp[s], tt, opt);
+      opt.dy = clamp(opt.dy + need * 0.8 * k, 0, 0.08); // к конусу таз почти не опускается: с запасом 0,3 задняя нога складывалась под себя g = gait(T, T.Sp[s], tt, opt);
     }
     T.drop = opt.dy;
     T.touch = { s, k };
@@ -120,7 +126,7 @@ export default {
       const { rig } = T, yaw = g.yaw, pitch = 1.2; // кисть пальцами вниз к полу, к точке
       const F = new THREE.Vector3(0, -Math.sin(pitch), Math.cos(pitch)).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       const N = new THREE.Vector3(0, -Math.cos(pitch), -Math.sin(pitch)).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-      const P = point(s).setY(CONE + 0.05); // середина ладони: кончики пальцев у верхушки конуса
+      const P = cone(s).setY(CONE + 0.08); // середина ладони: кончики пальцев у верхушки конуса
       const Sh = w(rig, s + 'Arm'), ready = Sh.clone().add(new THREE.Vector3(0, -0.3, 0)).addScaledVector(new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), 0.3);
       palmOn(T, s, ready.lerp(P, k), F, N, new THREE.Vector3(sgn(s) * 0.6, 0.2, -0.6).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
       rig.relaxHand(s);

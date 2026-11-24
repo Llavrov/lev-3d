@@ -344,6 +344,22 @@ function legCaps(T, s) {
     foot: [A, B.clone().addScaledVector(B.clone().sub(A), 0.45), 0.04],
   };
 }
+// Рука не проходит сквозь ногу: предплечье и кисть против капсул бедра и голени обеих ног, зазор не меньше −1,5 см
+// (кисть может лежать на бедре). Лёва 24.11 про касание в «Пауке»: «рука дальняя через ногу проходит».
+export function armLegClear(T, r) {
+  const { rig } = T;
+  let worst = Infinity, who = '';
+  for (const a of SIDES) {
+    const arm = [[w(rig, a + 'ForeArm'), w(rig, a + 'Hand')], [w(rig, a + 'Hand'), rig.palm(a)]];
+    for (const l of SIDES) { const c = legCaps(T, l); for (const part of ['thigh', 'shin']) for (const [p, q] of arm) {
+      const g = segDist(p, q, c[part][0], c[part][1]) - c[part][2] - 0.035;
+      if (g < worst) { worst = g; who = `${ruSide(a, true)} рука и ${ruSide(l, true)} ${part === 'thigh' ? 'бедро' : 'голень'}`; }
+    } }
+  }
+  r.m.armLeg = cm(worst);
+  if (worst < -0.015) r.bad.push(`рука проходит сквозь ногу: ${who} (${cm(worst)} см)`);
+  return r;
+}
 export function legsClear(T) {
   const L = legCaps(T, 'Left'), Rr = legCaps(T, 'Right');
   let worst = Infinity, where = '';
@@ -428,6 +444,7 @@ export function footAudit(T, r) {
     }
   }
   runArmAudit(T, r);
+  armLegClear(T, r);
   const c = legsClear(T); r.m.legGap = cm(c.gap);
   if (c.gap < -0.01) { const [a, b] = c.where.split('/'); r.bad.push(`ноги проходят друг сквозь друга: левая ${NAME[a]} и правая ${NAME[b]} (${cm(c.gap)} см)`); }
   return r;
@@ -453,4 +470,4 @@ export function runArmAudit(T, r) {
   return r;
 }
 // Общие проверки тела (стопы — свои, по стоянкам, а не по эталону начала цикла) плюс проверки ног.
-export const legAudit = (T, opt = {}) => footAudit(T, baseAudit(T, { feet: [], ...opt }));
+export const legAudit = (T, opt = {}) => footAudit(T, baseAudit(T, { feet: [], ankle: 45, ...opt }));

@@ -86,7 +86,7 @@ export default {
     }
   },
   audit(T) {
-    const { rig } = T, r = baseAudit(T, { feet: [] });
+    const { rig } = T, r = baseAudit(T, { feet: [], across: false }); // рука тянется к дальнему колену: поперёк груди по самому упражнению
     kneeAudit(T, r);
     r.m.seatGap = gap(T, ['Hips', 'LeftUpLeg', 'RightUpLeg']);
     if (r.m.seatGap > 1.5) r.bad.push(`таз висит над полом: ${r.m.seatGap} см`);

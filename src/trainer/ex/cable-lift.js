@@ -29,6 +29,7 @@ export default {
   sideFrom: 'left', // блок справа закрыл бы человека
   motion(i, u) { const e = smooth(u); return i === 0 ? 0 : i === 1 ? e : 1 - e; },
   setup(T) {
+    T.retract = -16; // обе лопатки выведены вперёд за руками: со сведёнными дельта и грудь вдавливались
     const { rig } = T;
     floorSetup(T);
     T.add(station(PULLEY, new THREE.Vector3(-0.1, 0, 0.02)));

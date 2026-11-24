@@ -42,6 +42,7 @@ export default {
   motion(i, u) { const e = smooth(u); return i === 0 ? 0.35 * e : i === 1 ? 0.35 + 0.65 * e : 1 - e; },
   setup(T) {
     const { rig } = T;
+    T.retract = -16; // обе лопатки выведены вперёд за руками (poses.js: ключица): со сведёнными дельта и грудь вдавливались
     T.add(station());
     T.handle = handle(); T.add(T.handle);
     T.cable = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1, 6), new THREE.MeshStandardMaterial({ color: '#111214', roughness: 0.6 })); T.cable.castShadow = true; T.add(T.cable);

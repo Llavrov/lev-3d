@@ -28,6 +28,7 @@ export default {
   sideFrom: 'left', // стойка справа закрыла бы человека
   motion(i, u) { const e = smooth(u); return i === 0 ? e : i === 1 ? 1 : 1 - e; },
   setup(T) {
+    T.retract = -16; // обе лопатки выведены вперёд за руками: со сведёнными дельта и грудь вдавливались
     const { rig } = T;
     floorSetup(T);
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.2, 0.08), frameMat()); post.position.set(ANCHOR.x - 0.06, 1.1, ANCHOR.z); T.add(shadows(post));
