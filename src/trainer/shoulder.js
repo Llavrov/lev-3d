@@ -165,3 +165,10 @@ export function shrugAudit(T, r) {
   if (T.neck0 - d > 0.015) r.bad.push(`плечи поднялись к ушам (${r.m.shrug} см)`);
 }
 export { baseAudit, rad, V3 };
+// Лопатка одной руки вперёд (24.11.2026): ключица side выходит вперёд на deg градусов, другая сведена как обычно (T.retract).
+// Лёжа на боку нижнее плечо выдвинуто вперёд, человек лежит на задней поверхности плеча и лопатке; со сведённой
+// ключицей сустав модели оставался над корпусом, и дельта уходила в пол. Вызвать один раз в setup.
+export function protract(T, side, deg = 22) {
+  const own = T.rig.clavicle, keep = T.retract;
+  T.rig.clavicle = (s, u) => { T.retract = s === side ? -deg : keep; own(s, u); T.retract = keep; };
+}
