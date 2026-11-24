@@ -1,38 +1,82 @@
-// «Паук», поочерёдно (span 2): чётный цикл — к точке справа впереди, нечётный — слева впереди. Точки и центр
-// отмечены на полу. Из стойки в центре: шаг ближней ногой, приставной, выпад ближней ногой к точке, касание пола
-// ближней рукой с торможением (таз низко, вес на передней ноге, спина прямая), толчок назад и два шага в центр.
+// «Паук» в настоящем темпе (24.11.2026), поочерёдно (span 2): чётный цикл — к точке справа впереди, нечётный — слева
+// впереди, точки в 4 м от центра, отмечены на полу. Из стойки в центре: разворот к точке, рывок до ~4,5 м/с, торможение,
+// выпад ближней ногой и касание пола ближней рукой (таз низко, спина прямая), толчок назад, разворот, бег в центр,
+// разворот лицом вперёд в стойку. Было: точка в 0,8 м и три шага до 1,2 м/с — Лёва: «там не бег, там ходьба».
 import * as THREE from 'three';
-import { lerp, clamp, smooth, w, sgn, cm, SIDES } from '../poses.js';
+import { clamp, smooth, w, sgn, cm } from '../poses.js';
 import { palmOn } from '../kneel.js';
 import { script, measureFeet, gait, legAudit } from '../steps.js';
 
-const CYCLE = 3, HALF = 0.25, PX = 0.55, PZ = 0.6; // цикл, полуширина стойки, точка касания: в сторону и вперёд от центра, м
+const CYCLE = 6.8, HALF = 0.25, PX = 2.8, PZ = 2.8; // цикл (= сумма tempo_s), полуширина стойки, точка касания: в сторону и вперёд, м
+const PI = Math.PI;
 const side = (t) => (Math.floor(t / CYCLE) % 2 ? 'Left' : 'Right');
-const TOUCH = [1.15, 1.45, 1.75, 2.0]; // рука идёт к полу, касается, держит, уходит (с)
+const point = (s) => new THREE.Vector3(sgn(s) * PX, 0, PZ);
 
 // Сценарий к точке со стороны s (Right — в −X). Зеркало по x для левой.
 function build(T, s) {
-  const { rig } = T, leg = rig.L1 + rig.L2, d = sgn(s), o = s === 'Right' ? 'Left' : 'Right', low = rig.ankleH + 0.8 * leg;
-  const S = script(CYCLE, { [s]: { x: d * HALF, z: 0, yaw: d * 0.1 }, [o]: { x: -d * HALF, z: 0, yaw: -d * 0.1 } });
-  S.step(s, 0.1, 0.38, d * 0.5, 0.2, d * 0.45, { h: 0.06 });
-  S.step(o, 0.45, 0.7, d * 0.05, 0.15, d * 0.2, { h: 0.05, push: 0.3 });
-  S.step(s, 0.75, 1.05, d * (PX + 0.12), PZ - 0.2, d * 0.5, { h: 0.07 }); // выпад: стопа снаружи от точки, рука касается внутри
-  S.step(s, 2.0, 2.3, d * 0.45, 0.15, d * 0.35, { h: 0.06 });
-  S.step(o, 2.3, 2.58, -d * HALF, 0, -d * 0.1, { h: 0.05 });
-  S.step(s, 2.6, 2.88, d * HALF, 0, d * 0.1, { h: 0.05 });
-  const k = (t, y, yaw, elev, dx = 0, run = 0) => S.key(t, { y, dx: d * dx, dz: 0, yaw: d * yaw, hips: 0, torso: 0, elev, run });
-  k(0, low, 0, 72); k(0.1, low, 0, 72); k(0.5, low + 0.02, 20, 68, 0, 0.6); k(1.05, low - 0.06, 30, 45, 0.1, 0.3);
-  k(1.45, low - 0.12, 30, 22, 0.02); k(1.75, low - 0.12, 30, 22, 0.02); k(2.1, low - 0.04, 22, 62, 0.04, 0.5); k(2.6, low, 8, 70, 0, 0.3); k(2.9, low, 0, 72);
-  S.stride = 0.5;
+  const { rig } = T, L = rig.L1 + rig.L2, A = rig.ankleH, y = (k) => A + k * L, d = sgn(s), o = s === 'Left' ? 'Right' : 'Left';
+  const th = Math.atan2(d * PX, PZ), back = th - d * PI, f = [Math.sin(th), Math.cos(th)], out = [-Math.cos(th) * -d, Math.sin(th) * -d];
+  const start = { [s]: { x: d * HALF, z: 0, yaw: d * 0.1 }, [o]: { x: -d * HALF, z: 0, yaw: -d * 0.1 } }, S = script(CYCLE, start);
+  const at = (c, a, sd, r = 0.15) => [c[0] + sgn(sd) * r * Math.cos(a), c[1] - sgn(sd) * r * Math.sin(a), a]; // стопа sd у точки c при курсе a
+  // Разворот на месте: первой шагает нога со стороны поворота, шаги по 0,18 с; n = 2 — сразу на курс, 4 — в две четверти.
+  const turn = (t, c, a0, a1, n, end) => {
+    const m = (a0 + a1) / 2, F = a1 > a0 ? 'Left' : 'Right', B = F === 'Left' ? 'Right' : 'Left';
+    const q = n === 1 ? [[F, a1]] : n === 2 ? [[F, a1], [B, a1]] : [[F, m], [B, m], [F, a1], [B, a1]];
+    q.forEach(([sd, a], i) => S.step(sd, t + 0.2 * i, t + 0.2 * i + 0.18, ...(i >= q.length - 2 && end ? end[sd] : at(c, a, sd)), { h: 0.05 }));
+    return t + 0.2 * q.length;
+  };
+  // туда: разворот к точке, рывок, торможение; бег кончается за 0,8 м до точки на ~1,4 м/с, дальше выпад
+  S.at(0, 0, 0).at(0.3, 0, 0);
+  // Выпад делает ближняя нога: число беговых шагов узнаём пробным прогоном и при нечётном разворачиваемся одним шагом.
+  const D = Math.hypot(PX, PZ) - 0.8, go = { from: [0, 0], yaw: th, segs: [[D - 1.1, 4.5, 0.2], [1.1, 1.4, 0.6]], cadence: 4, L };
+  const odd = script(CYCLE, start).run({ side: s, t0: 0.65, ...go }).side !== s;
+  const t0 = turn(0.3, [0, 0], 0, th, odd ? 1 : 2);
+  const a = S.run({ side: odd ? o : s, t0: t0 - 0.05, ...go });
+  if (a.side !== s) throw new Error(`паук: выпад не ближней ногой (${a.side})`);
+  const E = [a.x, a.z], tL = a.last + 0.27; // постановка выпада
+  const foot = [PX * d + f[0] * 0.05 + out[0] * 0.1, PZ + f[1] * 0.05 + out[1] * 0.1];
+  const own = S.plants[s].at(-1);
+  S.step(s, own.on + (own.hold ?? 0.15), tL, ...foot, th - d * 0.15, { h: 0.08 });
+  const low = [E[0] + f[0] * 0.55 - out[0] * 0.05, E[1] + f[1] * 0.55 - out[1] * 0.05]; // таз внутрь от точки: плечо над ней
+  S.at(tL + 0.2, ...low); const touch = [tL + 0.05, tL + 0.3, tL + 0.55, tL + 0.75]; // рука идёт к полу, касается, держит, уходит
+  S.at(touch[2], ...low);
+  // толчок назад: передняя нога под тело, разворот к центру
+  const tP = touch[2] + 0.05, C2 = E;
+  S.step(s, tP, tP + 0.25, ...at(C2, th, s), { h: 0.06 }); S.at(tP + 0.3, ...C2);
+  const t2 = turn(tP + 0.3, C2, th, back, 4); S.at(t2, ...C2);
+  // обратно: рывок к центру и остановка
+  const Dc = Math.hypot(...C2);
+  const b = S.run({ side: back > th ? 'Left' : 'Right', t0: t2 - 0.05, from: C2, yaw: back, segs: [[Dc - 1.4, 4.2, 0.2], [1.4, 0.9, 0.6]], cadence: 4, L });
+  const B = [b.x, b.z], t3 = b.t + 0.15; S.at(t3 + 0.8, ...B);
+  const t4 = turn(t3, B, back, 0, 4, { [s]: [d * HALF, 0, d * 0.1], [o]: [-d * HALF, 0, -d * 0.1] });
+  S.at(t4 + 0.2, 0, 0);
+  if (t4 > CYCLE - 0.3) throw new Error(`паук: сценарий ${t4.toFixed(2)} с длиннее цикла ${CYCLE}`);
+  const k = (t, o2) => S.key(t, { y: y(0.86), dx: 0, dz: 0, yaw: 0, hips: 0, torso: 0, elev: 72, run: 0, gait: 0, hang: 0, v: 4.5, ...o2 });
+  const Y = th * 180 / PI, Yb = back * 180 / PI, ta = a.steps.find((q) => q.v > 3.5)?.t ?? t0 + 0.4, tb = b.steps.find((q) => q.v > 3.5)?.t ?? t2 + 0.4;
+  k(0, {}); k(0.2, {});
+  k(t0, { y: y(0.93), elev: 56, yaw: Y, run: 1, gait: 1 });
+  k(ta, { y: y(0.92), elev: 62, yaw: Y, run: 1, gait: 1, v: 4.5 });
+  k(a.last - 0.1, { y: y(0.92), elev: 78, yaw: Y, run: 0.7, gait: 1, v: 3.5 });
+  k(tL - 0.1, { y: y(0.9), elev: 62, yaw: Y, run: 0.5, gait: 0.7, v: 3 });
+  k(tL, { y: y(0.8), elev: 50, yaw: Y, run: 0.3, gait: 0.5, v: 3 });
+  k(touch[1], { y: y(0.71), elev: 24, yaw: Y }); k(touch[2], { y: y(0.71), elev: 24, yaw: Y });
+  k(tP + 0.3, { y: y(0.95), elev: 84, yaw: Y, hang: 0.3 });
+  k(t2 - 0.04, { y: y(0.96), elev: 84, yaw: Yb, hang: 0.3 });
+  k(t2 + 0.25, { y: y(0.93), elev: 62, yaw: Yb, run: 1, gait: 1, v: 4 });
+  k(tb, { y: y(0.93), elev: 68, yaw: Yb, run: 1, gait: 1, v: 4.2 });
+  k(b.last - 0.1, { y: y(0.91), elev: 82, yaw: Yb, run: 0.6, gait: 0.9, v: 3.5 });
+  k(t3, { y: y(0.975), elev: 86, yaw: Yb, hang: 0.4, v: 3 });
+  k(t4 - 0.1, { y: y(0.96), elev: 80, yaw: 0, hang: 0.2 });
+  k(t4 + 0.3, {});
+  S.touch = touch;
   return S.done();
 }
-const point = (s) => new THREE.Vector3(sgn(s) * PX, 0, PZ);
 
 function marks(T) {
   const mat = new THREE.MeshStandardMaterial({ color: '#d9d4c7', roughness: 0.9 });
   for (const p of [new THREE.Vector3(0, 0, 0), point('Right'), point('Left')]) {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.004, 24), mat);
-    m.position.copy(p).setY(0.002); m.receiveShadow = true; T.add(m);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.004, 24), mat);
+    m.position.copy(p).setY(0.002); m.receiveShadow = true; T.gear.parent.add(m); // не в T.add: снаряды входят в рамку камеры, а точки в 4 м делали человека крошечным
   }
 }
 
@@ -41,29 +85,31 @@ export default {
   name: 'Паук',
   muscles: { work: ['quads', 'glutes', 'calves', 'adductors'], stretch: [], careful: ['ankle', 'knee'] },
   phases: [
-    { name: 'старт', cue: 'От центра к точке', tempo_s: 1 },
-    { name: 'касание', cue: 'Выпад, коснись пола и тормози', tempo_s: 1 },
-    { name: 'возврат', cue: 'Толчок и назад к центру', tempo_s: 1 },
+    { name: 'рывок', cue: 'Развернись и рывком к точке', tempo_s: 2.1 },
+    { name: 'касание', cue: 'Выпад, коснись пола и тормози', tempo_s: 0.8 },
+    { name: 'возврат', cue: 'Толчок, разворот, бегом в центр', tempo_s: 3.9 }, // сумма фаз = цикл CYCLE
   ],
   dose: { sets: '4', reps: '1 круг (5 точек)', rest_s: 60 },
   mistakes: ['Широкие повороты без торможения', 'Высокая стойка', 'Колено уходит внутрь'],
   view: 'front',
-  pace: 'В жизни бегом, на максимуме', // показ идёт медленнее или короче, чем делают в жизни
+  pace: 'В жизни бегом, на максимуме',
   wide: true,
-  follow: true, // камера едет за человеком: весь путь в кадре делал его мелким на телефоне
+  follow: true, // камера едет за человеком: путь 4 м туда и обратно
+  runs: { s: 2, flight: 0.2 }, // обещание «это бег» за оба цикла span
   flat: 'front',
   span: 2,
   setup(T) { measureFeet(T); T.Sp = { Right: build(T, 'Right'), Left: build(T, 'Left') }; marks(T); },
   pose(T, { t }) {
-    const s = side(t), tt = ((t % CYCLE) + CYCLE) % CYCLE, [a, b, c, e] = TOUCH;
+    const s = side(t), tt = ((t % CYCLE) + CYCLE) % CYCLE, [a, b, c, e] = T.Sp[s].touch;
     const k = tt < a || tt > e ? 0 : tt < b ? smooth((tt - a) / (b - a)) : tt < c ? 1 : 1 - smooth((tt - c) / (e - c));
-    const opt = { skipArm: k > 0 ? s : null, lookAt: k > 0 ? point(s).setY(0).lerp(new THREE.Vector3(0, 1.2, 5), 1 - k) : null, dy: 0 };
+    const fwd = new THREE.Vector3(0, 1.2, 0).add(point(s).multiplyScalar(2));
+    const opt = { skipArm: k > 0 ? s : null, lookAt: k > 0 ? point(s).lerp(fwd, 1 - k) : null, dy: 0 };
     let g = gait(T, T.Sp[s], tt, opt);
     // Таз опускается, пока рука от плеча достаёт до точки касания: длина руки своя у модели, на глаз не подобрать.
     for (let i = 0; k > 0 && i < 8; i++) {
-      const [L1, L2] = T.rig.armLen[s], need = w(T.rig, s + 'Arm').distanceTo(point(s).setY(0.1)) - 0.96 * (L1 + L2);
+      const [L1, L2] = T.rig.armLen[s], need = w(T.rig, s + 'Arm').distanceTo(point(s).setY(0.06)) - 0.96 * (L1 + L2);
       if (Math.abs(need) < 0.005 || (need < 0 && opt.dy <= 0)) break;
-      opt.dy = clamp(opt.dy + need * 0.8 * k, 0, 0.25); g = gait(T, T.Sp[s], tt, opt);
+      opt.dy = clamp(opt.dy + need * 0.8 * k, 0, 0.3); g = gait(T, T.Sp[s], tt, opt);
     }
     T.drop = opt.dy;
     T.touch = { s, k };
@@ -71,9 +117,9 @@ export default {
       const { rig } = T, yaw = g.yaw, pitch = 1.2; // кисть пальцами вниз к полу, к точке
       const F = new THREE.Vector3(0, -Math.sin(pitch), Math.cos(pitch)).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       const N = new THREE.Vector3(0, -Math.cos(pitch), -Math.sin(pitch)).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-      const P = point(s).setY(0.075); // середина ладони: кончики пальцев у пола
+      const P = point(s).setY(0.05); // середина ладони: кончики пальцев у пола
       const Sh = w(rig, s + 'Arm'), ready = Sh.clone().add(new THREE.Vector3(0, -0.3, 0)).addScaledVector(new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), 0.3);
-      palmOn(T, s, ready.lerp(P, k), F, N, new THREE.Vector3(sgn(s) * 0.6, 0.2, -0.6));
+      palmOn(T, s, ready.lerp(P, k), F, N, new THREE.Vector3(sgn(s) * 0.6, 0.2, -0.6).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
       rig.relaxHand(s);
     }
   },
